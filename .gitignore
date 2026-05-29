@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+*.log
+
+# ORCA / quantum chemistry outputs
+*.out
+*.gbw
+*.engrad
+*.hess
+*.tmp
+*.xyz.tmp
+
+# Wavefunction and cube data
+*.wfn
+*.wfx
+*.cube
+*.cub
+*_NCI/
+*_ESP/
+
+# Local settings and generated artifacts
+orca_gaussian_builder_settings.json
+.nci_plotter_config.json
+homo_lumo_gui_error.log
+installation_report.html
+**/installation_report.html
+*-BFM-MachineSect.py
+*-BFM-MachineSect.json
+
+# Example datasets: keep only S22 NCI benchmark XYZ structures.
+examples/*
+!examples/S22_NCI_bemchmark_set/
+examples/S22_NCI_bemchmark_set/**
+!examples/S22_NCI_bemchmark_set/**/
+!examples/S22_NCI_bemchmark_set/**/*.xyz
+
+# Images are usually generated outputs; keep documented examples explicitly if needed.

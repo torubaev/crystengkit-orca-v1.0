@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CrystEngKit Wiki</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --paper: #ffffff;
+      --ink: #1e2933;
+      --muted: #607080;
+      --line: #d9e1ea;
+      --accent: #116466;
+      --accent-soft: #d9f0ee;
+      --code: #eef2f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.6;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      padding: 24px 18px;
+      background: #102a43;
+      color: #f6fbff;
+      border-right: 1px solid #0b1f33;
+    }
+    aside h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      line-height: 1.2;
+      color: #d9f0ee;
+    }
+    aside p {
+      margin: 0 0 18px;
+      color: #bdd4e7;
+      font-size: 14px;
+    }
+    .nav-link {
+      display: block;
+      color: #e7f2fb;
+      text-decoration: none;
+      padding: 7px 8px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .nav-link:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .level-1 { font-weight: 700; }
+    .level-2 { margin-left: 8px; }
+    .level-3 { margin-left: 22px; font-size: 13px; color: #cfe0ee; }
+    .nav-group {
+      margin: 2px 0;
+      border-radius: 6px;
+    }
+    .nav-group summary {
+      list-style: none;
+      cursor: pointer;
+      border-radius: 6px;
+      padding: 7px 8px;
+      color: #e7f2fb;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .nav-group summary::-webkit-details-marker {
+      display: none;
+    }
+    .nav-group summary::before {
+      content: ">";
+      color: #9fc1da;
+      font-size: 12px;
+      transition: transform 0.15s ease;
+    }
+    .nav-group[open] summary::before {
+      transform: rotate(90deg);
+    }
+    .nav-group summary:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .nav-group summary a {
+      color: #e7f2fb;
+      text-decoration: none;
+      flex: 1;
+    }
+    .nav-children {
+      padding: 2px 0 6px;
+    }
+    main {
+      max-width: 1020px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 34px 34px 70px;
+    }
+    article, .references {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 34px;
+      box-shadow: 0 10px 28px rgba(16, 42, 67, 0.08);
+    }
+    .references { margin-top: 22px; }
+    h1, h2, h3, h4 {
+      line-height: 1.25;
+      color: #102a43;
+    }
+    article > h1:first-child {
+      margin-top: 0;
+      font-size: 34px;
+    }
+    h2 {
+      margin-top: 34px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    h3 { margin-top: 24px; color: var(--accent); }
+    a { color: #0f6f74; }
+    code {
+      background: var(--code);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.94em;
+    }
+    .code-block {
+      position: relative;
+      margin: 16px 0;
+    }
+    .copy-code {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      border: 1px solid #c7d2df;
+      border-radius: 5px;
+      background: #ffffff;
+      color: #243447;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .copy-code:hover {
+      background: #e3edf7;
+    }
+    pre {
+      background: #eef2f6;
+      color: #243447;
+      border: 1px solid #d5dde6;
+      padding: 16px;
+      padding-right: 78px;
+      border-radius: 8px;
+      overflow: auto;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: inherit;
+    }
+    ul, ol { padding-left: 24px; }
+    li { margin: 5px 0; }
+    figure {
+      margin: 18px 0 22px;
+    }
+    .image-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    figure img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+    sup a { text-decoration: none; }
+    .references ol { padding-left: 24px; }
+    .ref-key {
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #0d4d50;
+      font-weight: 600;
+    }
+    .copyright {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 860px) {
+      .layout { display: block; }
+      aside {
+        position: relative;
+        height: auto;
+        max-height: 330px;
+      }
+      main { padding: 18px; }
+      article, .references { padding: 22px; }
+      article > h1:first-child { font-size: 27px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <h1>CrystEngKit Wiki</h1>
+      <nav>
+        <a class="nav-link level-2" href="#overview">Overview</a>
+<a class="nav-link level-2" href="#installation-and-requirements">Installation and Requirements</a>
+<a class="nav-link level-2" href="#starting-the-suite">Starting the Suite</a>
+<details class="nav-group" open><summary><a href="#tools">Tools</a></summary><div class="nav-children"><a class="nav-link level-3" href="#orca-input-builder">ORCA Input Builder</a>
+<a class="nav-link level-3" href="#homo-lumo-plotter">HOMO-LUMO Plotter</a>
+<a class="nav-link level-3" href="#esp-vismap">ESP / VisMap</a>
+<a class="nav-link level-3" href="#nci-plotter">NCI Plotter</a>
+<a class="nav-link level-3" href="#qtaim-critical-points-viewer">QTAIM Critical Points Viewer</a>
+<a class="nav-link level-3" href="#nci-qtaim-overlay">NCI + QTAIM Overlay</a></div></details>
+<details class="nav-group"><summary><a href="#main-workflows">Main Workflows</a></summary><div class="nav-children"><a class="nav-link level-3" href="#build-and-run-an-orca-job">Build and Run an ORCA Job</a>
+<a class="nav-link level-3" href="#make-figures-after-a-calculation">Make Figures After a Calculation</a>
+<a class="nav-link level-3" href="#dimer-interaction-energy">Dimer Interaction Energy</a>
+<a class="nav-link level-3" href="#solvent-calculations">Solvent Calculations</a></div></details>
+<details class="nav-group"><summary><a href="#glossary">Glossary</a></summary><div class="nav-children"><a class="nav-link level-3" href="#main-calculation-types">Main Calculation Types</a>
+<a class="nav-link level-3" href="#method-setup">Method Setup</a>
+<a class="nav-link level-3" href="#solvent-and-environment">Solvent and Environment</a>
+<a class="nav-link level-3" href="#orbitals-and-plots">Orbitals and Plots</a>
+<a class="nav-link level-3" href="#nci-analysis">NCI Analysis</a>
+<a class="nav-link level-3" href="#qtaim-analysis">QTAIM Analysis</a>
+<a class="nav-link level-3" href="#dimer-and-interaction-energy-terms">Dimer and Interaction-Energy Terms</a></div></details>
+<a class="nav-link level-2" href="#examples-and-benchmark-data">Examples and Benchmark Data</a>
+<details class="nav-group"><summary><a href="#troubleshooting">Troubleshooting</a></summary><div class="nav-children"><a class="nav-link level-3" href="#orca-does-not-start">ORCA does not start</a>
+<a class="nav-link level-3" href="#homo-lumo-button-does-not-work">HOMO-LUMO button does not work</a>
+<a class="nav-link level-3" href="#esp-map-does-not-work">ESP map does not work</a>
+<a class="nav-link level-3" href="#nci-plot-does-not-work">NCI plot does not work</a>
+<a class="nav-link level-3" href="#qtaim-cp-does-not-work">QTAIM CP does not work</a>
+<a class="nav-link level-3" href="#structure-preview-does-not-open">Structure preview does not open</a>
+<a class="nav-link level-3" href="#interaction-workflow-finishes-partially">Interaction workflow finishes partially</a></div></details>
+        <a class="nav-link level-2" href="#references">References</a>
+      </nav>
+    </aside>
+    <main>
+      <article>
+        <h1 id="crystengkit-from-cif-files-to-esp-nci-and-qtaim-plots-in-a-few-clicks-a-practical-suite-for-supramolecular-chemistry-and-crystal-engineering">CrystEngKit: From CIF files to ESP, NCI, and QTAIM plots in a few clicks — a practical suite for supramolecular chemistry and crystal engineering.</h1>
+<figure class="image-row"><img src="../images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="" title="" width="207"> <img src="../images/wiki/ZfK_C2H2I2_COVER.png" alt="" title="" width="203"> <img src="../images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="" title="" width="204"></figure>
+<p><em>ESP maps, NCI plots, BCP/bonding paths, HOMO-LUMO shapes are not only the illustarions of your work but also a good idea for the journal cover art</em>.</p>
+<h2 id="overview">Overview</h2>
+<p>CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualisation in supramolecular chemistry and crystal engineering. It helps the experimantalist researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.</p>
+<p>Typical input formats are <code>.xyz</code>, existing ORCA <code>.inp</code> files, and <code>.cif</code> files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)<sup><a href="#ref-csd">csd</a></sup>.</p>
+<p>The suite is built around widely used, freely available academic/freeware programs. ORCA<sup><a href="#ref-orca-site">orca-site</a></sup> is used for quantum-chemical calculations, and Multiwfn<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup> is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.</p>
+<p>CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.</p>
+<figure><img src="../images/wiki/orca-input_2.png" alt=""></figure>
+<p>The main GUI is the <strong>ORCA Input Builder</strong><sup><a href="#ref-orca">orca</a></sup>. It can:</p>
+<ul>
+<li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, and ORCA <code>.inp</code> files</li>
+<li>prepare ORCA and Gaussian<sup><a href="#ref-gaussian">gaussian</a></sup> input files</li>
+<li>run ORCA and show live output</li>
+<li>generate manuscript-ready computation summaries for experimental part /supplimentary info</li>
+<li>launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations / visualizations.</li>
+</ul>
+<h2 id="installation-and-requirements">Installation and Requirements</h2>
+<p>For most users, start with the provided installer/checker. It checks the software already present on your computer, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.</p>
+<p>The installer itself needs Python. If Python is not installed yet, the Windows and Linux/macOS launchers will stop and show where to download or install Python first. After Python 3.9 or newer is installed, run the installer again.</p>
+<p>On Windows, run:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>install\install.bat</code></pre></div>
+<p>On macOS or Linux, run the matching checker from the <code>install</code> folder, or run:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python install/install.py</code></pre></div>
+<p>If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the checker again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The checker looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.</p>
+<p>The full suite uses:</p>
+<ul>
+<li><strong>Python 3.9+</strong></li>
+<li><strong>ORCA</strong>, available free of charge for academic users through the official ORCA/FACCTs pages<sup><a href="#ref-orca-site">orca-site</a></sup></li>
+<li><strong>orca_2aim</strong>, for generating <code>.wfn</code> / <code>.wfx</code> files after ORCA runs</li>
+<li><strong>Multiwfn</strong>, for ESP, NCI, and QTAIM analysis<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup></li>
+</ul>
+<p>The installer does not install ORCA or Multiwfn automatically, because these programs have their own licenses and official download routes. If you prefer manual Python setup, install the main Python packages with:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>pip install numpy pyvista matplotlib periodictable gemmi Pillow</code></pre></div>
+<p><code>numpy</code> and <code>pyvista</code> are needed for structure preview and 3D plotting. <code>matplotlib</code> is used by the HOMO-LUMO energy diagram tool. <code>periodictable</code> supports the 3D NCI molecular viewer. <code>gemmi</code> is recommended for CIF handling. <code>Pillow</code> is used by the HOMO-LUMO MO surface workflow for saved images, thumbnails, and contact sheets.</p>
+<h2 id="starting-the-suite">Starting the Suite</h2>
+<p>Launch the main ORCA Builder with:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python orca_input.py</code></pre></div>
+<p>Or double-click the orca_input.py file</p>
+<h2 id="tools">Tools</h2>
+<p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
+<h3 id="orca-input-builder">ORCA Input Builder</h3>
+<figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular  interaction jobs.</p>
+<h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
+<figure><img src="../images/wiki/orca_homo-lumo_2.png" alt=""></figure>
+<p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
+<figure><img src="../images/wiki/orca_homo-lumo_3.png" alt=""></figure>
+<p>Recent MO-surface tools include capped-sticks molecule rendering by default, optional colored wireframe or ball-and-stick molecule overlays. In the table, each saved MO tile can be reopened with its saved camera, style, and scale. The <code>Use view for all</code> button applies the selected tile&#x27;s saved orientation and zoom/scale to every MO surface in the current table.</p>
+<h3 id="esp-vismap">ESP / VisMap</h3>
+<figure><img src="../images/wiki/orca-vismap_1.png" alt=""></figure>
+<p>Creates electrostatic-potential maps on electron-density surfaces<sup><a href="#ref-esp">esp</a></sup>. This version is based on the original VisMap code by aaan1s (&lt;https://github.com/aaan1s/VisMap&gt;) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as <code>.wfn</code>, <code>.wfx</code>, or <code>.fchk</code>.</p>
+<figure><img src="../images/wiki/orca_vismap%20output_1.png" alt=""></figure>
+<h3 id="nci-plotter">NCI Plotter</h3>
+<figure><img src="../images/wiki/orca_nci_output_1.png" alt=""></figure>
+<p>Creates noncovalent-interaction surfaces<sup><a href="#ref-nci">nci</a></sup> from <code>.wfn</code> or <code>.wfx</code> files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.</p>
+<h3 id="qtaim-critical-points-viewer">QTAIM Critical Points Viewer</h3>
+<figure><img src="../images/wiki/orca_qtaim_1.png" alt=""></figure>
+<p>Shows QTAIM bond, ring, and cage critical points<sup><a href="#ref-qtaim">qtaim</a></sup> from <code>.wfn</code> or <code>.wfx</code> files and Multiwfn QTAIM output.</p>
+<figure><img src="../images/wiki/orca_qtaim_2.png" alt=""></figure>
+<h3 id="nci-qtaim-overlay">NCI + QTAIM Overlay</h3>
+<figure><img src="../images/wiki/orca_qtaim_nci_overlay.png" alt=""></figure>
+<p>Combines the molecular structure, NCI surface, QTAIM bond critical points, and bond paths in one PyVista view. Use it when the NCI and QTAIM output files have already been generated for the same structure.</p>
+<h2 id="main-workflows">Main Workflows</h2>
+<h3 id="build-and-run-an-orca-job">Build and Run an ORCA Job</h3>
+<ol>
+<li>Load a <code>.cif</code>, <code>.xyz</code>, or ORCA <code>.inp</code> file in the Builder.</li>
+</ol>
+<figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
+<ol start="2">
+<li>Check the geometry with <code>Structure preview</code> if needed.</li>
+</ol>
+<figure><img src="../images/wiki/orca-input_viewer_1.png" alt=""></figure>
+<ol start="3">
+<li>Choose the calculation setup: functional, basis set, dispersion correction solvent (or gas phase - if no solvent was chosen or entered), charge, and multiplicity.</li>
+</ol>
+<ol start="4">
+<li>Choose the target calculation, such as single-point energy, optimization, frequencies, ESP package, TD-DFT, NMR, or dimer interaction energy.</li>
+</ol>
+<ol start="5">
+<li>Preview and save the <code>.inp</code> file.</li>
+</ol>
+<ol start="6">
+<li>Click <code>Run Orca</code> and follow the job in <code>JOB MONITOR</code>.</li>
+</ol>
+<h3 id="make-figures-after-a-calculation">Make Figures After a Calculation</h3>
+<p>Use the top-panel buttons after the ORCA job finishes:</p>
+<figure><img src="../images/wiki/orca_top_panel_1.png" alt=""></figure>
+<ul>
+<li><code>HOMO LUMO</code> for orbital energy diagrams and, from ORCA <code>.out</code> / <code>.gbw</code> pairs, MO surface images and contact sheets</li>
+<li><code>ESP map</code> for electrostatic-potential surfaces</li>
+<li><code>NCI plot</code> for RDG / sign(lambda2)rho noncovalent-interaction surfaces</li>
+<li><code>QTAIM CP</code> for critical-point inspection</li>
+</ul>
+<p>ESP, NCI, and QTAIM workflows require real wavefunction files such as <code>.wfn</code> or <code>.wfx</code>. In CrystEngKit they are automatically generated by default, after ORCA job is done.</p>
+<p>MO surface rendering requires a finished ORCA <code>.out</code> file, its matching <code>.gbw</code> file, and <code>orca_plot</code> from the ORCA installation.</p>
+<p>For consistent MO surface figures, orient and zoom one saved contact-sheet tile, press <code>S</code> in the MO viewer to save it, then use <code>Use view for all</code> from that tile to regenerate the rest of the current contact sheet with the same view and scale.</p>
+<h3 id="dimer-interaction-energy">Dimer Interaction Energy</h3>
+<ol>
+<li>Load a dimer structure file.</li>
+</ol>
+<ol start="2">
+<li>Enable <code>Intermolecular interaction energy (dimer)</code> by checking the respective checkbox.</li>
+</ol>
+<ol start="3">
+<li>Assign fragments automatically or manually.</li>
+</ol>
+<ol start="4">
+<li>Use the viewer to check the fragment assignment.</li>
+</ol>
+<figure><img src="../images/wiki/orca-input_viewer_2.png" alt=""></figure>
+<ol start="5">
+<li>Choose whether to include relaxed binding analysis and thermodynamic terms.</li>
+</ol>
+<ol start="6">
+<li>Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE. CP-corrected) and Experimental part.</li>
+</ol>
+<p>As a workflow sanity check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&amp;id=4&amp;state=show&amp;order=ASC&amp;by=name_m&amp;method=</p>
+<h3 id="solvent-calculations">Solvent Calculations</h3>
+<p>The <code>Solvent</code> field adds an implicit-solvent model. For ORCA, the Builder uses the SMD model<sup><a href="#ref-smd">smd</a></sup> through the <code>%cpcm</code> block<sup><a href="#ref-pcm">pcm</a></sup>. Choose a solvent from the dropdown menu, or use <code>Other solvent...</code> for a custom ORCA-recognized solvent name.</p>
+<h2 id="glossary">Glossary</h2>
+<p>This short glossary explains the quantum-chemistry terms that appear in the Builder. It is not meant to replace a textbook; it is a quick practical guide to what the options mean before you click <code>Run Orca</code>.</p>
+<h3 id="main-calculation-types">Main Calculation Types</h3>
+<p><strong>Single-point energy</strong> A calculation of the energy and electronic structure at one fixed geometry. The atoms do not move. Use it when you trust the geometry and want the energy or properties at that structure. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/basics.html" target="_blank" rel="noopener noreferrer">Basic calculation settings</a>.</p>
+<p><strong>Geometry optimization</strong> A calculation that moves the atoms to find a nearby low-energy structure. In practical terms, ORCA changes the geometry step by step until the forces become small. Wiki: <a href="https://en.wikipedia.org/wiki/Energy_minimization" target="_blank" rel="noopener noreferrer">Energy minimization</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/structurereactivity/optimizations.html" target="_blank" rel="noopener noreferrer">Geometry optimizations</a>.</p>
+<p><strong>Frequencies / thermochemistry</strong> A vibrational-frequency calculation. It is used to check whether an optimized structure is a minimum and to estimate thermochemical quantities such as enthalpy and Gibbs free energy. Wiki: <a href="https://en.wikipedia.org/wiki/Molecular_vibration" target="_blank" rel="noopener noreferrer">Molecular vibration</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/structurereactivity/frequencies.html" target="_blank" rel="noopener noreferrer">Vibrational frequencies</a>.</p>
+<p><strong>TD-DFT / UV-Vis</strong> Time-dependent DFT is commonly used to estimate electronic excitations and UV-Vis absorption bands. Wiki: <a href="https://en.wikipedia.org/wiki/Time-dependent_density_functional_theory" target="_blank" rel="noopener noreferrer">Time-dependent density functional theory</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/spectroscopyproperties/tddft.html" target="_blank" rel="noopener noreferrer">Excited states via RPA, CIS, TD-DFT and SF-TDA</a>.</p>
+<p><strong>NMR calculation</strong> A calculation of NMR-related properties such as nuclear shielding, which can be converted or compared with chemical shifts. Wiki: <a href="https://en.wikipedia.org/wiki/Nuclear_magnetic_resonance_spectroscopy" target="_blank" rel="noopener noreferrer">Nuclear magnetic resonance spectroscopy</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/spectroscopyproperties/nmr.html" target="_blank" rel="noopener noreferrer">Nuclear Magnetic Resonance parameters</a>.</p>
+<h3 id="method-setup">Method Setup</h3>
+<p><strong>DFT</strong> Density functional theory is a widely used quantum-chemistry approach where the electron density is the central quantity. Wiki: <a href="https://en.wikipedia.org/wiki/Density_functional_theory" target="_blank" rel="noopener noreferrer">Density functional theory</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/modelchemistries/DensityFunctionalTheory.html" target="_blank" rel="noopener noreferrer">Density Functional Theory</a>.</p>
+<p><strong>Functional</strong> The chosen DFT approximation, such as B3LYP, PBE0, or wB97X-D. The functional strongly affects energies, geometries, noncovalent interactions, and predicted properties. Wiki: <a href="https://en.wikipedia.org/wiki/Density_functional_theory" target="_blank" rel="noopener noreferrer">Density functional theory</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/modelchemistries/DensityFunctionalTheory.html" target="_blank" rel="noopener noreferrer">Density Functional Theory</a>.</p>
+<p><strong>Basis set</strong> The mathematical functions used to describe molecular orbitals. Larger basis sets usually give better accuracy but take more time. Wiki: <a href="https://en.wikipedia.org/wiki/Basis_set_(chemistry)" target="_blank" rel="noopener noreferrer">Basis set in quantum chemistry</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/basisset.html" target="_blank" rel="noopener noreferrer">Basis sets</a>.</p>
+<p><strong>Dispersion correction</strong> An added correction for London dispersion interactions, which are important for crystal packing, pi-stacking, halogen bonding, and many weak contacts. Wiki: <a href="https://en.wikipedia.org/wiki/London_dispersion_force" target="_blank" rel="noopener noreferrer">London dispersion force</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/modelchemistries/dispersioncorrections.html" target="_blank" rel="noopener noreferrer">Dispersion corrections</a>.</p>
+<p><strong>Charge</strong> The total charge of the molecule or molecular assembly. A neutral molecule usually has charge <code>0</code>; a cation might be <code>+1</code>; an anion might be <code>-1</code>. Wiki: <a href="https://en.wikipedia.org/wiki/Electric_charge" target="_blank" rel="noopener noreferrer">Electric charge</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/coordinates.html" target="_blank" rel="noopener noreferrer">Input of coordinates</a>.</p>
+<p><strong>Multiplicity</strong> The spin state of the system. Closed-shell organic molecules are usually singlets with multiplicity <code>1</code>. Radicals and metal complexes may require other values. Wiki: <a href="https://en.wikipedia.org/wiki/Multiplicity_(chemistry)" target="_blank" rel="noopener noreferrer">Multiplicity in quantum chemistry</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/coordinates.html" target="_blank" rel="noopener noreferrer">Input of coordinates</a>.</p>
+<p><strong>SCF</strong> Self-consistent field procedure. This is the iterative process used to solve the electronic structure. If SCF does not converge, the calculation cannot reliably finish. Wiki: <a href="https://en.wikipedia.org/wiki/Self-consistent_field" target="_blank" rel="noopener noreferrer">Self-consistent field</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/scf.html" target="_blank" rel="noopener noreferrer">Self-Consistent-Field</a>.</p>
+<p><strong>Tight SCF</strong> A stricter SCF convergence setting. It asks ORCA to converge the electronic structure more carefully, which is often useful for cleaner final energies and post-processing. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/scf.html" target="_blank" rel="noopener noreferrer">SCF convergence settings</a>.</p>
+<p><strong>ORCA grid</strong> The numerical integration grid used in DFT calculations. A finer grid can improve accuracy and stability, but it increases calculation time. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/numericalintegration.html" target="_blank" rel="noopener noreferrer">Numerical integration grids</a>.</p>
+<p><strong>RIJCOSX</strong> An ORCA approximation that can speed up hybrid DFT calculations. For many routine calculations, it gives a useful speed improvement with very small practical loss of accuracy. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/RI.html" target="_blank" rel="noopener noreferrer">Resolution-of-the-Identity</a>.</p>
+<h3 id="solvent-and-environment">Solvent and Environment</h3>
+<p><strong>Implicit solvent</strong> A calculation where the solvent is represented as a continuous medium instead of explicit solvent molecules. This is useful when you want approximate solution effects without building many solvent molecules. Wiki: <a href="https://en.wikipedia.org/wiki/Implicit_solvation" target="_blank" rel="noopener noreferrer">Implicit solvation</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/solvationmodels.html" target="_blank" rel="noopener noreferrer">Implicit solvation</a>.</p>
+<p><strong>CPCM / PCM</strong> A common family of continuum solvent models. In ORCA, CPCM settings are often used as part of the solvent setup. Wiki: <a href="https://en.wikipedia.org/wiki/Polarizable_continuum_model" target="_blank" rel="noopener noreferrer">Polarizable continuum model</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/solvationmodels.html" target="_blank" rel="noopener noreferrer">Implicit solvation</a>.</p>
+<p><strong>SMD</strong> A solvation model commonly used for solution-phase DFT calculations. In the Builder, selecting a solvent for ORCA uses the SMD route through the <code>%cpcm</code> block when appropriate. Wiki: <a href="https://en.wikipedia.org/wiki/Solvent_model" target="_blank" rel="noopener noreferrer">Solvent model</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/solvationmodels.html" target="_blank" rel="noopener noreferrer">The SMD solvation model</a>.</p>
+<h3 id="orbitals-and-plots">Orbitals and Plots</h3>
+<p><strong>HOMO</strong> Highest occupied molecular orbital. It is the highest-energy orbital that contains electrons. Wiki: <a href="https://en.wikipedia.org/wiki/HOMO_and_LUMO" target="_blank" rel="noopener noreferrer">HOMO/LUMO</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/utilitiesvisualization/plots.html" target="_blank" rel="noopener noreferrer">Orbital and density plots</a>.</p>
+<p><strong>LUMO</strong> Lowest unoccupied molecular orbital. It is the lowest-energy orbital that is empty in the ground-state electron configuration. Wiki: <a href="https://en.wikipedia.org/wiki/HOMO_and_LUMO" target="_blank" rel="noopener noreferrer">HOMO/LUMO</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/utilitiesvisualization/plots.html" target="_blank" rel="noopener noreferrer">Orbital and density plots</a>.</p>
+<p><strong>HOMO-LUMO gap</strong> The energy difference between the HOMO and LUMO. It is often used as a rough descriptor of electronic softness, reactivity, or optical/electronic behavior, but it should not be overinterpreted alone. Wiki: <a href="https://en.wikipedia.org/wiki/HOMO_and_LUMO" target="_blank" rel="noopener noreferrer">HOMO/LUMO</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/utilitiesvisualization/plots.html" target="_blank" rel="noopener noreferrer">Orbital and density plots</a>.</p>
+<p><strong>ESP / MEP</strong> Electrostatic potential, also called molecular electrostatic potential. It helps visualize electron-rich and electron-poor regions on a molecular surface. This is useful for discussing hydrogen bonding, halogen bonding, electrophilic/nucleophilic regions, and molecular recognition. Wiki: <a href="https://en.wikipedia.org/wiki/Electric_potential" target="_blank" rel="noopener noreferrer">Electric potential</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/tutorials/prop/esp.html" target="_blank" rel="noopener noreferrer">Electrostatic potentials</a>.</p>
+<p><strong>Electron-density surface</strong> A molecular surface defined by a chosen electron-density value. Wiki: <a href="https://en.wikipedia.org/wiki/Electron_density" target="_blank" rel="noopener noreferrer">Electron density</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/utilitiesvisualization/plots.html" target="_blank" rel="noopener noreferrer">Orbital and density plots</a>.</p>
+<p><strong>Extrema plotting</strong> Marking local minima and maxima of the electrostatic potential. These points can help identify likely attractive or repulsive regions around a molecule.</p>
+<h3 id="nci-analysis">NCI Analysis</h3>
+<p><strong>NCI</strong> Noncovalent interaction analysis. It helps visualize weak interactions such as hydrogen bonds, halogen bonds, pi-stacking, dispersion contacts, and steric repulsion. Wiki: <a href="https://en.wikipedia.org/wiki/Non-covalent_interactions_index" target="_blank" rel="noopener noreferrer">Non-covalent interactions index</a>.</p>
+<p><strong>RDG</strong> Reduced density gradient. In NCI plotting, an RDG isosurface is colored by a density-related quantity to show attractive, weak, and repulsive regions. Wiki: <a href="https://en.wikipedia.org/wiki/Non-covalent_interactions_index" target="_blank" rel="noopener noreferrer">Non-covalent interactions index</a>.</p>
+<p><strong>sign(lambda2)rho</strong> A common NCI coloring quantity. Negative values are usually associated with attractive interactions, values near zero with weak van der Waals contacts, and positive values with steric repulsion. Interpret the colors together with the structure and chemical context. Wiki: <a href="https://en.wikipedia.org/wiki/Non-covalent_interactions_index" target="_blank" rel="noopener noreferrer">Non-covalent interactions index</a>.</p>
+<h3 id="qtaim-analysis">QTAIM Analysis</h3>
+<p><strong>QTAIM</strong> Quantum Theory of Atoms in Molecules. It analyzes the topology of the electron density and is often used to discuss bonding, bond paths, and critical points. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/utilitiesvisualization/index_utilitiesvisualization.html" target="_blank" rel="noopener noreferrer">Utility programs</a>.</p>
+<p><strong>Critical point</strong> A point in the electron density where the gradient is zero. Different kinds of critical points correspond to nuclei, bonds, rings, or cages. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
+<p><strong>BCP</strong> Bond critical point. In QTAIM, a BCP is often discussed in connection with a bond path between atoms. Its presence should be interpreted chemically, not treated as automatic proof of a conventional bond. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
+<p><strong>RCP and CCP</strong> Ring critical point and cage critical point. These appear in ring-like or cage-like topological features of the electron density. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
+<p><strong>Bond path</strong> A path through the electron density connecting atoms through a bond critical point. Bond paths are useful for visual discussion of QTAIM results. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
+<h3 id="dimer-and-interaction-energy-terms">Dimer and Interaction-Energy Terms</h3>
+<p><strong>Dimer</strong> A pair of molecules or molecular fragments treated together in one calculation. In crystal-engineering work, this is often used to study a contact or molecular pair from a crystal structure. Wiki: <a href="https://en.wikipedia.org/wiki/Dimer_(chemistry)" target="_blank" rel="noopener noreferrer">Dimer</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/counterpoise.html" target="_blank" rel="noopener noreferrer">Counterpoise corrections</a>.</p>
+<p><strong>Fragment A / Fragment B</strong> The two parts of a dimer. Correct fragment assignment matters because interaction energies and counterpoise correction depend on which atoms belong to each fragment. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/fragmentation.html" target="_blank" rel="noopener noreferrer">Fragment specification</a>.</p>
+<p><strong>Interaction energy</strong> The energy difference between the dimer and the separated fragments, usually computed to estimate how strongly two fragments interact. Wiki: <a href="https://en.wikipedia.org/wiki/Interaction_energy" target="_blank" rel="noopener noreferrer">Interaction energy</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/counterpoise.html" target="_blank" rel="noopener noreferrer">Counterpoise corrections</a>.</p>
+<p><strong>Binding energy</strong> Often used similarly to interaction energy, but the exact meaning depends on whether geometry relaxation, thermal terms, and basis-set corrections are included. Always check what definition is being used. Wiki: <a href="https://en.wikipedia.org/wiki/Binding_energy" target="_blank" rel="noopener noreferrer">Binding energy</a>.</p>
+<p><strong>BSSE</strong> Basis-set superposition error. It occurs when fragments in a dimer artificially benefit from each other&#x27;s basis functions, making the interaction look too strong. Wiki: <a href="https://en.wikipedia.org/wiki/Basis_set_superposition_error" target="_blank" rel="noopener noreferrer">Basis set superposition error</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/counterpoise.html" target="_blank" rel="noopener noreferrer">Counterpoise corrections</a>.</p>
+<p><strong>Counterpoise correction</strong> A correction used to estimate and reduce BSSE in interaction-energy calculations. Wiki: <a href="https://en.wikipedia.org/wiki/Basis_set_superposition_error" target="_blank" rel="noopener noreferrer">Basis set superposition error</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/counterpoise.html" target="_blank" rel="noopener noreferrer">Counterpoise corrections</a>.</p>
+<p><strong>Ghost atoms / ghost basis</strong> Basis functions placed on atoms that are not actually present as nuclei/electrons in a fragment calculation. They are used in counterpoise correction. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/essentialelements/counterpoise.html" target="_blank" rel="noopener noreferrer">Counterpoise corrections</a>.</p>
+<p><strong>Relaxation energy</strong> The energy change associated with allowing a fragment or complex to relax from one geometry to another. It helps distinguish frozen-geometry interaction from geometry-relaxed binding.</p>
+<p><strong>Delta H and Delta G</strong> Changes in enthalpy and Gibbs free energy. These require thermochemical information from frequency calculations and are more expensive than a simple electronic interaction energy. Wiki: <a href="https://en.wikipedia.org/wiki/Enthalpy" target="_blank" rel="noopener noreferrer">Enthalpy</a> and <a href="https://en.wikipedia.org/wiki/Gibbs_free_energy" target="_blank" rel="noopener noreferrer">Gibbs free energy</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/structurereactivity/frequencies.html" target="_blank" rel="noopener noreferrer">Vibrational frequencies</a>.</p>
+<h2 id="examples-and-benchmark-data">Examples and Benchmark Data</h2>
+<p>The <code>examples/</code> folder may include the S22 benchmark dataset for training, testing, and evaluation of CrystEngKit workflows. The S22 data are provided as reference examples, not as newly generated CrystEngKit results.</p>
+<p>When using S22 or other BEGDB-derived benchmark data, cite both the original paper(s) attached to the respective BEGDB record and the BEGDB database paper itself<sup><a href="#ref-begdb">begdb</a></sup>.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="orca-does-not-start">ORCA does not start</h3>
+<p>Check:</p>
+<ul>
+<li><code>Settings</code> -&gt; ORCA executable path</li>
+<li>whether <code>orca</code> / <code>orca.exe</code> exists and is accessible</li>
+</ul>
+<h3 id="homo-lumo-button-does-not-work">HOMO-LUMO button does not work</h3>
+<p>Check:</p>
+<ul>
+<li>that a valid ORCA output exists</li>
+<li>that the HOMO-LUMO script path in <code>Settings</code> is correct</li>
+</ul>
+<p>For MO surface images, also check:</p>
+<ul>
+<li>that the matching <code>.gbw</code> file is next to the ORCA <code>.out</code> file</li>
+<li>that <code>orca_plot</code> is available from the ORCA installation</li>
+<li>that <code>numpy</code>, <code>pyvista</code>, and <code>Pillow</code> are installed</li>
+</ul>
+<h3 id="esp-map-does-not-work">ESP map does not work</h3>
+<p>Check:</p>
+<ul>
+<li>that the ORCA run produced a usable <code>.wfn</code>, <code>.wfx</code>, or <code>.fchk</code> file</li>
+<li>that <code>orca_2aim</code> and Multiwfn are available</li>
+<li>that the ESP script path and Python command are correct</li>
+</ul>
+<h3 id="nci-plot-does-not-work">NCI plot does not work</h3>
+<p>Check:</p>
+<ul>
+<li>that the ORCA run produced a usable <code>.wfn</code> or <code>.wfx</code> file</li>
+<li>that Multiwfn is available and selected in the NCI Plotter</li>
+<li>that the NCI Plotter script path and Python command are correct</li>
+<li>that the Multiwfn command template matches your installed Multiwfn version</li>
+</ul>
+<h3 id="qtaim-cp-does-not-work">QTAIM CP does not work</h3>
+<p>Check:</p>
+<ul>
+<li>that the ORCA run produced a usable <code>.wfn</code> or <code>.wfx</code> file</li>
+<li>that Multiwfn is available and selected in the QTAIM Critical Points Viewer</li>
+<li>that the QTAIM CP script path and Python 3.9+ command are correct in <code>Settings</code></li>
+<li>that Multiwfn is able to complete the QTAIM critical-point search for your structure</li>
+<li>that the selected file is from a completed calculation, not a failed or unfinished job</li>
+</ul>
+<h3 id="structure-preview-does-not-open">Structure preview does not open</h3>
+<p>Check:</p>
+<ul>
+<li><code>numpy</code></li>
+<li><code>pyvista</code></li>
+<li><code>matplotlib</code></li>
+<li><code>periodictable</code></li>
+</ul>
+<h3 id="interaction-workflow-finishes-partially">Interaction workflow finishes partially</h3>
+<p>This can happen when:</p>
+<ul>
+<li>frozen interaction jobs succeed</li>
+<li>but a later relaxed or thermodynamic follow-up job fails</li>
+</ul>
+<p>In that case, the summary should still preserve the successful interaction terms and report a crash note.</p>
+      </article>
+      <section class="references"><h2 id="references">References</h2><ol><li id="ref-csd"><span class="ref-key">[csd]</span> C. R. Groom, I. J. Bruno, M. P. Lightfoot and S. C. Ward, <em>The Cambridge Structural Database</em>, Acta Cryst. B, 2016, 72, 171–179. DOI: <a href="https://doi.org/10.1107/S2052520616003954" target="_blank" rel="noopener noreferrer">10.1107/S2052520616003954</a></li>
+<li id="ref-orca"><span class="ref-key">[orca]</span> Neese, F.; Wennmohs, F.; Becker, U.; Riplinger, C. The ORCA quantum chemistry program package. <em>J. Chem. Phys.</em> <strong>2020</strong>, <em>152</em>, 224108. https://doi.org/10.1063/5.0004608; Neese, F. Software Update: The ORCA Program System—Version 6.0. <em>WIREs Comput. Mol. Sci.</em> <strong>2025</strong>, <em>15</em>, e70019. https://doi.org/10.1002/wcms.70019</li>
+<li id="ref-orca-site"><span class="ref-key">[orca-site]</span> Official ORCA / FACCTs site: https://www.faccts.de/orca/ ; ORCA forum and downloads: https://orcaforum.kofo.mpg.de/</li>
+<li id="ref-gaussian"><span class="ref-key">[gaussian]</span> Frisch, M. J.; Trucks, G. W.; Schlegel, H. B.; Scuseria, G. E.; Robb, M. A.; Cheeseman, J. R.; Scalmani, G.; Barone, V.; Petersson, G. A.; Nakatsuji, H.; et al. <em>Gaussian 16</em>, Revision C.01; Gaussian, Inc.: Wallingford, CT, 2016. https://gaussian.com/citation/</li>
+<li id="ref-multiwfn"><span class="ref-key">[multiwfn]</span> Lu, T.; Chen, F. Multiwfn: A multifunctional wavefunction analyzer. <em>J. Comput. Chem.</em> <strong>2012</strong>, <em>33</em>, 580–592. https://doi.org/10.1002/jcc.22885</li>
+<li id="ref-multiwfn-site"><span class="ref-key">[multiwfn-site]</span> Official Multiwfn site: http://sobereva.com/multiwfn</li>
+<li id="ref-esp"><span class="ref-key">[esp]</span> Politzer, P.; Murray, J. S. The fundamental nature and role of the electrostatic potential in atoms and molecules. <em>Theor. Chem. Acc.</em> <strong>2002</strong>, <em>108</em>, 134–142. https://doi.org/10.1007/s00214-002-0363-9; Murray, J. S.; Politzer, P. The electrostatic potential: an overview. <em>WIREs Comput. Mol. Sci.</em> <strong>2011</strong>, <em>1</em>, 153–163. https://doi.org/10.1002/wcms.19</li>
+<li id="ref-frontier-orbitals"><span class="ref-key">[frontier-orbitals]</span> Fukui, K. Role of frontier orbitals in chemical reactions. <em>Science</em> <strong>1982</strong>, <em>218</em>, 747–754. https://doi.org/10.1126/science.218.4574.747</li>
+<li id="ref-nci"><span class="ref-key">[nci]</span> Johnson, E. R.; Keinan, S.; Mori-Sánchez, P.; Contreras-García, J.; Cohen, A. J.; Yang, W. Revealing noncovalent interactions. <em>J. Am. Chem. Soc.</em> <strong>2010</strong>, <em>132</em>, 6498–6506. https://doi.org/10.1021/ja100936w; Contreras-García, J.; Johnson, E. R.; Keinan, S.; Chaudret, R.; Piquemal, J.-P.; Beratan, D. N.; Yang, W. NCIPLOT: A program for plotting noncovalent interaction regions. <em>J. Chem. Theory Comput.</em> <strong>2011</strong>, <em>7</em>, 625–632. https://doi.org/10.1021/ct100641a</li>
+<li id="ref-qtaim"><span class="ref-key">[qtaim]</span> Bader, R. F. W. A quantum theory of molecular structure and its applications. <em>Chem. Rev.</em> <strong>1991</strong>, <em>91</em>, 893–928. https://doi.org/10.1021/cr00005a013; Bader, R. F. W. <em>Atoms in Molecules: A Quantum Theory</em>; Oxford University Press: Oxford, 1990.</li>
+<li id="ref-pcm"><span class="ref-key">[pcm]</span> Cossi, M.; Rega, N.; Scalmani, G.; Barone, V. Energies, structures, and electronic properties of molecules in solution with the C-PCM solvation model. <em>J. Comput. Chem.</em> <strong>2003</strong>, <em>24</em>, 669–681. https://doi.org/10.1002/jcc.10189; Tomasi, J.; Mennucci, B.; Cammi, R. Quantum mechanical continuum solvation models. <em>Chem. Rev.</em> <strong>2005</strong>, <em>105</em>, 2999–3093. https://doi.org/10.1021/cr9904009</li>
+<li id="ref-smd"><span class="ref-key">[smd]</span> Marenich, A. V.; Cramer, C. J.; Truhlar, D. G. Universal solvation model based on solute electron density and on a continuum model of the solvent defined by the bulk dielectric constant and atomic surface tensions. <em>J. Phys. Chem. B</em> <strong>2009</strong>, <em>113</em>, 6378–6396. https://doi.org/10.1021/jp810292n</li>
+<li id="ref-dft"><span class="ref-key">[dft]</span> Hohenberg, P.; Kohn, W. Inhomogeneous electron gas. <em>Phys. Rev.</em> <strong>1964</strong>, <em>136</em>, B864–B871. https://doi.org/10.1103/PhysRev.136.B864; Kohn, W.; Sham, L. J. Self-consistent equations including exchange and correlation effects. <em>Phys. Rev.</em> <strong>1965</strong>, <em>140</em>, A1133–A1138. https://doi.org/10.1103/PhysRev.140.A1133</li>
+<li id="ref-basis-sets"><span class="ref-key">[basis-sets]</span> Weigend, F.; Ahlrichs, R. Balanced basis sets of split valence, triple zeta valence and quadruple zeta valence quality for H to Rn: Design and assessment of accuracy. <em>Phys. Chem. Chem. Phys.</em> <strong>2005</strong>, <em>7</em>, 3297–3305. https://doi.org/10.1039/B508541A</li>
+<li id="ref-dispersion"><span class="ref-key">[dispersion]</span> Grimme, S.; Antony, J.; Ehrlich, S.; Krieg, H. A consistent and accurate ab initio parametrization of density functional dispersion correction (DFT-D) for the 94 elements H–Pu. <em>J. Chem. Phys.</em> <strong>2010</strong>, <em>132</em>, 154104. https://doi.org/10.1063/1.3382344; Grimme, S.; Ehrlich, S.; Goerigk, L. Effect of the damping function in dispersion corrected density functional theory. <em>J. Comput. Chem.</em> <strong>2011</strong>, <em>32</em>, 1456–1465. https://doi.org/10.1002/jcc.21759; Caldeweyher, E.; Ehlert, S.; Hansen, A.; Neugebauer, H.; Spicher, S.; Bannwarth, C.; Grimme, S. A generally applicable atomic-charge dependent London dispersion correction. <em>J. Chem. Phys.</em> <strong>2019</strong>, <em>150</em>, 154122. https://doi.org/10.1063/1.5090222</li>
+<li id="ref-orca-runtypes"><span class="ref-key">[orca-runtypes]</span> Neese, F. <em>ORCA Manual</em>, Release 6.1; FACCTs GmbH, 2026. https://www.faccts.de/docs/orca/6.1/manual/</li>
+<li id="ref-tddft"><span class="ref-key">[tddft]</span> Runge, E.; Gross, E. K. U. Density-functional theory for time-dependent systems. <em>Phys. Rev. Lett.</em> <strong>1984</strong>, <em>52</em>, 997–1000. https://doi.org/10.1103/PhysRevLett.52.997</li>
+<li id="ref-scf"><span class="ref-key">[scf]</span> Roothaan, C. C. J. New developments in molecular orbital theory. <em>Rev. Mod. Phys.</em> <strong>1951</strong>, <em>23</em>, 69–89. https://doi.org/10.1103/RevModPhys.23.69; Roothaan, C. C. J. Self-consistent field theory for open shells of electronic systems. <em>Rev. Mod. Phys.</em> <strong>1960</strong>, <em>32</em>, 179–185. https://doi.org/10.1103/RevModPhys.32.179</li>
+<li id="ref-rijcosx"><span class="ref-key">[rijcosx]</span> Izsák, R.; Neese, F. An overlap fitted chain of spheres exchange method. <em>J. Chem. Phys.</em> <strong>2011</strong>, <em>135</em>, 144105. https://doi.org/10.1063/1.3646921; Helmich-Paris, B.; de Souza, B.; Neese, F.; Izsák, R. An improved chain of spheres for exchange algorithm. <em>J. Chem. Phys.</em> <strong>2021</strong>, <em>155</em>, 104109. https://doi.org/10.1063/5.0058766</li>
+<li id="ref-counterpoise"><span class="ref-key">[counterpoise]</span> Boys, S. F.; Bernardi, F. The calculation of small molecular interactions by the differences of separate total energies. Some procedures with reduced errors. <em>Mol. Phys.</em> <strong>1970</strong>, <em>19</em>, 553–566. https://doi.org/10.1080/00268977000101561</li>
+<li id="ref-begdb"><span class="ref-key">[begdb]</span> Řezáč, J.; Jurečka, P.; Riley, K. E.; Černý, J.; Valdes, H.; Pluháčková, K.; Berka, K.; Řezáč, T.; Pitoňák, M.; Vondrášek, J.; Hobza, P. <em>Collect. Czech. Chem. Commun.</em> <strong>2008</strong>, <em>73</em>, 1261-1270. http://dx.doi.org/10.1135/cccc20081261 ; http://cccc.uochb.cas.cz/73/10/1261/</li></ol></section>
+      <footer class="copyright">(C) Yury Torubaev. 2026</footer>
+    </main>
+  </div>
+  <script>
+    function revealHashTarget() {
+      const params = new URLSearchParams(location.search);
+      const rawId = location.hash
+        ? decodeURIComponent(location.hash.slice(1))
+        : params.get("section");
+      if (!rawId) return;
+      const target = document.getElementById(rawId);
+      if (!target) return;
+      const navLinks = Array.from(document.querySelectorAll("nav a"));
+      const navLink = navLinks.find((link) => link.getAttribute("href") === `#${rawId}`);
+      if (navLink) {
+        const group = navLink.closest("details");
+        if (group) group.open = true;
+      }
+      const y = target.getBoundingClientRect().top + window.pageYOffset - 8;
+      window.scrollTo({ top: Math.max(0, y), behavior: "auto" });
+    }
+
+    function settleHashTarget() {
+      revealHashTarget();
+      [50, 150, 350, 800].forEach((delay) => setTimeout(revealHashTarget, delay));
+    }
+
+    document.querySelectorAll(".copy-code").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const code = button.parentElement.querySelector("code").innerText;
+        try {
+          await navigator.clipboard.writeText(code);
+          button.textContent = "Copied";
+          setTimeout(() => button.textContent = "Copy", 1200);
+        } catch (error) {
+          const area = document.createElement("textarea");
+          area.value = code;
+          document.body.appendChild(area);
+          area.select();
+          document.execCommand("copy");
+          area.remove();
+          button.textContent = "Copied";
+          setTimeout(() => button.textContent = "Copy", 1200);
+        }
+      });
+    });
+    window.addEventListener("hashchange", settleHashTarget);
+    window.addEventListener("DOMContentLoaded", settleHashTarget);
+    window.addEventListener("load", settleHashTarget);
+  </script>
+</body>
+</html>
