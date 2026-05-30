@@ -2,7 +2,7 @@
 
 <img title="" src="images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="" width="207"> <img title="" src="images/wiki/ZfK_C2H2I2_COVER.png" alt="" width="203"> <img title="" src="images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="" width="204">
 
-*ESP maps, NCI plots, BCP/bonding paths, HOMO-LUMO shapes are not only the illustarions of your work but also a good idea for the journal cover art*.
+*ESP maps, NCI plots, BCP/bonding paths, and HOMO-LUMO shapes are not only illustrations of your work but also good ideas for journal cover art*.
 
 ## Table of Contents
 
@@ -26,11 +26,11 @@
 
 ## Introduction
 
-CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualisation in supramolecular chemistry and crystal engineering. It helps the experimantalist researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.
+CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.
 
 Typical input formats are `.xyz`, existing ORCA `.inp` files, and `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd].
 
-The suite provides one-click automation and publication-quality visualization of intermolecular energy computations[^counterpoise], Molecular Electrostatic Potential maps (ESP)[^esp], HOMO–LUMO diagrams[^frontier-orbitals], ORCA molecular-orbital surface images, NCI plots[^nci], QTAIM critical-point plots[^qtaim], NCI/QTAIM overlay figures, and bond-path images
+The suite provides one-click automation and publication-quality visualization of intermolecular energy computations[^counterpoise], molecular electrostatic potential maps (ESP)[^esp], HOMO-LUMO diagrams[^frontier-orbitals], ORCA molecular-orbital surface images, NCI plots[^nci], QTAIM critical-point plots[^qtaim], NCI/QTAIM overlay figures, and bond-path images.
 
 CrystEngKit is built around widely used, freely available academic/freeware programs. In the standard workflow, ORCA[^orca-site] is used for quantum-chemical calculations, and Multiwfn[^multiwfn-site] is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.
 
@@ -43,8 +43,8 @@ The suite is based on the **ORCA Input Builder**[^orca], which can:
 - read molecular structures directly from `.cif` and `.xyz` files.
 - generate ORCA input files for isolated molecules and bimolecular associates.
 - run and monitor ORCA jobs directly from the GUI.
-- generate manuscript-ready computation summaries for experimental part /supplimentary info 
-- launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations / visualizations.
+- generate manuscript-ready computation summaries for experimental sections and supporting information
+- launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.
 
 The repository also includes five companion tools, which can be used as part of a workflow or independently as standalone applications:
 
@@ -114,7 +114,7 @@ Run:
 python orca_input.py
 ```
 
-Or double-click the orca_input.py file
+Or double-click the `orca_input.py` file.
 
 ### HOMO-LUMO Plotter
 
@@ -174,7 +174,7 @@ The Orca Input Builder is the main entry point.
 - runs ORCA directly
 - shows live ORCA output in the GUI
 - creates a manuscript-ready computation summary after successful runs
-- launches HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations / visualizations
+- launches HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations
 - supports dimer interaction-energy workflows
 
 ### Main window structure

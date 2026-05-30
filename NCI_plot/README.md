@@ -46,7 +46,7 @@ Do not use:
 - `.out`
 - `.log`
 
-The `.out` or `.log` file is the text report from the calculation. It is not enough for an NCI surface. The NCI Plotter needs the wavefunction file because that file contains the electron-density information needed for the plot.
+The `.out` or `.log` file is the text report from the calculation. It does not contain enough information for an NCI surface. The NCI Plotter needs the wavefunction file because that file contains the electron-density information needed for the plot.
 
 ## Starting the NCI Plotter
 
@@ -153,7 +153,7 @@ Try:
 
 Try a clearer blue-white-red style color map and use a symmetric color range around zero. Keep the same settings when comparing several structures.
 
-## Good To Know
+## Good to Know
 
 An NCI plot is a visual interpretation of electron-density features. It is most useful when combined with:
 

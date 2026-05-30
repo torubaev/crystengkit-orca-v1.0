@@ -272,9 +272,9 @@
       <article>
         <h1 id="crystengkit-from-cif-files-to-esp-nci-and-qtaim-plots-in-a-few-clicks-a-practical-suite-for-supramolecular-chemistry-and-crystal-engineering">CrystEngKit: From CIF files to ESP, NCI, and QTAIM plots in a few clicks — a practical suite for supramolecular chemistry and crystal engineering.</h1>
 <figure class="image-row"><img src="../images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="" title="" width="207"> <img src="../images/wiki/ZfK_C2H2I2_COVER.png" alt="" title="" width="203"> <img src="../images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="" title="" width="204"></figure>
-<p><em>ESP maps, NCI plots, BCP/bonding paths, HOMO-LUMO shapes are not only the illustarions of your work but also a good idea for the journal cover art</em>.</p>
+<p><em>ESP maps, NCI plots, BCP/bonding paths, and HOMO-LUMO shapes are not only illustrations of your work but also good ideas for journal cover art</em>.</p>
 <h2 id="overview">Overview</h2>
-<p>CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualisation in supramolecular chemistry and crystal engineering. It helps the experimantalist researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.</p>
+<p>CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.</p>
 <p>Typical input formats are <code>.xyz</code>, existing ORCA <code>.inp</code> files, and <code>.cif</code> files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)<sup><a href="#ref-csd">csd</a></sup>.</p>
 <p>The suite is built around widely used, freely available academic/freeware programs. ORCA<sup><a href="#ref-orca-site">orca-site</a></sup> is used for quantum-chemical calculations, and Multiwfn<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup> is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.</p>
 <p>CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.</p>
@@ -284,8 +284,8 @@
 <li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, and ORCA <code>.inp</code> files</li>
 <li>prepare ORCA and Gaussian<sup><a href="#ref-gaussian">gaussian</a></sup> input files</li>
 <li>run ORCA and show live output</li>
-<li>generate manuscript-ready computation summaries for experimental part /supplimentary info</li>
-<li>launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations / visualizations.</li>
+<li>generate manuscript-ready computation summaries for experimental sections and supporting information</li>
+<li>launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.</li>
 </ul>
 <h2 id="installation-and-requirements">Installation and Requirements</h2>
 <p>For most users, start with the provided installer/checker. It checks the software already present on your computer, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.</p>
@@ -308,12 +308,12 @@
 <h2 id="starting-the-suite">Starting the Suite</h2>
 <p>Launch the main ORCA Builder with:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python orca_input.py</code></pre></div>
-<p>Or double-click the orca_input.py file</p>
+<p>Or double-click the <code>orca_input.py</code> file.</p>
 <h2 id="tools">Tools</h2>
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
 <figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
-<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular  interaction jobs.</p>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs.</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt=""></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
@@ -344,7 +344,7 @@
 </ol>
 <figure><img src="../images/wiki/orca-input_viewer_1.png" alt=""></figure>
 <ol start="3">
-<li>Choose the calculation setup: functional, basis set, dispersion correction solvent (or gas phase - if no solvent was chosen or entered), charge, and multiplicity.</li>
+<li>Choose the calculation setup: functional, basis set, dispersion correction, solvent (or gas phase if no solvent is chosen or entered), charge, and multiplicity.</li>
 </ol>
 <ol start="4">
 <li>Choose the target calculation, such as single-point energy, optimization, frequencies, ESP package, TD-DFT, NMR, or dimer interaction energy.</li>
@@ -364,7 +364,7 @@
 <li><code>NCI plot</code> for RDG / sign(lambda2)rho noncovalent-interaction surfaces</li>
 <li><code>QTAIM CP</code> for critical-point inspection</li>
 </ul>
-<p>ESP, NCI, and QTAIM workflows require real wavefunction files such as <code>.wfn</code> or <code>.wfx</code>. In CrystEngKit they are automatically generated by default, after ORCA job is done.</p>
+<p>ESP, NCI, and QTAIM workflows require real wavefunction files such as <code>.wfn</code> or <code>.wfx</code>. In CrystEngKit they are generated automatically by default after the ORCA job finishes.</p>
 <p>MO surface rendering requires a finished ORCA <code>.out</code> file, its matching <code>.gbw</code> file, and <code>orca_plot</code> from the ORCA installation.</p>
 <p>For consistent MO surface figures, orient and zoom one saved contact-sheet tile, press <code>S</code> in the MO viewer to save it, then use <code>Use view for all</code> from that tile to regenerate the rest of the current contact sheet with the same view and scale.</p>
 <h3 id="dimer-interaction-energy">Dimer Interaction Energy</h3>
@@ -385,7 +385,7 @@
 <li>Choose whether to include relaxed binding analysis and thermodynamic terms.</li>
 </ol>
 <ol start="6">
-<li>Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE. CP-corrected) and Experimental part.</li>
+<li>Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.</li>
 </ol>
 <p>As a workflow sanity check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&amp;id=4&amp;state=show&amp;order=ASC&amp;by=name_m&amp;method=</p>
 <h3 id="solvent-calculations">Solvent Calculations</h3>
