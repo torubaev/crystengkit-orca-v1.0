@@ -62,7 +62,7 @@ _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?"
 APP_ROOT = Path(__file__).resolve().parents[1]
 HOMO_LUMO_ICON_PATH = APP_ROOT / "Orca_input" / "images" / "tr_homo_lumo_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
-GITHUB_URL = "https://github.com/torubaev/crystengkit-orca"
+GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: HOMO-LUMO Plotter"
 
 

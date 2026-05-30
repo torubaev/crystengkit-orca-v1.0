@@ -54,7 +54,7 @@ Multiwfnpath = DEFAULT_MULTIWFN_PATHS[0]
 APP_ROOT = Path(__file__).resolve().parents[1]
 ESP_ICON_PATH = APP_ROOT / "Orca_input" / "images" / "tr_ESP_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
-GITHUB_URL = "https://github.com/torubaev/crystengkit-orca"
+GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 ORIGINAL_VISMAP_URL = "https://github.com/aaan1s/VisMap"
 README_LINK_TEXT = "README section: ESP / VisMap"
 

@@ -38,7 +38,7 @@ DEFAULT_ESP_SCRIPT = APP_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
 DEFAULT_NCI_SCRIPT = APP_ROOT / "NCI_plot" / "nci_plotter.py"
 DEFAULT_QTAIM_SCRIPT = APP_ROOT / "qtaim-cp" / "qtaim.py"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
-GITHUB_URL = "https://github.com/torubaev/crystengkit-orca"
+GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: ORCA Input Builder"
 
 

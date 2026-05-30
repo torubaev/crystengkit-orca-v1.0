@@ -57,7 +57,7 @@ except Exception:
 APP_ROOT = Path(__file__).resolve().parents[1]
 QTAIM_ICON_PATH = APP_ROOT / "Orca_input" / "images" / "qtaim.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
-GITHUB_URL = "https://github.com/torubaev/crystengkit-orca"
+GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: QTAIM Critical Points Viewer"
 
 
