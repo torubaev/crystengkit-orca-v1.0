@@ -54,8 +54,9 @@ try:
 except Exception:
     pv = None
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-QTAIM_ICON_PATH = APP_ROOT / "Orca_input" / "images" / "qtaim.png"
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = TOOLS_ROOT.parent
+QTAIM_ICON_PATH = TOOLS_ROOT / "images" / "qtaim.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: QTAIM Critical Points Viewer"
@@ -3109,7 +3110,7 @@ class QTAIMGui(tk.Tk):
             self.show_exception("Could not save image", exc)
 
     def open_nci_qtaim_overlay(self) -> None:
-        overlay_script = APP_ROOT / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py"
+        overlay_script = TOOLS_ROOT / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py"
         command = [sys.executable, str(overlay_script)]
         self.save_current_graphics_settings()
 

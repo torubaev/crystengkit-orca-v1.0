@@ -265,6 +265,7 @@
 <a class="nav-link level-3" href="#qtaim-cp-does-not-work">QTAIM CP does not work</a>
 <a class="nav-link level-3" href="#structure-preview-does-not-open">Structure preview does not open</a>
 <a class="nav-link level-3" href="#interaction-workflow-finishes-partially">Interaction workflow finishes partially</a></div></details>
+<a class="nav-link level-2" href="#repository-contents">Repository contents</a>
         <a class="nav-link level-2" href="#references">References</a>
       </nav>
     </aside>
@@ -307,8 +308,8 @@
 <p><code>numpy</code> and <code>pyvista</code> are needed for structure preview and 3D plotting. <code>matplotlib</code> is used by the HOMO-LUMO energy diagram tool. <code>periodictable</code> supports the 3D NCI molecular viewer. <code>gemmi</code> is recommended for CIF handling. <code>Pillow</code> is used by the HOMO-LUMO MO surface workflow for saved images, thumbnails, and contact sheets.</p>
 <h2 id="starting-the-suite">Starting the Suite</h2>
 <p>Launch the main ORCA Builder with:</p>
-<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python orca_input.py</code></pre></div>
-<p>Or double-click the <code>orca_input.py</code> file.</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python tools/Orca_input/orca_input.py</code></pre></div>
+<p>Or double-click the <code>tools/Orca_input/orca_input.py</code> file.</p>
 <h2 id="tools">Tools</h2>
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
@@ -441,7 +442,7 @@
 <p><strong>Relaxation energy</strong> The energy change associated with allowing a fragment or complex to relax from one geometry to another. It helps distinguish frozen-geometry interaction from geometry-relaxed binding.</p>
 <p><strong>Delta H and Delta G</strong> Changes in enthalpy and Gibbs free energy. These require thermochemical information from frequency calculations and are more expensive than a simple electronic interaction energy. Wiki: <a href="https://en.wikipedia.org/wiki/Enthalpy" target="_blank" rel="noopener noreferrer">Enthalpy</a> and <a href="https://en.wikipedia.org/wiki/Gibbs_free_energy" target="_blank" rel="noopener noreferrer">Gibbs free energy</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/structurereactivity/frequencies.html" target="_blank" rel="noopener noreferrer">Vibrational frequencies</a>.</p>
 <h2 id="examples-and-benchmark-data">Examples and Benchmark Data</h2>
-<p>The root-level <code>S22_NCI_benchmark_set/</code> folder contains the S22 benchmark structures for training, testing, and evaluation of CrystEngKit calculations. The S22 data are provided as reference examples, not as newly generated CrystEngKit results. The <code>examples/</code> folder is currently left empty and reserved for future examples.</p>
+<p>The <code>benchmark_sets/S22_NCI_benchmark_set/</code> folder contains the S22 benchmark structures for training, testing, and evaluation of CrystEngKit calculations. The S22 data are provided as reference examples, not as newly generated CrystEngKit results. The <code>examples/</code> folder is currently left empty and reserved for future examples.</p>
 <p>When using S22 or other BEGDB-derived benchmark data, cite both the original paper(s) attached to the respective BEGDB record and the BEGDB database paper itself<sup><a href="#ref-begdb">begdb</a></sup>.</p>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <h3 id="orca-does-not-start">ORCA does not start</h3>
@@ -501,6 +502,25 @@
 <li>but a later relaxed or thermodynamic follow-up job fails</li>
 </ul>
 <p>In that case, the summary should still preserve the successful interaction terms and report a crash note.</p>
+<h2 id="repository-contents">Repository contents</h2>
+<p>Typical root structure:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>README.md
+LICENSE
+docs/
+images/
+install/
+examples/                       # reserved for future examples
+benchmark_sets/
+  S22_NCI_benchmark_set/
+tools/
+  images/                       # shared tool icons
+  Orca_input/
+  HOMO_LUMO/
+  VisMap_5.0/
+  NCI_plot/
+  NCI_QTAIM_overlay/
+  qtaim-cp/
+  shared/</code></pre></div>
       </article>
       <section class="references"><h2 id="references">References</h2><ol><li id="ref-csd"><span class="ref-key">[csd]</span> C. R. Groom, I. J. Bruno, M. P. Lightfoot and S. C. Ward, <em>The Cambridge Structural Database</em>, Acta Cryst. B, 2016, 72, 171–179. DOI: <a href="https://doi.org/10.1107/S2052520616003954" target="_blank" rel="noopener noreferrer">10.1107/S2052520616003954</a></li>
 <li id="ref-orca"><span class="ref-key">[orca]</span> Neese, F.; Wennmohs, F.; Becker, U.; Riplinger, C. The ORCA quantum chemistry program package. <em>J. Chem. Phys.</em> <strong>2020</strong>, <em>152</em>, 224108. https://doi.org/10.1063/5.0004608; Neese, F. Software Update: The ORCA Program System—Version 6.0. <em>WIREs Comput. Mol. Sci.</em> <strong>2025</strong>, <em>15</em>, e70019. https://doi.org/10.1002/wcms.70019</li>

@@ -18,8 +18,10 @@ __pycache__/
 *_NCI/
 *_ESP/
 
-# Local settings and generated artifacts
+# Local runtime settings and generated artifacts
+multiwfn_path_menu_probe.log
 orca_gaussian_builder_settings.json
+**/orca_gaussian_builder_settings.json
 .nci_plotter_config.json
 homo_lumo_gui_error.log
 installation_report.html
@@ -31,9 +33,9 @@ installation_report.html
 # examples/ is intentionally empty and reserved for future examples.
 examples/*
 
-# Keep only S22 NCI benchmark XYZ structures in the root-level benchmark folder.
-S22_NCI_benchmark_set/**
-!S22_NCI_benchmark_set/**/
-!S22_NCI_benchmark_set/**/*.xyz
+# Keep only S22 NCI benchmark XYZ structures in benchmark_sets/.
+benchmark_sets/**
+!benchmark_sets/**/
+!benchmark_sets/**/*.xyz
 
 # Images are usually generated outputs; keep documented examples explicitly if needed.

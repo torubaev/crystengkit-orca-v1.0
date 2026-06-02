@@ -58,8 +58,9 @@ except Exception as exc:
 
 
 CONFIG_FILE = Path.home() / ".nci_plotter_config.json"
-APP_ROOT = Path(__file__).resolve().parents[1]
-NCI_ICON_PATH = APP_ROOT / "Orca_input" / "images" / "tr_NCI_icon.png"
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = TOOLS_ROOT.parent
+NCI_ICON_PATH = TOOLS_ROOT / "images" / "tr_NCI_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: NCI Plotter"
@@ -1760,7 +1761,7 @@ class NCIPlotterApp:
             messagebox.showerror("Save failed", str(exc))
 
     def open_nci_qtaim_overlay(self) -> None:
-        overlay_script = Path(__file__).resolve().parents[1] / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py"
+        overlay_script = TOOLS_ROOT / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py"
         command = [sys.executable, str(overlay_script)]
 
         wavefunction = self.wavefunction_path.get().strip()

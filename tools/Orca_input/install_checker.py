@@ -133,10 +133,10 @@ def main():
     settings_file = Path(__file__).parent / "orca_gaussian_builder_settings.json"
     if not settings_file.exists():
         default_settings = {
-            "homo_lumo_script": "HOMO_LUMO/HOMO_LUMO_v2.py",
-            "esp_script": "VisMap_5.0/VisMap5.6_pyvista.py",
-            "nci_script": "NCI_plot/nci_plotter.py",
-            "qtaim_script": "qtaim-cp/qtaim.py",
+            "homo_lumo_script": "tools/HOMO_LUMO/HOMO_LUMO_v2.py",
+            "esp_script": "tools/VisMap_5.0/VisMap5.6_pyvista.py",
+            "nci_script": "tools/NCI_plot/nci_plotter.py",
+            "qtaim_script": "tools/qtaim-cp/qtaim.py",
             "python_executable": "",
             "esp_python_command": "",
             "nci_python_command": "",
@@ -147,7 +147,7 @@ def main():
         print(f"\n✓ Created default settings file: {settings_file}")
 
     print("\n=== Installation check complete ===")
-    print("Run the main scripts: python orca_input.py")
+    print("Run the main script: python tools/Orca_input/orca_input.py")
 
 if __name__ == "__main__":
     main()

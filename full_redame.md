@@ -111,17 +111,17 @@ pip install numpy pyvista matplotlib periodictable gemmi Pillow
 Run:
 
 ```bash
-python orca_input.py
+python tools/Orca_input/orca_input.py
 ```
 
-Or double-click the `orca_input.py` file.
+Or double-click the `tools/Orca_input/orca_input.py` file.
 
 ### HOMO-LUMO Plotter
 
 From the ORCA Input Builder, use the corresponding button, or run:
 
 ```bash
-python ../HOMO_LUMO/HOMO_LUMO_v2.py
+python tools/HOMO_LUMO/HOMO_LUMO_v2.py
 ```
 
 ### ESP / VisMap
@@ -129,7 +129,7 @@ python ../HOMO_LUMO/HOMO_LUMO_v2.py
 From the ORCA Input Builder, use the corresponding button, or run:
 
 ```bash
-python ../VisMap_5.0/VisMap5.6_pyvista.py
+python tools/VisMap_5.0/VisMap5.6_pyvista.py
 ```
 
 ### NCI Plotter
@@ -137,7 +137,7 @@ python ../VisMap_5.0/VisMap5.6_pyvista.py
 From the ORCA Input Builder, use the corresponding button, or run:
 
 ```bash
-python ../NCI_plot/nci_plotter.py
+python tools/NCI_plot/nci_plotter.py
 ```
 
 ### QTAIM Critical Points Viewer
@@ -145,7 +145,7 @@ python ../NCI_plot/nci_plotter.py
 From the ORCA Input Builder, use the corresponding button, or run:
 
 ```bash
-python ../../qtaim-cp/qtaim.py
+python tools/qtaim-cp/qtaim.py
 ```
 
 ### NCI + QTAIM Overlay
@@ -153,7 +153,7 @@ python ../../qtaim-cp/qtaim.py
 From the NCI Plotter, use `NCI + QTAIM overlay`, or run:
 
 ```bash
-python ../NCI_QTAIM_overlay/nci_qtaim_overlay.py
+python tools/NCI_QTAIM_overlay/nci_qtaim_overlay.py
 ```
 
 ## GUI functions and usage
@@ -753,24 +753,26 @@ In that case, the summary should still preserve the successful interaction terms
 
 ## Repository contents
 
-Typical structure:
+Typical root structure:
 
 ```text
-Orca_input/
-├─ orca_input.py
-├─ ORCA_Suite_User_Manual.md
-├─ images/
-│  ├─ tr_orca_icon.png
-│  ├─ tr_homo_lumo_icon.png
-│  ├─ tr_ESP_icon.png
-│  ├─ tr_NCI_icon.png
-│  ├─ tr_qtaim_icon.png
-│  └─ orca_builder.ico
-├─ ../HOMO_LUMO/HOMO_LUMO_v2.py
-├─ ../VisMap_5.0/VisMap5.6_pyvista.py
-├─ ../NCI_plot/nci_plotter.py
-├─ ../NCI_QTAIM_overlay/nci_qtaim_overlay.py
-└─ ../../qtaim-cp/qtaim.py
+README.md
+LICENSE
+docs/
+images/
+install/
+examples/                       # reserved for future examples
+benchmark_sets/
+  S22_NCI_benchmark_set/
+tools/
+  images/                       # shared tool icons
+  Orca_input/
+  HOMO_LUMO/
+  VisMap_5.0/
+  NCI_plot/
+  NCI_QTAIM_overlay/
+  qtaim-cp/
+  shared/
 ```
 
 ## Glossary
@@ -916,7 +918,7 @@ Changes in enthalpy and Gibbs free energy. These require thermochemical informat
 
 ## Examples and Benchmark Data
 
-The root-level `S22_NCI_benchmark_set/` folder contains the S22 benchmark structures for training, testing, and evaluation of CrystEngKit calculations. The S22 data are provided as reference examples, not as newly generated CrystEngKit results. The `examples/` folder is currently left empty and reserved for future examples.
+The `benchmark_sets/S22_NCI_benchmark_set/` folder contains the S22 benchmark structures for training, testing, and evaluation of CrystEngKit calculations. The S22 data are provided as reference examples, not as newly generated CrystEngKit results. The `examples/` folder is currently left empty and reserved for future examples.
 
 When using S22 or other BEGDB-derived benchmark data, cite both the original paper(s) attached to the respective BEGDB record and the BEGDB database paper itself[^begdb].
 

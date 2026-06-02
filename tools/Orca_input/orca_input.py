@@ -31,12 +31,13 @@ try:
 except Exception:
     gemmi = None
 
-APP_ROOT = Path(__file__).resolve().parents[1]
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = TOOLS_ROOT.parent
 LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
-DEFAULT_HOMO_LUMO_SCRIPT = APP_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
-DEFAULT_ESP_SCRIPT = APP_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
-DEFAULT_NCI_SCRIPT = APP_ROOT / "NCI_plot" / "nci_plotter.py"
-DEFAULT_QTAIM_SCRIPT = APP_ROOT / "qtaim-cp" / "qtaim.py"
+DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
+DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
+DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
+DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: ORCA Input Builder"
@@ -44,7 +45,7 @@ README_LINK_TEXT = "README section: ORCA Input Builder"
 
 def wiki_url() -> str:
     return GITHUB_URL + "#orca-input-builder"
-ICON_DIR = Path(__file__).with_name("images")
+ICON_DIR = TOOLS_ROOT / "images"
 ORCA_ICON_PATH = ICON_DIR / "tr_orca_icon.png"
 HOMO_LUMO_ICON_PATH = ICON_DIR / "tr_homo_lumo_icon.png"
 ESP_ICON_PATH = ICON_DIR / "tr_ESP_icon.png"
@@ -207,6 +208,15 @@ def resolve_app_path(value: object, default: Path) -> Path:
     if candidate.is_file():
         return candidate
 
+    legacy_candidate = TOOLS_ROOT / candidate.name if candidate.parent == APP_ROOT else None
+    if legacy_candidate and legacy_candidate.is_file():
+        return legacy_candidate
+
+    if not Path(raw).is_absolute():
+        legacy_tool_candidate = TOOLS_ROOT / Path(raw)
+        if legacy_tool_candidate.is_file():
+            return legacy_tool_candidate
+
     normalized = raw.replace("\\", "/")
     marker = "/crystengkit-orca/"
     if marker in normalized:
@@ -214,6 +224,14 @@ def resolve_app_path(value: object, default: Path) -> Path:
         candidate = APP_ROOT / Path(suffix)
         if candidate.is_file():
             return candidate
+
+    for tool_name in ("HOMO_LUMO", "VisMap_5.0", "NCI_plot", "NCI_QTAIM_overlay", "qtaim-cp"):
+        marker = f"/{tool_name}/"
+        if marker in normalized:
+            suffix = normalized.split(marker, 1)[1]
+            candidate = TOOLS_ROOT / tool_name / Path(suffix)
+            if candidate.is_file():
+                return candidate
 
     return default
 
@@ -2541,12 +2559,12 @@ class App(tk.Tk):
     def auto_locate_qtaim(self, silent: bool = False):
         candidates = [
             DEFAULT_QTAIM_SCRIPT,
-            APP_ROOT / "qtaim-cp" / "qtaim.py",
-            APP_ROOT / "qtaim-cp" / "qtaim_cp.py",
-            APP_ROOT / "qtaim-cp" / "qtaim-cp.py",
-            APP_ROOT.parent / "qtaim-cp" / "qtaim.py",
-            APP_ROOT.parent / "qtaim-cp" / "qtaim_cp.py",
-            APP_ROOT.parent / "qtaim-cp" / "qtaim-cp.py",
+            TOOLS_ROOT / "qtaim-cp" / "qtaim.py",
+            TOOLS_ROOT / "qtaim-cp" / "qtaim_cp.py",
+            TOOLS_ROOT / "qtaim-cp" / "qtaim-cp.py",
+            APP_ROOT / "tools" / "qtaim-cp" / "qtaim.py",
+            APP_ROOT / "tools" / "qtaim-cp" / "qtaim_cp.py",
+            APP_ROOT / "tools" / "qtaim-cp" / "qtaim-cp.py",
         ]
 
         found = None
@@ -2556,7 +2574,7 @@ class App(tk.Tk):
                 break
 
         if found is None:
-            for root in (APP_ROOT, APP_ROOT.parent):
+            for root in (TOOLS_ROOT, APP_ROOT):
                 try:
                     matches = sorted(
                         list(root.glob("**/qtaim.py")) + list(root.glob("**/qtaim_cp.py")),

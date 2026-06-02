@@ -39,13 +39,14 @@ except Exception as exc:
     raise RuntimeError("PyVista is required. Install with: pip install pyvista vtk") from exc
 
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-NCI_MODULE_PATH = APP_ROOT / "NCI_plot" / "nci_plotter.py"
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = TOOLS_ROOT.parent
+NCI_MODULE_PATH = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 QTAIM_GRAPHICS_SETTINGS_PATH = Path.home() / ".qtaim_graphics_settings.json"
 QTAIM_MODULE_CANDIDATES = [
-    APP_ROOT / "qtaim-cp" / "qtaim.py",
-    APP_ROOT / "qtaim-cp" / "qtaim_cp.py",
-    APP_ROOT.parent / "qtaim-cp" / "qtaim.py",
+    TOOLS_ROOT / "qtaim-cp" / "qtaim.py",
+    TOOLS_ROOT / "qtaim-cp" / "qtaim_cp.py",
+    APP_ROOT / "tools" / "qtaim-cp" / "qtaim.py",
 ]
 
 

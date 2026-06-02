@@ -59,8 +59,9 @@ LOGFILE = "homo_lumo_gui_error.log"
 
 _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?"
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-HOMO_LUMO_ICON_PATH = APP_ROOT / "Orca_input" / "images" / "tr_homo_lumo_icon.png"
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = TOOLS_ROOT.parent
+HOMO_LUMO_ICON_PATH = TOOLS_ROOT / "images" / "tr_homo_lumo_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: HOMO-LUMO Plotter"
@@ -698,7 +699,7 @@ def save_mo_metadata(meta_path: Path, metadata: Dict[str, Any]) -> None:
 
 
 def read_builder_orca_path() -> Optional[Path]:
-    settings_path = APP_ROOT / "Orca_input" / "orca_gaussian_builder_settings.json"
+    settings_path = TOOLS_ROOT / "Orca_input" / "orca_gaussian_builder_settings.json"
     if not settings_path.is_file():
         return None
     try:

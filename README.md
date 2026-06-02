@@ -77,10 +77,10 @@ pip install numpy pyvista matplotlib periodictable gemmi Pillow
 Launch the main ORCA Builder with:
 
 ```bash
-python orca_input.py
+python tools/Orca_input/orca_input.py
 ```
 
-Or double-click the `orca_input.py` file.
+Or double-click the `tools/Orca_input/orca_input.py` file.
 
 ## Tools
 
@@ -328,7 +328,7 @@ Changes in enthalpy and Gibbs free energy. These require thermochemical informat
 
 ## Examples and Benchmark Data
 
-The root-level `S22_NCI_benchmark_set/` folder contains the S22 benchmark structures for training, testing, and evaluation of CrystEngKit calculations. The S22 data are provided as reference examples, not as newly generated CrystEngKit results. The `examples/` folder is currently left empty and reserved for future examples.
+The `benchmark_sets/S22_NCI_benchmark_set/` folder contains the S22 benchmark structures for training, testing, and evaluation of CrystEngKit calculations. The S22 data are provided as reference examples, not as newly generated CrystEngKit results. The `examples/` folder is currently left empty and reserved for future examples.
 
 When using S22 or other BEGDB-derived benchmark data, cite both the original paper(s) attached to the respective BEGDB record and the BEGDB database paper itself[^begdb].
 
@@ -398,6 +398,30 @@ This can happen when:
 - but a later relaxed or thermodynamic follow-up job fails
 
 In that case, the summary should still preserve the successful interaction terms and report a crash note.
+
+## Repository contents
+
+Typical root structure:
+
+```text
+README.md
+LICENSE
+docs/
+images/
+install/
+examples/                       # reserved for future examples
+benchmark_sets/
+  S22_NCI_benchmark_set/
+tools/
+  images/                       # shared tool icons
+  Orca_input/
+  HOMO_LUMO/
+  VisMap_5.0/
+  NCI_plot/
+  NCI_QTAIM_overlay/
+  qtaim-cp/
+  shared/
+```
 
 ## References
 

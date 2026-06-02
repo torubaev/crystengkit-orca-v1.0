@@ -52,15 +52,15 @@ PACKAGE_IMPORT_NAMES = {
 }
 
 SETTINGS_FILENAME = "orca_gaussian_builder_settings.json"
-PROJECT_MAIN_SCRIPT = Path("Orca_input") / "orca_input.py"
-PROJECT_ICON = Path("Orca_input") / "images" / "orca_builder.ico"
+PROJECT_MAIN_SCRIPT = Path("tools") / "Orca_input" / "orca_input.py"
+PROJECT_ICON = Path("tools") / "images" / "orca_builder.ico"
 EXPECTED_PROJECT_ITEMS = [
     PROJECT_MAIN_SCRIPT,
-    Path("HOMO_LUMO") / "HOMO_LUMO_v2.py",
-    Path("VisMap_5.0") / "VisMap5.6_pyvista.py",
-    Path("NCI_plot") / "nci_plotter.py",
-    Path("NCI_QTAIM_overlay") / "nci_qtaim_overlay.py",
-    Path("qtaim-cp") / "qtaim.py",
+    Path("tools") / "HOMO_LUMO" / "HOMO_LUMO_v2.py",
+    Path("tools") / "VisMap_5.0" / "VisMap5.6_pyvista.py",
+    Path("tools") / "NCI_plot" / "nci_plotter.py",
+    Path("tools") / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py",
+    Path("tools") / "qtaim-cp" / "qtaim.py",
 ]
 
 OFFICIAL_LINKS = {
@@ -617,14 +617,14 @@ def check_external_software(project_root: Path) -> List[Dict[str, object]]:
 
 
 def ensure_settings_file(base_dir: Path) -> Dict[str, object]:
-    settings_file = base_dir / "Orca_input" / SETTINGS_FILENAME
+    settings_file = base_dir / "tools" / "Orca_input" / SETTINGS_FILENAME
     legacy_settings_file = base_dir / SETTINGS_FILENAME
 
     default_settings = {
-        "homo_lumo_script": "HOMO_LUMO/HOMO_LUMO_v2.py",
-        "esp_script": "VisMap_5.0/VisMap5.6_pyvista.py",
-        "nci_script": "NCI_plot/nci_plotter.py",
-        "qtaim_script": "qtaim-cp/qtaim.py",
+        "homo_lumo_script": "tools/HOMO_LUMO/HOMO_LUMO_v2.py",
+        "esp_script": "tools/VisMap_5.0/VisMap5.6_pyvista.py",
+        "nci_script": "tools/NCI_plot/nci_plotter.py",
+        "qtaim_script": "tools/qtaim-cp/qtaim.py",
         "python_executable": sys.executable,
         "esp_python_command": sys.executable,
         "nci_python_command": sys.executable,
