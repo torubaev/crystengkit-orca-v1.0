@@ -916,7 +916,7 @@ Changes in enthalpy and Gibbs free energy. These require thermochemical informat
 
 ## Examples and Benchmark Data
 
-The `examples/` folder may include the S22 benchmark dataset for training, testing, and evaluation of CrystEngKit workflows. The S22 data are provided as reference examples, not as newly generated CrystEngKit results.
+The root-level `S22_NCI_benchmark_set/` folder contains the S22 benchmark structures for training, testing, and evaluation of CrystEngKit calculations. The S22 data are provided as reference examples, not as newly generated CrystEngKit results. The `examples/` folder is currently left empty and reserved for future examples.
 
 When using S22 or other BEGDB-derived benchmark data, cite both the original paper(s) attached to the respective BEGDB record and the BEGDB database paper itself[^begdb].
 

@@ -1,0 +1,316 @@
+v<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CrystEngKit-ORCA</title>
+  <meta name="description" content="CrystEngKit-ORCA: practical GUI tools for ORCA and Multiwfn workflows in supramolecular chemistry and crystal engineering.">
+
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #11182d;
+      --text: #eef3ff;
+      --muted: #b9c4dd;
+      --accent: #7cc7ff;
+      --accent2: #a9f0d1;
+      --line: rgba(255,255,255,0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(124,199,255,0.22), transparent 34rem),
+        radial-gradient(circle at bottom right, rgba(169,240,209,0.16), transparent 30rem),
+        var(--bg);
+      line-height: 1.55;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 34px 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .links {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .links a {
+      text-decoration: none;
+    }
+
+    .hero {
+      padding: 78px 0 54px;
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 36px;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 0 0 18px;
+      font-size: clamp(38px, 6vw, 72px);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+    }
+
+    .subtitle {
+      font-size: clamp(18px, 2.2vw, 24px);
+      color: var(--muted);
+      max-width: 760px;
+      margin: 0 0 28px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 18px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.08);
+    }
+
+    .button.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #06111e;
+      border: 0;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.04));
+      border-radius: 28px;
+      padding: 26px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.24);
+    }
+
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      padding: 20px 0 58px;
+    }
+
+    .feature {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.055);
+      border-radius: 22px;
+      padding: 22px;
+      min-height: 190px;
+    }
+
+    .feature h3 {
+      margin: 0 0 10px;
+      font-size: 19px;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .section {
+      padding: 48px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .section h2 {
+      font-size: 30px;
+      margin: 0 0 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+
+    .step {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 20px;
+    }
+
+    .step code {
+      display: block;
+      white-space: pre-wrap;
+      color: #d7ecff;
+      background: #070b16;
+      border-radius: 14px;
+      padding: 14px;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    footer {
+      padding: 34px 0 46px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      font-size: 14px;
+    }
+
+    @media (max-width: 820px) {
+      .hero {
+        grid-template-columns: 1fr;
+        padding-top: 48px;
+      }
+
+      .grid,
+      .steps {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="wrap">
+      <nav>
+        <div class="brand">CrystEngKit-ORCA</div>
+        <div class="links">
+          <a href="https://github.com/torubaev/crystengkit-orca-v1.0">GitHub repository</a>
+          <a href="wiki.html">Documentation</a>
+          <a href="https://github.com/torubaev/crystengkit-orca-v1.0/blob/main/README.md">README</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="wrap hero">
+      <div>
+        <h1>Crystal-engineering computation tools around ORCA and Multiwfn.</h1>
+
+        <p class="subtitle">
+          A practical GUI suite for preparing ORCA/Gaussian input files, running ORCA calculations,
+          and generating ESP maps, NCI plots, QTAIM critical-point views, HOMO-LUMO diagrams,
+          and intermolecular-interaction summaries.
+        </p>
+
+        <div class="buttons">
+          <a class="button primary" href="https://github.com/torubaev/crystengkit-orca-v1.0">View on GitHub</a>
+          <a class="button" href="wiki.html">Open documentation</a>
+        </div>
+      </div>
+
+      <aside class="card">
+        <h2>Start here</h2>
+        <p>
+          Clone the repository, install the required Python packages, install ORCA and Multiwfn from
+          their official sources, then start with the ORCA Input Builder.
+        </p>
+      </aside>
+    </section>
+
+    <section class="wrap grid">
+      <div class="feature">
+        <h3>ORCA input builder</h3>
+        <p>Prepare calculation input files from CIF, XYZ, or existing ORCA input files, then run and monitor ORCA jobs.</p>
+      </div>
+
+      <div class="feature">
+        <h3>ESP, NCI, and QTAIM</h3>
+        <p>Generate and visualize electrostatic-potential maps, noncovalent-interaction surfaces, and QTAIM critical points.</p>
+      </div>
+
+      <div class="feature">
+        <h3>Publication figures</h3>
+        <p>Create consistent molecular graphics and supporting computational summaries for manuscripts and SI files.</p>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <h2>Basic installation</h2>
+
+      <div class="steps">
+        <div class="step">
+          <strong>Clone the repository</strong>
+          <code>git clone https://github.com/torubaev/crystengkit-orca-v1.0.git
+cd crystengkit-orca-v1.0</code>
+        </div>
+
+        <div class="step">
+          <strong>Install Python packages</strong>
+          <code>pip install numpy pyvista matplotlib periodictable gemmi Pillow</code>
+        </div>
+
+        <div class="step">
+          <strong>Run the installer/checker</strong>
+          <code>python install/install.py</code>
+        </div>
+
+        <div class="step">
+          <strong>Start the ORCA Input Builder</strong>
+          <code>cd Orca_input
+python orca_input.py</code>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      CrystEngKit-ORCA is distributed via GitHub under the repository license.
+      ORCA and Multiwfn are external programs and must be obtained from their official sources.
+    </div>
+  </footer>
+</body>
+</html>

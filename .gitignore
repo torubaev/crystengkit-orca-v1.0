@@ -27,11 +27,13 @@ installation_report.html
 *-BFM-MachineSect.py
 *-BFM-MachineSect.json
 
-# Example datasets: keep only S22 NCI benchmark XYZ structures.
+# Example datasets.
+# examples/ is intentionally empty and reserved for future examples.
 examples/*
-!examples/S22_NCI_bemchmark_set/
-examples/S22_NCI_bemchmark_set/**
-!examples/S22_NCI_bemchmark_set/**/
-!examples/S22_NCI_bemchmark_set/**/*.xyz
+
+# Keep only S22 NCI benchmark XYZ structures in the root-level benchmark folder.
+S22_NCI_benchmark_set/**
+!S22_NCI_benchmark_set/**/
+!S22_NCI_benchmark_set/**/*.xyz
 
 # Images are usually generated outputs; keep documented examples explicitly if needed.

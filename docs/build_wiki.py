@@ -327,7 +327,7 @@ def build_page(article: str, nav: str, refs: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CrystEngKit Wiki</title>
+  <title>CrystEngKit Documentation</title>
   <style>
     :root {{
       color-scheme: light;
@@ -559,7 +559,7 @@ def build_page(article: str, nav: str, refs: str) -> str:
 <body>
   <div class="layout">
     <aside>
-      <h1>CrystEngKit Wiki</h1>
+      <h1>CrystEngKit Documentation</h1>
       <nav>
         {nav}
         <a class="nav-link level-2" href="#references">References</a>
