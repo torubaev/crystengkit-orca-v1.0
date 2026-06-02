@@ -45,7 +45,7 @@ import webbrowser
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 import tkinter as tk
 from typing import Dict, List, Optional, Tuple
 
@@ -132,6 +132,8 @@ CP_COLORS = {
     "(3,3)": "magenta",
     "unknown": "white",
 }
+
+DEFAULT_BOND_PATH_COLOR = "yellow"
 
 CP_LABELS = {
     "(3,-3)": "NCP",
@@ -1913,6 +1915,21 @@ def add_molecule_layer(
         add_ball_and_stick_atom(pv_module, plotter, atom, unit_factor, scale=max(0.2, atom_scale / 0.38))
 
 
+def color_to_rgb01(color: str) -> Tuple[float, float, float]:
+    try:
+        if pv is not None:
+            return tuple(float(v) for v in pv.Color(color).float_rgb)
+    except Exception:
+        pass
+    try:
+        value = str(color).strip().lstrip("#")
+        if len(value) == 6:
+            return tuple(int(value[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    except Exception:
+        pass
+    return (1.0, 1.0, 0.0)
+
+
 def add_exact_bond_paths(plotter, bond_paths: List[BondPath], radius: float = 0.10, color: str = "yellow") -> int:
     if not bond_paths:
         return 0
@@ -1930,7 +1947,7 @@ def add_exact_bond_paths(plotter, bond_paths: List[BondPath], radius: float = 0.
             prop.SetLighting(False)
             prop.SetRenderLinesAsTubes(False)
             prop.SetLineWidth(6)
-            prop.SetColor(1.0, 1.0, 0.0)
+            prop.SetColor(*color_to_rgb01(color))
         except Exception:
             pass
         count += 1
@@ -2006,6 +2023,8 @@ def draw_qtaim_scene(
     cp_scale: float = 0.32,
     bond_radius: float = 0.115,
     background: str = "black",
+    cp_colors: Optional[Dict[str, str]] = None,
+    bond_path_color: str = DEFAULT_BOND_PATH_COLOR,
 ) -> None:
     if pv is None:
         raise RuntimeError("PyVista is not installed. Install with: pip install pyvista vtk")
@@ -2059,7 +2078,7 @@ def draw_qtaim_scene(
             plotter,
             visible_bond_paths,
             radius=max(0.040, bond_radius * 0.95),
-            color="yellow",
+            color=bond_path_color,
         )
 
     label_points = []
@@ -2071,7 +2090,7 @@ def draw_qtaim_scene(
         if cpt not in visible_types:
             continue
         visible_cp_count += 1
-        color = CP_COLORS.get(cpt, "white")
+        color = (cp_colors or CP_COLORS).get(cpt, CP_COLORS.get(cpt, "white"))
         sphere = pv.Sphere(
             radius=cp_scale,
             center=(cp.x, cp.y, cp.z),
@@ -2187,6 +2206,8 @@ def visualize_qtaim(
     cp_scale: float = 0.32,
     bond_radius: float = 0.115,
     background: str = "black",
+    cp_colors: Optional[Dict[str, str]] = None,
+    bond_path_color: str = DEFAULT_BOND_PATH_COLOR,
 ) -> None:
     if pv is None:
         raise RuntimeError("PyVista is not installed. Install with: pip install pyvista vtk")
@@ -2207,6 +2228,8 @@ def visualize_qtaim(
         cp_scale=cp_scale,
         bond_radius=bond_radius,
         background=background,
+        cp_colors=cp_colors,
+        bond_path_color=bond_path_color,
     )
     plotter.show(title="QTAIM")
 
@@ -2249,6 +2272,14 @@ class QTAIMGui(tk.Tk):
         self.use_existing_outputs = tk.BooleanVar(value=False)
         self.path_display_range = tk.StringVar(value="")
         self.image_resolution = tk.StringVar(value=DEFAULT_IMAGE_PRESET)
+        self.cp_color_vars = {
+            "(3,-3)": tk.StringVar(value=CP_COLORS["(3,-3)"]),
+            "(3,-1)": tk.StringVar(value=CP_COLORS["(3,-1)"]),
+            "(3,+1)": tk.StringVar(value=CP_COLORS["(3,+1)"]),
+            "(3,+3)": tk.StringVar(value=CP_COLORS["(3,+3)"]),
+            "unknown": tk.StringVar(value=CP_COLORS["unknown"]),
+        }
+        self.bond_path_color = tk.StringVar(value=DEFAULT_BOND_PATH_COLOR)
         self.multiwfn_commands = DEFAULT_MULTIWFN_COMMANDS
         self._graphics_save_job = None
         self.apply_graphics_settings(load_graphics_settings())
@@ -2310,6 +2341,15 @@ class QTAIMGui(tk.Tk):
             self.background.set(str(settings["background"]).lower())
         if settings.get("path_display_range") is not None:
             self.path_display_range.set(str(settings.get("path_display_range", "")))
+        cp_colors = settings.get("cp_colors")
+        if isinstance(cp_colors, dict):
+            for key, var in self.cp_color_vars.items():
+                value = str(cp_colors.get(key, "")).strip()
+                if value:
+                    var.set(value)
+        value = str(settings.get("bond_path_color", "")).strip()
+        if value:
+            self.bond_path_color.set(value)
 
     def current_graphics_settings(self) -> Dict[str, object]:
         return {
@@ -2327,6 +2367,8 @@ class QTAIMGui(tk.Tk):
             "bond_radius": float(self.bond_radius.get()),
             "background": str(self.background.get()),
             "path_display_range": str(self.path_display_range.get()),
+            "cp_colors": {key: var.get() for key, var in self.cp_color_vars.items()},
+            "bond_path_color": str(self.bond_path_color.get()),
         }
 
     def save_current_graphics_settings(self) -> None:
@@ -2363,6 +2405,8 @@ class QTAIMGui(tk.Tk):
             self.bond_radius,
             self.background,
             self.path_display_range,
+            self.bond_path_color,
+            *self.cp_color_vars.values(),
         ):
             var.trace_add("write", self.schedule_graphics_settings_save)
 
@@ -2420,6 +2464,37 @@ class QTAIMGui(tk.Tk):
 
     def selected_image_size(self) -> Optional[Tuple[int, int]]:
         return IMAGE_PRESETS.get(self.image_resolution.get(), IMAGE_PRESETS[DEFAULT_IMAGE_PRESET])
+
+    def current_cp_colors(self) -> Dict[str, str]:
+        return {
+            "(3,-3)": self.cp_color_vars["(3,-3)"].get(),
+            "(3,-1)": self.cp_color_vars["(3,-1)"].get(),
+            "(3,+1)": self.cp_color_vars["(3,+1)"].get(),
+            "(3,1)": self.cp_color_vars["(3,+1)"].get(),
+            "(3,+3)": self.cp_color_vars["(3,+3)"].get(),
+            "(3,3)": self.cp_color_vars["(3,+3)"].get(),
+            "unknown": self.cp_color_vars["unknown"].get(),
+        }
+
+    def make_color_swatch(self, parent, variable: tk.StringVar, title: str):
+        swatch = tk.Canvas(parent, width=18, height=18, bg="#f4f6f9", highlightthickness=0, cursor="hand2")
+
+        def redraw(*_args):
+            swatch.delete("all")
+            swatch.create_rectangle(2, 2, 16, 16, fill=variable.get(), outline="#5f6f86", width=1)
+
+        def choose(_event=None):
+            _rgb, selected = colorchooser.askcolor(color=variable.get(), title=title, parent=self)
+            if selected:
+                variable.set(selected)
+                self.save_current_graphics_settings()
+                if self.is_plotter_alive():
+                    self.update_plot()
+
+        variable.trace_add("write", redraw)
+        swatch.bind("<Button-1>", choose)
+        redraw()
+        return swatch
 
     def _build_ui(self):
         header = ttk.Frame(self, style="Header.TFrame", padding=(14, 10))
@@ -2498,26 +2573,27 @@ class QTAIMGui(tk.Tk):
         settings.pack(fill="x", pady=(0, 8))
 
         cp_items = [
-            ("NCP (3,-3)", self.show_ncp, "nuclei", CP_COLORS["(3,-3)"], 0, 0),
-            ("BCP (3,-1)", self.show_bcp, "bond/contact", CP_COLORS["(3,-1)"], 0, 3),
-            ("RCP (3,+1)", self.show_rcp, "ring", CP_COLORS["(3,+1)"], 0, 6),
-            ("CCP (3,+3)", self.show_ccp, "cage", CP_COLORS["(3,+3)"], 1, 0),
-            ("Unknown CPs", self.show_unknown, "unclassified", CP_COLORS["unknown"], 1, 3),
+            ("NCP (3,-3)", self.show_ncp, "nuclei", self.cp_color_vars["(3,-3)"], 0, 0),
+            ("BCP (3,-1)", self.show_bcp, "bond/contact", self.cp_color_vars["(3,-1)"], 0, 3),
+            ("RCP (3,+1)", self.show_rcp, "ring", self.cp_color_vars["(3,+1)"], 0, 6),
+            ("CCP (3,+3)", self.show_ccp, "cage", self.cp_color_vars["(3,+3)"], 1, 0),
+            ("Unknown CPs", self.show_unknown, "unclassified", self.cp_color_vars["unknown"], 1, 3),
             ("Labels", self.show_labels, "names", None, 1, 6),
         ]
-        for text, var, note, color, row, col in cp_items:
+        for text, var, note, color_var, row, col in cp_items:
             cp_wrap = ttk.Frame(settings, style="Panel.TFrame")
             cp_wrap.grid(row=row, column=col, columnspan=3, sticky="w", padx=(0, 14), pady=(0 if row == 0 else 6, 0))
             ttk.Checkbutton(cp_wrap, text=text, variable=var).pack(side="left")
-            if color:
-                swatch = tk.Canvas(cp_wrap, width=16, height=16, bg="#f4f6f9", highlightthickness=0)
-                swatch.create_oval(3, 3, 15, 15, fill=color, outline="#5f6f86", width=1)
-                swatch.pack(side="left", padx=(3, 2))
+            if color_var is not None:
+                self.make_color_swatch(cp_wrap, color_var, f"Select {text} color").pack(side="left", padx=(3, 2))
             ttk.Label(cp_wrap, text=note, style="Muted.TLabel", anchor="w").pack(side="left", padx=(0, 0))
 
         ttk.Checkbutton(settings, text="Molecule", variable=self.show_molecule).grid(row=2, column=0, sticky="w", pady=(8, 0))
         ttk.Checkbutton(settings, text="Covalent bonds", variable=self.show_covalent_bonds).grid(row=2, column=3, sticky="w", pady=(8, 0))
-        ttk.Checkbutton(settings, text="QTAIM paths", variable=self.show_bond_paths).grid(row=2, column=6, sticky="w", pady=(8, 0))
+        path_wrap = ttk.Frame(settings, style="Panel.TFrame")
+        path_wrap.grid(row=2, column=6, columnspan=3, sticky="w", pady=(8, 0))
+        ttk.Checkbutton(path_wrap, text="QTAIM paths", variable=self.show_bond_paths).pack(side="left")
+        self.make_color_swatch(path_wrap, self.bond_path_color, "Select QTAIM path color").pack(side="left", padx=(4, 2))
 
         ttk.Label(settings, text="Atom size").grid(row=3, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(settings, textvariable=self.atom_scale, width=10).grid(row=3, column=1, sticky="w", pady=(8, 0))
@@ -3077,6 +3153,8 @@ class QTAIMGui(tk.Tk):
                 cp_scale=float(self.cp_scale.get()),
                 bond_radius=float(self.bond_radius.get()),
                 background=self.background.get(),
+                cp_colors=self.current_cp_colors(),
+                bond_path_color=self.bond_path_color.get(),
             )
             if self.bond_paths and bool(self.show_bond_paths.get()):
                 if len(display_paths) == len(self.bond_paths):
@@ -3115,6 +3193,9 @@ class QTAIMGui(tk.Tk):
         self.cp_scale.set(0.14)
         self.bond_radius.set(0.075)
         self.background.set("white")
+        for key, var in self.cp_color_vars.items():
+            var.set(CP_COLORS[key])
+        self.bond_path_color.set(DEFAULT_BOND_PATH_COLOR)
         self.update_plot()
 
     def save_image(self):

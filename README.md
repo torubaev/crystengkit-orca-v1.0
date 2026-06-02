@@ -116,7 +116,7 @@ Creates noncovalent-interaction surfaces[^nci] from `.wfn` or `.wfx` files. It i
 
 ![](images/wiki/orca_qtaim_1.png)
 
-Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output.
+Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
 
 ![](images/wiki/orca_qtaim_2.png)
 

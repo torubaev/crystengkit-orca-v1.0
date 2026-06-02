@@ -530,6 +530,7 @@ It starts from a wavefunction file and shows the molecule together with the crit
 
 - QTAIM analysis requires a real wavefunction file, not only the text ORCA output.
 - The QTAIM viewer is intended for visual inspection. Use the results together with distances, interaction energies, and chemical judgment.
+- The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
 - The guidelines shown in the viewer are only visual aids. Exact QTAIM bond paths should be checked in Multiwfn if needed.
 - The Builder tries to find a matching `.wfn` or `.wfx` file for the current ORCA task when `QTAIM CP` is clicked.
 
