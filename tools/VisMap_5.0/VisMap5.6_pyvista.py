@@ -1752,16 +1752,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
     def _bond_segment_points(i, j):
         p1 = np.array(CENTERS[i][1:4], dtype=float)
         p2 = np.array(CENTERS[j][1:4], dtype=float)
-        vec = p2 - p1
-        dist = np.linalg.norm(vec)
-        if dist <= 1.0e-12:
-            return p1, p2
-        unit = vec / dist
-        r1 = max(0.18, 0.28 * float(dnc2all[CENTERS[i][0]][1]))
-        r2 = max(0.18, 0.28 * float(dnc2all[CENTERS[j][0]][1]))
-        inset1 = min(r1 * 0.92, dist * 0.35)
-        inset2 = min(r2 * 0.92, dist * 0.35)
-        return p1 + unit * inset1, p2 - unit * inset2
+        return p1, p2
 
     def build_overlay_atoms():
         for actor in state["overlay_atom_actors"]:

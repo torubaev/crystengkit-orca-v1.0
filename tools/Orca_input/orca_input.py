@@ -1943,6 +1943,8 @@ class App(tk.Tk):
         self.monitor_status_text: str = "Idle"
         self.active_run_context: Optional[Dict] = None
         self.preview_thread: Optional[threading.Thread] = None
+        self.last_helper_launch_key: Optional[Tuple[str, ...]] = None
+        self.last_helper_launch_time: float = 0.0
 
         self.path_var = tk.StringVar()
         self.program_var = tk.StringVar(value="ORCA")
@@ -3049,7 +3051,7 @@ class App(tk.Tk):
             return [unquoted]
         return [part.strip().strip('"').strip("'") for part in split_cli_args(command) if part.strip()]
 
-    def _launch_python_tool(self, script_path: str, input_path: Optional[str] = None, python_command: Optional[str] = None):
+    def _launch_python_tool(self, script_path: str, input_path: Optional[str] = None, python_command: Optional[str] = None) -> bool:
         py_parts = [active_python_command()]
         script = script_path.strip().strip('"')
         if py_parts[0].lower().endswith(".exe") and not os.path.isfile(py_parts[0]):
@@ -3063,8 +3065,16 @@ class App(tk.Tk):
                 raise ValueError(f"Input file was not found:\n{input_path}")
             command.append(input_path)
             launch_cwd = os.path.dirname(input_path) or launch_cwd
+        launch_key = tuple(command + [launch_cwd])
+        now = time.time()
+        if launch_key == self.last_helper_launch_key and now - self.last_helper_launch_time < 1.0:
+            self.append_monitor("Skipped duplicate helper launch.\n")
+            return False
+        self.last_helper_launch_key = launch_key
+        self.last_helper_launch_time = now
         subprocess.Popen(command, cwd=launch_cwd, shell=False)
         self.append_monitor(f"Launched helper with Python: {py_parts[0]}\n")
+        return True
 
     def launch_homo_lumo(self):
         try:
@@ -3073,11 +3083,11 @@ class App(tk.Tk):
             except ValueError as exc:
                 if "No ORCA .out file was found yet." not in str(exc):
                     raise
-                self._launch_python_tool(self.homo_lumo_script_var.get(), None, self.launch_python_var.get())
-                self.append_monitor("Launched HOMO-LUMO in standalone mode.\n")
+                if self._launch_python_tool(self.homo_lumo_script_var.get(), None, self.launch_python_var.get()):
+                    self.append_monitor("Launched HOMO-LUMO in standalone mode.\n")
                 return
-            self._launch_python_tool(self.homo_lumo_script_var.get(), out_path, self.launch_python_var.get())
-            self.append_monitor(f"Launched HOMO-LUMO with: {out_path}\n")
+            if self._launch_python_tool(self.homo_lumo_script_var.get(), out_path, self.launch_python_var.get()):
+                self.append_monitor(f"Launched HOMO-LUMO with: {out_path}\n")
         except Exception as exc:
             messagebox.showerror("HOMO-LUMO launcher", str(exc))
 
@@ -3093,12 +3103,12 @@ class App(tk.Tk):
                 wavefunction_path = None
 
             if not wavefunction_path:
-                self._launch_python_tool(self.esp_script_var.get(), None, self.esp_python_var.get())
-                self.append_monitor("Launched ESP in standalone mode.\n")
+                if self._launch_python_tool(self.esp_script_var.get(), None, self.esp_python_var.get()):
+                    self.append_monitor("Launched ESP in standalone mode.\n")
                 return
 
-            self._launch_python_tool(self.esp_script_var.get(), wavefunction_path, self.esp_python_var.get())
-            self.append_monitor(f"Launched ESP with: {wavefunction_path}\n")
+            if self._launch_python_tool(self.esp_script_var.get(), wavefunction_path, self.esp_python_var.get()):
+                self.append_monitor(f"Launched ESP with: {wavefunction_path}\n")
         except Exception as exc:
             messagebox.showerror("ESP launcher", str(exc))
 
@@ -3107,16 +3117,16 @@ class App(tk.Tk):
         try:
             wavefunction_path = self._current_nci_input_path()
             if not wavefunction_path:
-                self._launch_python_tool(self.nci_script_var.get(), None, self.nci_python_var.get())
-                self.append_monitor("Launched NCI plotter in standalone mode.\n")
+                if self._launch_python_tool(self.nci_script_var.get(), None, self.nci_python_var.get()):
+                    self.append_monitor("Launched NCI plotter in standalone mode.\n")
                 return
 
-            self._launch_python_tool(self.nci_script_var.get(), wavefunction_path, self.nci_python_var.get())
-            self.append_monitor(f"Launched NCI plotter for current ORCA task with: {wavefunction_path}\n")
+            if self._launch_python_tool(self.nci_script_var.get(), wavefunction_path, self.nci_python_var.get()):
+                self.append_monitor(f"Launched NCI plotter for current ORCA task with: {wavefunction_path}\n")
         except ValueError as exc:
             if "No .wfx/.wfn file was found for NCI plotting" in str(exc):
-                self._launch_python_tool(self.nci_script_var.get(), None, self.nci_python_var.get())
-                self.append_monitor(f"Launched NCI plotter in standalone mode. {exc}\n")
+                if self._launch_python_tool(self.nci_script_var.get(), None, self.nci_python_var.get()):
+                    self.append_monitor(f"Launched NCI plotter in standalone mode. {exc}\n")
                 return
             messagebox.showerror("NCI plotter launcher", str(exc))
         except Exception as exc:
@@ -3127,16 +3137,16 @@ class App(tk.Tk):
         try:
             wavefunction_path = self._current_qtaim_input_path()
             if not wavefunction_path:
-                self._launch_python_tool(self.qtaim_script_var.get(), None, self.qtaim_python_var.get())
-                self.append_monitor("Launched QTAIM CP viewer in standalone mode.\n")
+                if self._launch_python_tool(self.qtaim_script_var.get(), None, self.qtaim_python_var.get()):
+                    self.append_monitor("Launched QTAIM CP viewer in standalone mode.\n")
                 return
 
-            self._launch_python_tool(self.qtaim_script_var.get(), wavefunction_path, self.qtaim_python_var.get())
-            self.append_monitor(f"Launched QTAIM CP viewer for current ORCA task with: {wavefunction_path}\n")
+            if self._launch_python_tool(self.qtaim_script_var.get(), wavefunction_path, self.qtaim_python_var.get()):
+                self.append_monitor(f"Launched QTAIM CP viewer for current ORCA task with: {wavefunction_path}\n")
         except ValueError as exc:
             if "No .wfx/.wfn file was found for QTAIM CP analysis" in str(exc):
-                self._launch_python_tool(self.qtaim_script_var.get(), None, self.qtaim_python_var.get())
-                self.append_monitor(f"Launched QTAIM CP viewer in standalone mode. {exc}\n")
+                if self._launch_python_tool(self.qtaim_script_var.get(), None, self.qtaim_python_var.get()):
+                    self.append_monitor(f"Launched QTAIM CP viewer in standalone mode. {exc}\n")
                 return
             messagebox.showerror("QTAIM CP launcher", str(exc))
         except Exception as exc:
