@@ -1724,6 +1724,35 @@ def configure_pyvista_defaults(pv_module, plotter, background="black", parallel_
             plotter.enable_anti_aliasing(antialiasing)
         except Exception:
             pass
+    try:
+        plotter.remove_all_lights()
+    except Exception:
+        pass
+    try:
+        extent = max(float(extent), 1.0)
+    except Exception:
+        extent = 1.0
+    light_specs = [
+        ("headlight", None, 0.95),
+        ("camera light", None, 0.45),
+        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
+        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+    ]
+    for light_type, position, intensity in light_specs:
+        try:
+            if light_type in {"headlight", "camera light"}:
+                light = pv_module.Light(light_type=light_type)
+            else:
+                light = pv_module.Light(
+                    position=position,
+                    focal_point=(0.0, 0.0, 0.0),
+                    color="white",
+                    light_type="scene light",
+                )
+            light.intensity = intensity
+            plotter.add_light(light)
+        except Exception:
+            pass
 
 
 def should_use_transparent_png(path: str, background: str) -> bool:
@@ -2161,7 +2190,7 @@ def visualize_qtaim(
 ) -> None:
     if pv is None:
         raise RuntimeError("PyVista is not installed. Install with: pip install pyvista vtk")
-    plotter = pv.Plotter(window_size=screen_fraction_window_size(1300, 900), lighting="none")
+    plotter = pv.Plotter(window_size=screen_fraction_window_size(1300, 900))
     draw_qtaim_scene(
         plotter,
         atoms=atoms,
@@ -3027,7 +3056,7 @@ class QTAIMGui(tk.Tk):
 
             if not self.is_plotter_alive():
                 self.close_plotter_reference(close_window=False)
-                self.plotter = pv.Plotter(window_size=self.pyvista_window_size, lighting="none")
+                self.plotter = pv.Plotter(window_size=self.pyvista_window_size)
 
             display_paths = select_bond_paths_by_range(self.bond_paths, self.path_display_range.get())
             draw_qtaim_scene(
