@@ -54,6 +54,7 @@ PACKAGE_IMPORT_NAMES = {
 SETTINGS_FILENAME = "orca_gaussian_builder_settings.json"
 PROJECT_MAIN_SCRIPT = Path("tools") / "Orca_input" / "orca_input.py"
 PROJECT_ICON = Path("tools") / "images" / "orca_builder.ico"
+DESKTOP_SHORTCUT_NAME = "ORCA input builder.lnk"
 EXPECTED_PROJECT_ITEMS = [
     PROJECT_MAIN_SCRIPT,
     Path("tools") / "HOMO_LUMO" / "HOMO_LUMO_v2.py",
@@ -682,11 +683,11 @@ def desktop_shortcut_path() -> Optional[Path]:
         result = subprocess.run(command, capture_output=True, text=True, timeout=10)
         desktop = (result.stdout or "").strip()
         if desktop:
-            return Path(desktop) / "ORCA input builder.lnk"
+            return Path(desktop) / DESKTOP_SHORTCUT_NAME
     except Exception:
         pass
     fallback = Path.home() / "Desktop"
-    return fallback / "ORCA input builder.lnk" if fallback.exists() else None
+    return fallback / DESKTOP_SHORTCUT_NAME if fallback.exists() else None
 
 
 def shortcut_python_executable() -> Path:
@@ -741,6 +742,7 @@ def create_desktop_shortcut(base_dir: Path) -> Dict[str, object]:
             f"$shortcut.Arguments = {powershell_quote(str(script_path))}",
             f"$shortcut.WorkingDirectory = {powershell_quote(base_dir.resolve())}",
             f"$shortcut.IconLocation = {powershell_quote(str(icon_path) + ',0')}",
+            "$shortcut.Description = 'Launch ORCA Input Builder'",
             "$shortcut.Save()",
         ]
     )
@@ -757,19 +759,25 @@ def create_desktop_shortcut(base_dir: Path) -> Dict[str, object]:
                 "ok": False,
                 "created": False,
                 "path": str(shortcut),
+                "target": str(script_path),
+                "icon": str(icon_path),
                 "message": message or f"PowerShell returned exit code {result.returncode}.",
             }
         return {
             "ok": True,
             "created": True,
             "path": str(shortcut),
-            "message": "",
+            "target": str(script_path),
+            "icon": str(icon_path),
+            "message": "Created desktop shortcut for ORCA Input Builder with the bundled ORCA icon.",
         }
     except Exception as exc:
         return {
             "ok": False,
             "created": False,
             "path": str(shortcut),
+            "target": str(script_path),
+            "icon": str(icon_path),
             "message": f"Could not create desktop shortcut: {type(exc).__name__}: {exc}",
         }
 
@@ -1154,6 +1162,8 @@ def render_short_report(
     <table>
         <tr><th>Status</th><td>{esc("OK" if shortcut_info["ok"] else "Problem")}</td></tr>
         <tr><th>Path</th><td><code>{esc(shortcut_info.get("path", "") or "-")}</code></td></tr>
+        <tr><th>Target</th><td><code>{esc(shortcut_info.get("target", "") or "-")}</code></td></tr>
+        <tr><th>Icon</th><td><code>{esc(shortcut_info.get("icon", "") or "-")}</code></td></tr>
         <tr><th>Note</th><td>{esc(shortcut_info.get("message", "") or ("Created with ORCA builder icon." if shortcut_info.get("created") else ""))}</td></tr>
     </table>
     """

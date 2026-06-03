@@ -2850,22 +2850,52 @@ class App(tk.Tk):
         win.deiconify()
         win.grab_set()
 
-    def _recent_output_path(self) -> str:
-        candidates: List[Path] = []
-        if self.last_output_path and os.path.isfile(self.last_output_path):
-            candidates.append(Path(self.last_output_path))
-        if self.current_input_path:
-            input_out = Path(self.current_input_path).with_suffix(".out")
-            if input_out.is_file():
-                candidates.append(input_out)
-        if self.path_var.get().strip():
-            source_dir = Path(self.path_var.get().strip()).parent
-            if source_dir.is_dir():
-                candidates.extend(source_dir.glob("*.out"))
+    def _output_candidates_for_source(self, source: Path) -> List[Tuple[int, Path]]:
+        candidates: List[Tuple[int, Path]] = []
+        if source.is_file() and source.suffix.lower() == ".out":
+            candidates.append((0, source))
+
+        source_dir = source if source.is_dir() else source.parent
+        if not source_dir.is_dir():
+            return candidates
+
+        if source.name and not source.is_dir():
+            same_stem = source.with_suffix(".out")
+            if same_stem.is_file():
+                candidates.append((1, same_stem))
+            try:
+                candidates.extend((2, path) for path in source_dir.rglob(f"{source.stem}.out") if path.is_file())
+            except Exception:
+                pass
+
+        try:
+            candidates.extend((3, path) for path in source_dir.rglob("*.out") if path.is_file())
+        except Exception:
+            pass
+        return candidates
+
+    def _best_output_path(self, candidates: List[Tuple[int, Path]]) -> str:
         if not candidates:
             raise ValueError("No ORCA .out file was found yet. Run ORCA first, or save/run from this builder.")
-        unique = {str(p.resolve()): p for p in candidates}
-        newest = max(unique.values(), key=lambda p: p.stat().st_mtime)
+        unique: Dict[str, Tuple[int, Path]] = {}
+        for priority, path in candidates:
+            key = str(path.resolve())
+            if key not in unique or priority < unique[key][0]:
+                unique[key] = (priority, path)
+        best_priority = min(priority for priority, _path in unique.values())
+        priority_matches = [path for priority, path in unique.values() if priority == best_priority]
+        newest = max(priority_matches, key=lambda p: p.stat().st_mtime)
+        return str(newest)
+
+    def _recent_output_path(self) -> str:
+        candidates: List[Tuple[int, Path]] = []
+        if self.last_output_path and os.path.isfile(self.last_output_path):
+            candidates.append((0, Path(self.last_output_path)))
+        if self.current_input_path:
+            candidates.extend(self._output_candidates_for_source(Path(self.current_input_path)))
+        if self.path_var.get().strip():
+            candidates.extend(self._output_candidates_for_source(Path(self.path_var.get().strip())))
+        newest = Path(self._best_output_path(candidates))
         ok, reason = validate_orca_output_file(str(newest))
         if not ok:
             raise ValueError(
@@ -2873,6 +2903,39 @@ class App(tk.Tk):
                 f"Rejected {newest}: {reason}"
             )
         return str(newest)
+
+    def _available_output_path(self) -> str:
+        candidates: List[Tuple[int, Path]] = []
+        if self.last_output_path and os.path.isfile(self.last_output_path):
+            candidates.append((0, Path(self.last_output_path)))
+        if self.current_input_path:
+            candidates.extend(self._output_candidates_for_source(Path(self.current_input_path)))
+        selected_text = self.path_var.get().strip()
+        if selected_text:
+            candidates.extend(self._output_candidates_for_source(Path(selected_text)))
+        try:
+            return self._best_output_path(candidates)
+        except ValueError:
+            raise ValueError("No output file is available yet.")
+
+    def _active_working_folder(self) -> str:
+        try:
+            return str(Path(self._available_output_path()).parent)
+        except Exception:
+            pass
+        candidates: List[Path] = []
+        for value in (self.last_output_path, self.current_input_path, self.path_var.get().strip()):
+            if not value:
+                continue
+            path = Path(value)
+            if path.is_dir():
+                candidates.append(path)
+            else:
+                candidates.append(path.parent)
+        for folder in candidates:
+            if folder.is_dir():
+                return str(folder)
+        return ""
 
     def _matching_wavefunction_path(self, out_path: str) -> str:
         out_file = Path(out_path)
@@ -3522,6 +3585,16 @@ class App(tk.Tk):
         inp_path = context.get("input_path", "")
         resolved_solvent = resolve_solvent(data.get("solvent_text", "")) if data.get("solvent_text") else None
         energies = self._parse_orca_energy_terms(out_path)
+        out_file = Path(out_path)
+        wavefunction_files = [str(path) for path in (out_file.with_suffix(".wfn"), out_file.with_suffix(".wfx")) if path.is_file()]
+        cube_files = [
+            str(path)
+            for path in (
+                out_file.with_name(out_file.stem + "_Dens.cub"),
+                out_file.with_name(out_file.stem + "_ESP.cub"),
+            )
+            if path.is_file()
+        ]
         return {
             "program": "ORCA",
             "orca_version": self._read_orca_version(out_path),
@@ -3540,9 +3613,80 @@ class App(tk.Tk):
                 "solvent_input": data.get("solvent_text", ""),
                 "solvent_resolved": resolved_solvent["canonical"] if resolved_solvent else "",
                 "requested_targets": self._describe_requested_targets(data),
+                "print_mos": bool(data.get("print_mos")),
+                "job_esp_mep": bool(data.get("job_esp_mep")),
+                "job_interaction": bool(data.get("job_interaction")),
+            },
+            "post_processing": dict(context.get("post_processing", {})),
+            "analysis_files": {
+                "wavefunction_files": wavefunction_files,
+                "cube_files": cube_files,
             },
             "results_hartree": energies,
         }
+
+    def _computational_details_paragraphs(self, summary: Dict[str, object], line1: str, line2: str, extra: List[str], ref_map: Dict[str, str]) -> List[str]:
+        settings = summary.get("settings", {})
+        post = summary.get("post_processing", {})
+        files = summary.get("analysis_files", {})
+        targets = settings.get("requested_targets", [])
+        wavefunction_files = files.get("wavefunction_files", [])
+        cube_files = files.get("cube_files", [])
+
+        paragraphs = [line1 + line2]
+        if extra:
+            paragraphs.append(" ".join(extra))
+
+        workflow_notes = [
+            "CrystEngKit was used to prepare the ORCA input, launch the calculation, collect the output, and assemble the present calculation summary."
+        ]
+        workflow_notes.append(
+            "The CrystEngKit analysis route links ORCA outputs and, where available, WFN/WFX wavefunction data to HOMO-LUMO inspection, ESP/MEP mapping with Multiwfn "
+            f"{ref_map['MULTIWFN']}, Non-Covalent Interaction (NCI) index analysis {ref_map['NCI']}, and Quantum Theory of Atoms in Molecules (QTAIM) "
+            f"critical-point analysis {ref_map['QTAIM']}."
+        )
+        if settings.get("print_mos"):
+            workflow_notes.append(
+                "Frontier-orbital information was requested from ORCA output for HOMO-LUMO inspection and electronic-structure evaluation in the CrystEngKit HOMO-LUMO workflow."
+            )
+        if settings.get("job_esp_mep"):
+            if post.get("wfn_wfx_generated") or wavefunction_files:
+                workflow_notes.append(
+                    "Wavefunction files were generated from the ORCA result with orca_2aim for subsequent property analysis."
+                )
+            else:
+                workflow_notes.append(
+                    "WFN/WFX generation was requested for subsequent property analysis, but generated wavefunction files were not confirmed in this summary."
+                )
+            if post.get("esp_mep_generated") or cube_files:
+                workflow_notes.append(
+                    f"Electrostatic-potential and electron-density cube files for ESP/MEP analysis were generated with the CrystEngKit ESP workflow using Multiwfn {ref_map['MULTIWFN']}."
+                )
+            else:
+                workflow_notes.append(
+                    "ESP/MEP post-processing was requested through the CrystEngKit ESP workflow; generated cube files were not confirmed in this summary."
+                )
+        elif wavefunction_files:
+            workflow_notes.append(
+                "Existing wavefunction files were available alongside the ORCA output and can be used by CrystEngKit for ESP/MEP, NCI, and QTAIM analyses."
+            )
+
+        if settings.get("job_interaction"):
+            workflow_notes.append(
+                "Intermolecular interaction calculations were coordinated by CrystEngKit using dimer, monomer, and counterpoise job folders generated from the selected fragment definitions."
+            )
+
+        if settings.get("job_esp_mep") or wavefunction_files:
+            workflow_notes.append(
+                "The resulting wavefunction data provide the basis for Non-Covalent Interaction (NCI) index analysis "
+                f"{ref_map['NCI']}, NCIPLOT-style visualization {ref_map['NCIPLOT']}, and Quantum Theory of Atoms in Molecules (QTAIM) critical-point analysis "
+                f"{ref_map['QTAIM']} using the CrystEngKit NCI and QTAIM tools."
+            )
+
+        paragraphs.append(" ".join(workflow_notes))
+        if targets:
+            paragraphs.append("Requested job types: " + ", ".join(str(x) for x in targets) + ".")
+        return paragraphs
 
     def _calculation_summary_lines(self, summary: Dict[str, object]) -> List[str]:
         settings = summary.get("settings", {})
@@ -3568,6 +3712,10 @@ class App(tk.Tk):
             "D3BJ": "[Grimme, 2011, #2689] {DOI:10.1002/jcc.21759}",
             "DLPNO_CCSDT": "[Riplinger, 2016, #2683] {DOI:10.1063/1.4939030}",
             "BSSE": "[Boys, 2006, #4937] {DOI:10.1080/00268977000101561}",
+            "MULTIWFN": "[Lu, 2012, #6001] {DOI:10.1002/jcc.22885}",
+            "NCI": "[Johnson, 2010, #6002] {DOI:10.1021/ja100936w}",
+            "NCIPLOT": "[Contreras-Garcia, 2011, #6003] {DOI:10.1021/ct100641a}",
+            "QTAIM": "[Bader, 1990, #6004] {DOI:10.1093/oso/9780198551683.001.0001}",
         }
 
         functional_key = functional.strip().upper().replace(" ", "")
@@ -3612,12 +3760,8 @@ class App(tk.Tk):
         lines = [
             "Computational details",
             "",
-            line1 + line2,
+            *self._computational_details_paragraphs(summary, line1, line2, extra, ref_map),
         ]
-        if extra:
-            lines.append(" ".join(extra))
-        if targets:
-            lines.append("Requested job types: " + ", ".join(str(x) for x in targets) + ".")
         if charge is not None and mult is not None:
             lines.append(f"Charge and multiplicity were {charge} and {mult}, respectively.")
         if simple_line:
@@ -4379,9 +4523,10 @@ class App(tk.Tk):
         self._schedule_monitor_poll()
 
     def open_last_output(self):
-        out_path = self.last_output_path
-        if not out_path or not os.path.isfile(out_path):
-            messagebox.showinfo("Open .out", "No output file is available yet.")
+        try:
+            out_path = self._available_output_path()
+        except Exception as exc:
+            messagebox.showinfo("Open .out", str(exc))
             return
         try:
             open_path_in_system(out_path)
@@ -4389,8 +4534,7 @@ class App(tk.Tk):
             messagebox.showerror("Open .out error", str(exc))
 
     def open_last_output_folder(self):
-        out_path = self.last_output_path
-        folder = os.path.dirname(out_path) if out_path else ""
+        folder = self._active_working_folder()
         if not folder or not os.path.isdir(folder):
             messagebox.showinfo("Open folder", "No output folder is available yet.")
             return
@@ -4504,15 +4648,20 @@ class App(tk.Tk):
             interaction_summary = None
             interaction_root = None
             interaction_error = ""
+            context.setdefault("post_processing", {})
             if self.job_esp_mep_var.get():
                 try:
                     self._set_monitor_stage("Generating WFN/WFX")
                     wavefunction_path = self.run_orca_2aim(out_path)
+                    context["post_processing"]["wfn_wfx_generated"] = True
+                    context["post_processing"]["wavefunction_path"] = wavefunction_path
                     post_messages.append("WFN/WFX generation completed.")
                     self._set_monitor_stage("Generating ESP/MEP cubes")
                     self.run_esp_cube_generation(wavefunction_path)
+                    context["post_processing"]["esp_mep_generated"] = True
                     post_messages.append("ESP/MEP cube generation completed.")
                 except Exception as exc:
+                    context["post_processing"]["esp_mep_error"] = str(exc)
                     post_messages.append(f"ESP/MEP post-processing failed: {exc}")
                     self.append_monitor(f"ESP/MEP post-processing failed: {exc}\n")
             if context.get("interaction_enabled"):
