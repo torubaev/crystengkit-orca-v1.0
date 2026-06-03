@@ -3626,81 +3626,24 @@ class App(tk.Tk):
         }
 
     def _computational_details_paragraphs(self, summary: Dict[str, object], line1: str, line2: str, extra: List[str], ref_map: Dict[str, str]) -> List[str]:
-        settings = summary.get("settings", {})
-        post = summary.get("post_processing", {})
-        files = summary.get("analysis_files", {})
-        targets = settings.get("requested_targets", [])
-        wavefunction_files = files.get("wavefunction_files", [])
-        cube_files = files.get("cube_files", [])
-
         paragraphs = [line1 + line2]
         if extra:
             paragraphs.append(" ".join(extra))
-
-        workflow_notes = [
-            "CrystEngKit was used to prepare the ORCA input, launch the calculation, collect the output, and assemble the present calculation summary."
-        ]
-        workflow_notes.append(
-            "The CrystEngKit analysis route links ORCA outputs and, where available, WFN/WFX wavefunction data to HOMO-LUMO inspection, ESP/MEP mapping with Multiwfn "
-            f"{ref_map['MULTIWFN']}, Non-Covalent Interaction (NCI) index analysis {ref_map['NCI']}, and Quantum Theory of Atoms in Molecules (QTAIM) "
-            f"critical-point analysis {ref_map['QTAIM']}."
+        paragraphs.append(
+            f"CrystEngKit ({GITHUB_URL}) was used to prepare the ORCA input and render the output in Multiwfn "
+            f"{ref_map['MULTIWFN']} to analyze and visualize the HOMO-LUMO, ESP maps, NCI plots "
+            f"{ref_map['NCI']}, {ref_map['NCIPLOT']}, and QTAIM critical-point and bonding paths {ref_map['QTAIM']}."
         )
-        if settings.get("print_mos"):
-            workflow_notes.append(
-                "Frontier-orbital information was requested from ORCA output for HOMO-LUMO inspection and electronic-structure evaluation in the CrystEngKit HOMO-LUMO workflow."
-            )
-        if settings.get("job_esp_mep"):
-            if post.get("wfn_wfx_generated") or wavefunction_files:
-                workflow_notes.append(
-                    "Wavefunction files were generated from the ORCA result with orca_2aim for subsequent property analysis."
-                )
-            else:
-                workflow_notes.append(
-                    "WFN/WFX generation was requested for subsequent property analysis, but generated wavefunction files were not confirmed in this summary."
-                )
-            if post.get("esp_mep_generated") or cube_files:
-                workflow_notes.append(
-                    f"Electrostatic-potential and electron-density cube files for ESP/MEP analysis were generated with the CrystEngKit ESP workflow using Multiwfn {ref_map['MULTIWFN']}."
-                )
-            else:
-                workflow_notes.append(
-                    "ESP/MEP post-processing was requested through the CrystEngKit ESP workflow; generated cube files were not confirmed in this summary."
-                )
-        elif wavefunction_files:
-            workflow_notes.append(
-                "Existing wavefunction files were available alongside the ORCA output and can be used by CrystEngKit for ESP/MEP, NCI, and QTAIM analyses."
-            )
-
-        if settings.get("job_interaction"):
-            workflow_notes.append(
-                "Intermolecular interaction calculations were coordinated by CrystEngKit using dimer, monomer, and counterpoise job folders generated from the selected fragment definitions."
-            )
-
-        if settings.get("job_esp_mep") or wavefunction_files:
-            workflow_notes.append(
-                "The resulting wavefunction data provide the basis for Non-Covalent Interaction (NCI) index analysis "
-                f"{ref_map['NCI']}, NCIPLOT-style visualization {ref_map['NCIPLOT']}, and Quantum Theory of Atoms in Molecules (QTAIM) critical-point analysis "
-                f"{ref_map['QTAIM']} using the CrystEngKit NCI and QTAIM tools."
-            )
-
-        paragraphs.append(" ".join(workflow_notes))
-        if targets:
-            paragraphs.append("Requested job types: " + ", ".join(str(x) for x in targets) + ".")
         return paragraphs
 
     def _calculation_summary_lines(self, summary: Dict[str, object]) -> List[str]:
         settings = summary.get("settings", {})
-        results = summary.get("results_hartree", {})
         version = summary.get("orca_version", "")
         functional = settings.get("functional", "")
         basis = settings.get("basis", "")
         dispersion = settings.get("dispersion", "")
         grid = settings.get("grid", "")
-        charge = settings.get("charge")
-        mult = settings.get("multiplicity")
         solvent = settings.get("solvent_resolved") or settings.get("solvent_input") or ""
-        targets = settings.get("requested_targets", [])
-        simple_line = summary.get("simple_input_line", "")
 
         ref_map = {
             "ORCA": "[Neese, 2017, #2682] {DOI:10.1002/wcms.1327}",
@@ -3762,18 +3705,6 @@ class App(tk.Tk):
             "",
             *self._computational_details_paragraphs(summary, line1, line2, extra, ref_map),
         ]
-        if charge is not None and mult is not None:
-            lines.append(f"Charge and multiplicity were {charge} and {mult}, respectively.")
-        if simple_line:
-            lines.extend(["", "Actual ORCA simple-input line:", simple_line])
-
-        lines.extend(["", "Results"])
-        if results.get("electronic") is not None:
-            lines.append(f"Final electronic energy: {results['electronic']:.10f} Eh")
-        if results.get("enthalpy") is not None:
-            lines.append(f"Total enthalpy: {results['enthalpy']:.10f} Eh")
-        if results.get("gibbs") is not None:
-            lines.append(f"Final Gibbs free energy: {results['gibbs']:.10f} Eh")
         return lines
 
     def _interaction_summary_lines(self, summary: Dict[str, object]) -> List[str]:
