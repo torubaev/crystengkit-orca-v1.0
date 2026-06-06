@@ -19,12 +19,14 @@ import re
 import sys
 import json
 import math
+import gc
 import shutil
 import zipfile
 import subprocess
 import datetime as _dt
 import traceback
 import webbrowser
+import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
@@ -266,7 +268,7 @@ def is_png_path(path: str | Path) -> bool:
 def pyvista_screenshot(plotter: Any, path: Optional[str] = None, **kwargs: Any) -> Any:
     if path and is_png_path(path):
         try:
-            return plotter.screenshot(path, transparent_background=True, **kwargs)
+            return plotter.screenshot(path, transparent_background=False, **kwargs)
         except TypeError:
             pass
     return plotter.screenshot(path, **kwargs) if path else plotter.screenshot(**kwargs)
@@ -699,17 +701,21 @@ def save_mo_metadata(meta_path: Path, metadata: Dict[str, Any]) -> None:
 
 
 def read_builder_orca_path() -> Optional[Path]:
-    settings_path = TOOLS_ROOT / "Orca_input" / "orca_gaussian_builder_settings.json"
-    if not settings_path.is_file():
-        return None
-    try:
-        data = json.loads(settings_path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    for key in ("orca_path", "orca_executable", "ORCA executable"):
-        raw = str(data.get(key) or "").strip().strip('"')
-        if raw and Path(raw).is_file():
-            return Path(raw)
+    settings_paths = [
+        TOOLS_ROOT / "Orca_input" / "orca_gaussian_builder_settings.json",
+        APP_ROOT / "orca_gaussian_builder_settings.json",
+    ]
+    for settings_path in settings_paths:
+        if not settings_path.is_file():
+            continue
+        try:
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for key in ("orca_path", "orca_executable", "ORCA executable"):
+            raw = str(data.get(key) or "").strip().strip('"')
+            if raw and Path(raw).is_file():
+                return Path(raw)
     return None
 
 
@@ -1230,6 +1236,7 @@ class MOSurfaceContactSheet(tk.Toplevel):
         top.pack(fill="x")
         ttk.Label(top, text="MO Surface Contact Sheet", font=("Segoe UI", 11, "bold")).pack(side="left")
         ttk.Button(top, text="Save", command=self._save).pack(side="right")
+        ttk.Button(top, text="Clean all", command=self._clean_all).pack(side="right", padx=(0, 6))
 
         self.grid_frame = ttk.Frame(self, style="Panel.TFrame", padding=8)
         self.grid_frame.pack(fill="both", expand=True)
@@ -1293,6 +1300,12 @@ class MOSurfaceContactSheet(tk.Toplevel):
         except Exception as exc:
             _show_error("Save contact sheet", exc)
 
+    def _clean_all(self) -> None:
+        try:
+            self.app.clean_all_mo_surfaces()
+        except Exception as exc:
+            _show_error("Clean MO surfaces", exc)
+
 
 class App(tk.Tk):
     def __init__(self) -> None:
@@ -1318,6 +1331,9 @@ class App(tk.Tk):
         self.mo_orbitals: List[Dict[str, Any]] = []
         self.mo_metadata: Dict[str, Any] = {"orbitals": {}}
         self.mo_contact_sheet: Optional[MOSurfaceContactSheet] = None
+        self.active_mo_plotter: Any = None
+        self.mo_viewer_opening = False
+        self.mo_batch_thread: Optional[threading.Thread] = None
         self.mo_status_var = tk.StringVar(value="No ORCA output loaded.")
         self.recent_input_files = load_recent_files()
 
@@ -1577,6 +1593,7 @@ class App(tk.Tk):
 
     # -------- Auto-detected ORCA/Gaussian file --------
     def _reset_file_data(self) -> None:
+        self._close_active_mo_plotter()
         self.file_kind = None
         self.file_path = None
         self.orca_rows = None
@@ -1793,6 +1810,7 @@ class App(tk.Tk):
 
     def generate_mo_cubes(self) -> None:
         try:
+            self._close_active_mo_plotter()
             out_path, paths, orbitals, _isovalue, _opacity = self._prepare_mo_orbitals()
             gbw_path = out_path.with_suffix(".gbw")
             if not gbw_path.is_file():
@@ -1839,6 +1857,7 @@ class App(tk.Tk):
         off_screen: bool = False,
         window_size: Tuple[int, int] = (1100, 800),
         show_prompt: bool = False,
+        render_options: Optional[Dict[str, Any]] = None,
     ):
         if pv is None or np is None:
             raise RuntimeError("PyVista and NumPy are required for MO surface viewing.")
@@ -1847,11 +1866,16 @@ class App(tk.Tk):
             raise FileNotFoundError(f"Cube file was not found:\n{cube_path}")
         cube = parse_cube_file(cube_path)
         grid = cube_to_pyvista_grid(cube)
-        isovalue, opacity = self._current_mo_visual_settings()
+        render_options = render_options or {}
+        if "isovalue" in render_options and "opacity" in render_options:
+            isovalue = float(render_options["isovalue"])
+            opacity = float(render_options["opacity"])
+        else:
+            isovalue, opacity = self._current_mo_visual_settings()
         orbital["isovalue"] = isovalue
         orbital["opacity"] = opacity
 
-        plotter = pv.Plotter(window_size=window_size, off_screen=off_screen, lighting="none")
+        plotter = pv.Plotter(window_size=window_size, off_screen=off_screen, lighting="light kit")
         plotter.set_background("white")
         try:
             plotter.hide_axes()
@@ -1864,7 +1888,6 @@ class App(tk.Tk):
         except Exception:
             pass
         try:
-            plotter.enable_anti_aliasing("msaa")
             plotter.enable_parallel_projection()
             plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)
             plotter.renderer.SetTwoSidedLighting(True)
@@ -1872,25 +1895,28 @@ class App(tk.Tk):
             pass
         try:
             plotter.remove_all_lights()
-            for light_type, intensity in (("headlight", 1.15), ("camera light", 0.55)):
+            for light_type, intensity in (("headlight", 0.80), ("camera light", 0.35)):
                 light = pv.Light(light_type=light_type)
                 light.intensity = intensity
                 plotter.add_light(light)
-            plotter.add_light(pv.Light(position=(8, -10, 12), focal_point=(0, 0, 0), intensity=0.55, light_type="scene light"))
-            plotter.add_light(pv.Light(position=(-8, 9, 10), focal_point=(0, 0, 0), intensity=0.38, light_type="scene light"))
+            plotter.add_light(pv.Light(position=(8, -10, 12), focal_point=(0, 0, 0), intensity=0.95, light_type="scene light"))
+            plotter.add_light(pv.Light(position=(-8, 9, 10), focal_point=(0, 0, 0), intensity=0.55, light_type="scene light"))
+            plotter.add_light(pv.Light(position=(0, 14, 6), focal_point=(0, 0, 0), intensity=0.25, light_type="scene light"))
         except Exception:
             pass
 
-        pos_color, neg_color = MO_COLOR_SCHEMES.get(self.mo_color_scheme_var.get(), MO_COLOR_SCHEMES[DEFAULT_MO_COLOR_SCHEME])
+        color_scheme = str(render_options.get("color_scheme") or self.mo_color_scheme_var.get())
+        pos_color, neg_color = MO_COLOR_SCHEMES.get(color_scheme, MO_COLOR_SCHEMES[DEFAULT_MO_COLOR_SCHEME])
         surface_material = {
+            "lighting": True,
             "smooth_shading": True,
             "pbr": True,
             "metallic": 0.0,
-            "roughness": 0.26,
-            "specular": 0.30,
-            "specular_power": 22,
-            "ambient": 0.72,
-            "diffuse": 0.90,
+            "roughness": 0.18,
+            "specular": 0.55,
+            "specular_power": 48,
+            "ambient": 0.34,
+            "diffuse": 0.96,
         }
         for value, color in ((isovalue, pos_color), (-isovalue, neg_color)):
             try:
@@ -1916,7 +1942,7 @@ class App(tk.Tk):
         for i, j in bonds:
             atom_bond_counts[i] += 1
             atom_bond_counts[j] += 1
-        molecule_style = self.mo_molecule_style_var.get()
+        molecule_style = str(render_options.get("molecule_style") or self.mo_molecule_style_var.get())
         if molecule_style not in MO_MOLECULE_STYLES:
             molecule_style = DEFAULT_MO_MOLECULE_STYLE
 
@@ -2017,10 +2043,36 @@ class App(tk.Tk):
         plotter.reset_camera()
         return plotter
 
-    def open_mo_surface_viewer(self, orbital: Dict[str, Any]) -> None:
+    def _close_active_mo_plotter(self) -> None:
+        plotter = self.active_mo_plotter
+        self.active_mo_plotter = None
+        self._dispose_mo_plotter(plotter)
+
+    def _dispose_mo_plotter(self, plotter: Any) -> None:
+        if plotter is None:
+            return
+        for action in ("close", "deep_clean"):
+            method = getattr(plotter, action, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception:
+                    pass
         try:
+            gc.collect()
+        except Exception:
+            pass
+
+    def open_mo_surface_viewer(self, orbital: Dict[str, Any]) -> None:
+        if self.mo_viewer_opening:
+            return
+        self.mo_viewer_opening = True
+        plotter = None
+        try:
+            self._close_active_mo_plotter()
             self._restore_mo_visual_settings_for_orbital(orbital)
             plotter = self._build_orbital_plotter(orbital, off_screen=False, window_size=LIVE_MO_VIEW_SIZE, show_prompt=True)
+            self.active_mo_plotter = plotter
             try:
                 apply_plotter_camera_state(
                     plotter,
@@ -2042,13 +2094,15 @@ class App(tk.Tk):
                     except Exception:
                         pass
                     live_image = plotter.screenshot(return_img=True, window_size=plotter.window_size, scale=1)
+                    camera_position = plotter.camera_position
+                    camera_state = capture_plotter_camera_state(plotter)
+                    self._close_active_mo_plotter()
                     self.save_mo_surface_view(
                         orbital,
-                        plotter.camera_position,
+                        camera_position,
                         live_image=live_image,
-                        camera_state=capture_plotter_camera_state(plotter),
+                        camera_state=camera_state,
                     )
-                    plotter.close()
                 except Exception as exc:
                     _show_error("Save MO surface image", exc)
 
@@ -2056,10 +2110,17 @@ class App(tk.Tk):
             plotter.add_key_event("S", save_current_view)
             plotter.add_key_event("r", lambda: plotter.reset_camera())
             plotter.add_key_event("R", lambda: plotter.reset_camera())
-            plotter.add_key_event("Escape", lambda: plotter.close())
-            plotter.show(title=f"{orbital['display_label']} MO #{orbital['mo_number']}")
+            plotter.add_key_event("Escape", self._close_active_mo_plotter)
+            try:
+                plotter.show(title=f"{orbital['display_label']} MO #{orbital['mo_number']}", auto_close=False)
+            except TypeError:
+                plotter.show(title=f"{orbital['display_label']} MO #{orbital['mo_number']}")
         except Exception as exc:
             _show_error("MO surface viewer", exc)
+        finally:
+            self.mo_viewer_opening = False
+            if plotter is not None and plotter is self.active_mo_plotter:
+                self._close_active_mo_plotter()
 
     def _restore_mo_visual_settings_for_orbital(self, orbital: Dict[str, Any], restore_style: bool = False) -> None:
         meta_orbital = self.mo_metadata.get("orbitals", {}).get(orbital["safe_label"], {})
@@ -2124,28 +2185,86 @@ class App(tk.Tk):
 
     def apply_mo_surface_view_to_all(self, source_orbital: Dict[str, Any]) -> None:
         try:
+            if self.mo_batch_thread is not None and self.mo_batch_thread.is_alive():
+                messagebox.showinfo("Use view for all", "MO surface rendering is already running.")
+                return
+            self._close_active_mo_plotter()
             camera_position = self._saved_camera_position_for_orbital(source_orbital)
             camera_state = self._saved_camera_state_for_orbital(source_orbital, require=False)
             if not self.mo_orbitals:
                 raise ValueError("No MO surface tiles are available.")
             label = contact_sheet_orbital_label(source_orbital)
+            count = len(self.mo_orbitals)
+            preset, width, height = self._selected_image_resolution()
+            isovalue, opacity = self._current_mo_visual_settings()
+            render_options = {
+                "preset": preset,
+                "width": width,
+                "height": height,
+                "isovalue": isovalue,
+                "opacity": opacity,
+                "molecule_style": self.mo_molecule_style_var.get(),
+                "color_scheme": self.mo_color_scheme_var.get(),
+            }
             if not messagebox.askyesno(
                 "Use view for all",
-                f"Apply the saved orientation and zoom/scale from {label} to all MO tiles in this contact sheet?\n\n"
+                f"Apply the saved orientation and zoom/scale from {label} to all {count} MO tiles in this contact sheet?\n\n"
                 "This will overwrite the saved MO surface images for the current contact sheet.",
                 parent=self.mo_contact_sheet if self.mo_contact_sheet is not None and self.mo_contact_sheet.winfo_exists() else self,
             ):
                 return
 
-            for orbital in self.mo_orbitals:
-                self.save_mo_surface_view(orbital, camera_position, camera_state=camera_state, refresh_contact_sheet=False)
-
-            if self.mo_contact_sheet is not None and self.mo_contact_sheet.winfo_exists():
-                self.mo_contact_sheet.refresh()
-                self.mo_contact_sheet.lift()
-            messagebox.showinfo("Use view for all", "The saved orientation was applied to all MO tiles.")
+            orbitals = list(self.mo_orbitals)
+            self.mo_status_var.set(f"Rendering MO surfaces: 0/{count}")
+            self.mo_batch_thread = threading.Thread(
+                target=self._apply_mo_surface_view_to_all_worker,
+                args=(orbitals, camera_position, camera_state, render_options),
+                daemon=True,
+            )
+            self.mo_batch_thread.start()
         except Exception as exc:
+            self.mo_status_var.set("Use view for all failed.")
             _show_error("Use view for all", exc)
+
+    def _set_mo_status_from_worker(self, text: str) -> None:
+        try:
+            self.after(0, lambda: self.mo_status_var.set(text))
+        except Exception:
+            pass
+
+    def _apply_mo_surface_view_to_all_worker(
+        self,
+        orbitals: List[Dict[str, Any]],
+        camera_position: Any,
+        camera_state: Optional[Dict[str, Any]],
+        render_options: Dict[str, Any],
+    ) -> None:
+        count = len(orbitals)
+        try:
+            for index, orbital in enumerate(orbitals, start=1):
+                label = contact_sheet_orbital_label(orbital)
+                self._set_mo_status_from_worker(f"Rendering MO surface {index}/{count}: {label}")
+                self.save_mo_surface_view(
+                    orbital,
+                    camera_position,
+                    camera_state=camera_state,
+                    refresh_contact_sheet=False,
+                    render_options=render_options,
+                )
+            self.after(0, lambda: self._finish_apply_mo_surface_view_to_all(count, None))
+        except Exception as exc:
+            self.after(0, lambda exc=exc: self._finish_apply_mo_surface_view_to_all(count, exc))
+
+    def _finish_apply_mo_surface_view_to_all(self, count: int, exc: Optional[BaseException]) -> None:
+        if exc is not None:
+            self.mo_status_var.set("Use view for all failed.")
+            _show_error("Use view for all", exc)
+            return
+        if self.mo_contact_sheet is not None and self.mo_contact_sheet.winfo_exists():
+            self.mo_contact_sheet.refresh()
+            self.mo_contact_sheet.lift()
+        self.mo_status_var.set(f"Applied saved MO surface view to {count} tiles.")
+        messagebox.showinfo("Use view for all", "The saved orientation was applied to all MO tiles.")
 
     def save_mo_surface_view(
         self,
@@ -2154,29 +2273,53 @@ class App(tk.Tk):
         live_image: Any = None,
         refresh_contact_sheet: bool = True,
         camera_state: Optional[Dict[str, Any]] = None,
+        render_options: Optional[Dict[str, Any]] = None,
     ) -> None:
         if Image is None:
             raise RuntimeError("Pillow is required to verify saved images and generate thumbnails.")
-        preset, width, height = self._selected_image_resolution()
-        orbital["isovalue"], orbital["opacity"] = self._current_mo_visual_settings()
-        orbital["molecule_style"] = self.mo_molecule_style_var.get()
-        orbital["color_scheme"] = self.mo_color_scheme_var.get()
-        plotter = self._build_orbital_plotter(orbital, off_screen=True, window_size=(width, height))
+        render_options = dict(render_options or {})
+        if {"preset", "width", "height", "isovalue", "opacity", "molecule_style", "color_scheme"}.issubset(render_options):
+            preset = str(render_options["preset"])
+            width = int(render_options["width"])
+            height = int(render_options["height"])
+            orbital["isovalue"] = float(render_options["isovalue"])
+            orbital["opacity"] = float(render_options["opacity"])
+            orbital["molecule_style"] = str(render_options["molecule_style"])
+            orbital["color_scheme"] = str(render_options["color_scheme"])
+        else:
+            preset, width, height = self._selected_image_resolution()
+            orbital["isovalue"], orbital["opacity"] = self._current_mo_visual_settings()
+            orbital["molecule_style"] = self.mo_molecule_style_var.get()
+            orbital["color_scheme"] = self.mo_color_scheme_var.get()
+            render_options.update({
+                "preset": preset,
+                "width": width,
+                "height": height,
+                "isovalue": orbital["isovalue"],
+                "opacity": orbital["opacity"],
+                "molecule_style": orbital["molecule_style"],
+                "color_scheme": orbital["color_scheme"],
+            })
+        plotter = self._build_orbital_plotter(orbital, off_screen=True, window_size=(width, height), render_options=render_options)
         apply_plotter_camera_state(plotter, camera_position, camera_state)
         image_path = Path(orbital["image_path"])
         thumb_path = Path(orbital["thumbnail_path"])
         try:
+            for old_path in (image_path, thumb_path):
+                try:
+                    if old_path.exists():
+                        old_path.unlink()
+                except Exception:
+                    pass
             img = pyvista_screenshot(plotter, str(image_path), window_size=(width, height), return_img=True)
         except Exception as exc:
             raise RuntimeError("High-resolution image saving failed. Try a smaller preset.") from exc
         finally:
-            try:
-                plotter.close()
-            except Exception:
-                pass
+            self._dispose_mo_plotter(plotter)
         if img is None or getattr(img, "size", 0) == 0:
             raise RuntimeError("Screenshot saving failed: blank image returned.")
-        im = Image.open(image_path)
+        with Image.open(image_path) as opened:
+            im = opened.convert("RGB")
         if im.size != (width, height):
             raise RuntimeError(f"Saved image has unexpected size {im.size}; expected {(width, height)}.")
         extrema = im.convert("L").getextrema()
@@ -2217,6 +2360,68 @@ class App(tk.Tk):
         orbital["camera_state"] = camera_state or {"camera_position": camera_position_to_json(camera_position)}
         if refresh_contact_sheet:
             self.open_mo_contact_sheet()
+
+    def clean_all_mo_surfaces(self) -> None:
+        out_path = self._require_orca_out_for_surfaces()
+        if self.mo_batch_thread is not None and self.mo_batch_thread.is_alive():
+            messagebox.showinfo("Clean MO surfaces", "MO surface rendering is still running. Wait for it to finish, then clean again.")
+            return
+
+        paths = ensure_mo_surface_dirs(out_path)
+        root = paths["root"].resolve()
+        base = out_path.stem
+        if not messagebox.askyesno(
+            "Clean all MO surfaces",
+            "Delete generated cube files, saved images, thumbnails, and MO surface metadata for the current ORCA output?\n\n"
+            "The source .out and .gbw files will not be changed.",
+            parent=self.mo_contact_sheet if self.mo_contact_sheet is not None and self.mo_contact_sheet.winfo_exists() else self,
+        ):
+            return
+
+        self._close_active_mo_plotter()
+        patterns = [
+            (paths["cubes"], f"{base}_*.cube"),
+            (paths["images"], f"{base}_*_view.png"),
+            (paths["thumbnails"], f"{base}_*_thumb.png"),
+            (paths["metadata"], f"{base}_MO_surfaces.json"),
+            (paths["metadata"], f"{base}_*_orca_plot.log"),
+        ]
+        candidates: List[Path] = []
+        seen: set[str] = set()
+        for folder, pattern in patterns:
+            for candidate in folder.glob(pattern):
+                try:
+                    resolved = candidate.resolve()
+                except Exception:
+                    continue
+                if root != resolved and root not in resolved.parents:
+                    continue
+                key = str(resolved).lower()
+                if key not in seen and candidate.is_file():
+                    seen.add(key)
+                    candidates.append(candidate)
+
+        errors: List[str] = []
+        deleted = 0
+        for candidate in candidates:
+            try:
+                candidate.unlink()
+                deleted += 1
+            except Exception as exc:
+                errors.append(f"{candidate.name}: {exc}")
+
+        self.mo_metadata = {"orbitals": {}}
+        self.mo_orbitals = []
+        try:
+            self._prepare_mo_orbitals()
+        except Exception:
+            pass
+        if self.mo_contact_sheet is not None and self.mo_contact_sheet.winfo_exists():
+            self.mo_contact_sheet.refresh()
+        self.mo_status_var.set(f"Cleaned {deleted} MO surface file(s). Generate cubes to rebuild from scratch.")
+        if errors:
+            raise RuntimeError("Some files could not be deleted:\n" + "\n".join(errors))
+        messagebox.showinfo("Clean MO surfaces", f"Cleaned {deleted} generated MO surface file(s).")
 
     def save_contact_sheet(self) -> None:
         out_path = self._require_orca_out_for_surfaces()

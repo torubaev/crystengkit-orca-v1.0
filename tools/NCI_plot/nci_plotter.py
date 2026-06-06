@@ -309,15 +309,15 @@ def bind_mousewheel_to_canvas(canvas: tk.Canvas, *_hover_widgets: tk.Misc) -> No
     canvas.bind_all("<Button-5>", _on_mousewheel, add="+")
 
 
-def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_projection=True, antialiasing="msaa", extent=1.0):
-    """Apply the default PyVista viewer quality/lighting used by 3Dview.py."""
+def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_projection=True, antialiasing=None, extent=1.0):
+    """Apply conservative PyVista defaults that work on limited OpenGL contexts."""
     try:
-        pv_module.global_theme.multi_samples = 16
+        pv_module.global_theme.multi_samples = 0
     except Exception:
         pass
 
     try:
-        pv_module.global_theme.smooth_shading = True
+        pv_module.global_theme.smooth_shading = False
     except Exception:
         pass
 
@@ -329,10 +329,11 @@ def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_
         except Exception:
             pass
 
-    try:
-        plotter.enable_anti_aliasing(antialiasing)
-    except Exception:
-        pass
+    if antialiasing:
+        try:
+            plotter.enable_anti_aliasing(antialiasing)
+        except Exception:
+            pass
 
     try:
         plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)

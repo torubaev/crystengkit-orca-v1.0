@@ -1710,11 +1710,11 @@ def molecule_extent(atoms: List[Atom]) -> float:
 
 def configure_pyvista_defaults(pv_module, plotter, background="black", parallel_projection=True, antialiasing=None, extent=1.0):
     try:
-        pv_module.global_theme.multi_samples = 16
+        pv_module.global_theme.multi_samples = 0
     except Exception:
         pass
     try:
-        pv_module.global_theme.smooth_shading = True
+        pv_module.global_theme.smooth_shading = False
     except Exception:
         pass
     try:

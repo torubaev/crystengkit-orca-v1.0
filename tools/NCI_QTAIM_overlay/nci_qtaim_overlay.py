@@ -996,10 +996,6 @@ def build_overlay(
         font_size=10,
         color="black" if background.lower() == "white" else "white",
     )
-    try:
-        plotter.enable_anti_aliasing()
-    except Exception:
-        pass
     plotter.reset_camera()
     plotter.show(title="NCI + QTAIM overlay")
 

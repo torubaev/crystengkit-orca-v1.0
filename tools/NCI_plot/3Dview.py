@@ -286,12 +286,12 @@ def guess_bonds(atoms: List[Atom], settings: RenderSettings) -> List[Tuple[int, 
 
 def configure_quality(pv, plotter, settings: RenderSettings) -> None:
     try:
-        pv.global_theme.multi_samples = 16
+        pv.global_theme.multi_samples = 0
     except Exception:
         pass
 
     try:
-        pv.global_theme.smooth_shading = True
+        pv.global_theme.smooth_shading = False
     except Exception:
         pass
 
@@ -300,15 +300,11 @@ def configure_quality(pv, plotter, settings: RenderSettings) -> None:
     except Exception:
         plotter.set_background("white")
 
-    try:
-        if settings.antialiasing == "ssaa":
-            plotter.enable_anti_aliasing("ssaa")
-        elif settings.antialiasing == "fxaa":
-            plotter.enable_anti_aliasing("fxaa")
-        elif settings.antialiasing == "msaa":
-            plotter.enable_anti_aliasing("msaa")
-    except Exception:
-        pass
+    if settings.antialiasing:
+        try:
+            plotter.enable_anti_aliasing(settings.antialiasing)
+        except Exception:
+            pass
 
     try:
         plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)
@@ -408,13 +404,13 @@ def material_parameters(settings: RenderSettings) -> Dict[str, object]:
     if settings.lighting_mode == "Flat/no-black":
         return {
             "lighting": False,
-            "smooth_shading": True,
+            "smooth_shading": False,
         }
 
     if settings.lighting_mode == "Stable Mercury-like":
         return {
             "lighting": True,
-            "smooth_shading": True,
+            "smooth_shading": False,
             "ambient": 0.50,
             "diffuse": 0.62,
             "specular": 0.18,
@@ -423,7 +419,7 @@ def material_parameters(settings: RenderSettings) -> Dict[str, object]:
 
     return {
         "lighting": True,
-        "smooth_shading": True,
+        "smooth_shading": False,
         "ambient": 0.36,
         "diffuse": 0.74,
         "specular": 0.28,

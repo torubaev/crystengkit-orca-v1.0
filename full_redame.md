@@ -1,4 +1,4 @@
-﻿# CrystEngKit: From CIF files to ESP, NCI, and QTAIM figures in a few clicks — a practical quantum-chemistry suite for supramolecular chemistry and crystal engineering.
+# CrystEngKit: A practical GUI for supramolecular chemistry and crystal engineering (from .CIF file to ESP, NCI, and QTAIM plots in a few clicks).
 
 <img title="" src="images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="" width="207"> <img title="" src="images/wiki/ZfK_C2H2I2_COVER.png" alt="" width="203"> <img title="" src="images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="" width="204">
 
@@ -760,7 +760,7 @@ Typical root structure:
 README.md
 LICENSE
 docs/
-images/
+images/                         # README/wiki screenshots and figures
 install/
 examples/                       # reserved for future examples
 benchmark_sets/

@@ -407,7 +407,7 @@ Typical root structure:
 README.md
 LICENSE
 docs/
-images/
+images/                         # README/wiki screenshots and figures
 install/
 examples/                       # reserved for future examples
 benchmark_sets/
