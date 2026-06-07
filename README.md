@@ -104,7 +104,7 @@ Recent MO-surface tools include capped-sticks molecule rendering by default, opt
 
 Creates electrostatic-potential maps on electron-density surfaces[^esp]. This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as `.wfn`, `.wfx`, or `.fchk`.
 
-![](images/wiki/orca_vismap%20output_1.png)
+![](images/wiki/orca_vismap_output_1.png)
 
 ### NCI Plotter
 

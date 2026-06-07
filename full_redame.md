@@ -404,7 +404,7 @@ In VisMap 5.6, the original workflow was adapted with several practical modifica
 - extrema plotting was added for easier inspection of ESP minima and maxima
 - the workflow was integrated into the ORCA Input Builder so ESP mapping can be launched directly after ORCA runs
 
-![](images/wiki/orca_vismap%20output_1.png)
+![](images/wiki/orca_vismap_output_1.png)
 
 ### What it does
 
