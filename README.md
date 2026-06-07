@@ -100,11 +100,9 @@ Recent MO-surface tools include capped-sticks molecule rendering by default, opt
 
 ### ESP / VisMap
 
-![](images/wiki/orca-vismap_1.png)
-
-Creates electrostatic-potential maps on electron-density surfaces[^esp]. This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as `.wfn`, `.wfx`, or `.fchk`.
-
+Creates electrostatic-potential maps on electron-density surfaces[^esp]. 
 ![](images/wiki/orca_vismap_output_1.png)
+This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as `.wfn`, `.wfx`, or `.fchk`.
 
 ### NCI Plotter
 
@@ -178,10 +176,12 @@ For consistent MO surface figures, orient and zoom one saved contact-sheet tile,
 5. Choose whether to include relaxed binding analysis and thermodynamic terms.
 
 6. Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.
+   ![](images/wiki/orca-output_3.png)
+   ![](images/wiki/orca-output_4.png)
 
 As a workflow sanity check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&id=4&state=show&order=ASC&by=name_m&method=
 
-### Solvent Calculations
+### Modeling of Solvation Effects
 
 The `Solvent` field adds an implicit-solvent model. For ORCA, the Builder uses the SMD model[^smd] through the `%cpcm` block[^pcm]. Choose a solvent from the dropdown menu, or use `Other solvent...` for a custom ORCA-recognized solvent name.
 

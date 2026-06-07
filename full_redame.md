@@ -222,7 +222,7 @@ The Builder window is divided into:
 - **NMR** requests NMR-related calculated properties.
 - **Intermolecular interaction energy** activates the dimer workflow for fragment assignment, frozen interaction energies, counterpoise correction, and optional relaxed/thermodynamic follow-up jobs.
 
-### Solvent and SMD
+### Modeling of Solvation Effects
 
 In the Builder, the `Solvent` field is intended for ORCA or Gaussian implicit-solvent calculations[^pcm].
 
@@ -389,9 +389,9 @@ For finished ORCA jobs, the Plotter can generate and view molecular-orbital surf
 
 ## ESP / VisMap
 
-![](images/wiki/orca-vismap_1.png)
-
 VisMap is the ESP and electron-density viewer used for visual analysis of electrostatic potential on electron-density isosurfaces.
+
+![](images/wiki/orca_vismap_output_1.png)
 
 This PyVista-based branch of VisMap is built on the original VisMap code by aaan1s:
 
@@ -403,8 +403,6 @@ In VisMap 5.6, the original workflow was adapted with several practical modifica
 - a graphical user interface was added for ESP data generation and plotting
 - extrema plotting was added for easier inspection of ESP minima and maxima
 - the workflow was integrated into the ORCA Input Builder so ESP mapping can be launched directly after ORCA runs
-
-![](images/wiki/orca_vismap_output_1.png)
 
 ### What it does
 
@@ -660,6 +658,9 @@ The Builder also supports dimer interaction-energy workflows.
 4. Check if the assignment is correct (in grahick window, press "View" button) 
 4. Choose whether to include relaxed binding analysis and thermodynamic terms.
 5. Run ORCA and review the final combined summary.
+
+   ![](images/wiki/orca-output_3.png)
+   ![](images/wiki/orca-output_4.png)
 
 ## Good to know
 

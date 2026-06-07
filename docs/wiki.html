@@ -249,7 +249,7 @@
 <details class="nav-group"><summary><a href="#main-workflows">Main Workflows</a></summary><div class="nav-children"><a class="nav-link level-3" href="#build-and-run-an-orca-job">Build and Run an ORCA Job</a>
 <a class="nav-link level-3" href="#make-figures-after-a-calculation">Make Figures After a Calculation</a>
 <a class="nav-link level-3" href="#dimer-interaction-energy">Dimer Interaction Energy</a>
-<a class="nav-link level-3" href="#solvent-calculations">Solvent Calculations</a></div></details>
+<a class="nav-link level-3" href="#modeling-of-solvation-effects">Modeling of Solvation Effects</a></div></details>
 <details class="nav-group"><summary><a href="#glossary">Glossary</a></summary><div class="nav-children"><a class="nav-link level-3" href="#main-calculation-types">Main Calculation Types</a>
 <a class="nav-link level-3" href="#method-setup">Method Setup</a>
 <a class="nav-link level-3" href="#solvent-and-environment">Solvent and Environment</a>
@@ -321,9 +321,9 @@
 <figure><img src="../images/wiki/orca_homo-lumo_3.png" alt=""></figure>
 <p>Recent MO-surface tools include capped-sticks molecule rendering by default, optional colored wireframe or ball-and-stick molecule overlays. In the table, each saved MO tile can be reopened with its saved camera, style, and scale. The <code>Use view for all</code> button applies the selected tile&#x27;s saved orientation and zoom/scale to every MO surface in the current table.</p>
 <h3 id="esp-vismap">ESP / VisMap</h3>
-<figure><img src="../images/wiki/orca-vismap_1.png" alt=""></figure>
-<p>Creates electrostatic-potential maps on electron-density surfaces<sup><a href="#ref-esp">esp</a></sup>. This version is based on the original VisMap code by aaan1s (&lt;https://github.com/aaan1s/VisMap&gt;) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as <code>.wfn</code>, <code>.wfx</code>, or <code>.fchk</code>.</p>
+<p>Creates electrostatic-potential maps on electron-density surfaces<sup><a href="#ref-esp">esp</a></sup>.</p>
 <figure><img src="../images/wiki/orca_vismap_output_1.png" alt=""></figure>
+<p>This version is based on the original VisMap code by aaan1s (&lt;https://github.com/aaan1s/VisMap&gt;) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as <code>.wfn</code>, <code>.wfx</code>, or <code>.fchk</code>.</p>
 <h3 id="nci-plotter">NCI Plotter</h3>
 <figure><img src="../images/wiki/orca_nci_output_1.png" alt=""></figure>
 <p>Creates noncovalent-interaction surfaces<sup><a href="#ref-nci">nci</a></sup> from <code>.wfn</code> or <code>.wfx</code> files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.</p>
@@ -387,9 +387,11 @@
 </ol>
 <ol start="6">
 <li>Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.</li>
+<figure><img src="../images/wiki/orca-output_3.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-output_4.png" alt=""></figure>
 </ol>
 <p>As a workflow sanity check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&amp;id=4&amp;state=show&amp;order=ASC&amp;by=name_m&amp;method=</p>
-<h3 id="solvent-calculations">Solvent Calculations</h3>
+<h3 id="modeling-of-solvation-effects">Modeling of Solvation Effects</h3>
 <p>The <code>Solvent</code> field adds an implicit-solvent model. For ORCA, the Builder uses the SMD model<sup><a href="#ref-smd">smd</a></sup> through the <code>%cpcm</code> block<sup><a href="#ref-pcm">pcm</a></sup>. Choose a solvent from the dropdown menu, or use <code>Other solvent...</code> for a custom ORCA-recognized solvent name.</p>
 <h2 id="glossary">Glossary</h2>
 <p>This short glossary explains the quantum-chemistry terms that appear in the Builder. It is not meant to replace a textbook; it is a quick practical guide to what the options mean before you click <code>Run Orca</code>.</p>
