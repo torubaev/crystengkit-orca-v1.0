@@ -58,10 +58,15 @@ COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 ORIGINAL_VISMAP_URL = "https://github.com/aaan1s/VisMap"
 README_LINK_TEXT = "README section: ESP / VisMap"
+README_ANCHOR = "esp--vismap"
 
 
 def wiki_url():
-    return GITHUB_URL + "#esp--vismap"
+    return GITHUB_URL + f"#{README_ANCHOR}"
+
+
+def open_readme_or_wiki():
+    webbrowser.open(wiki_url(), new=2)
 ABOUT_PURPOSE = (
     "Creates electrostatic-potential maps on electron-density surfaces. This version is based "
     "on the original VisMap code by aaan1s and adapts it for this suite with a GUI for ESP "
@@ -136,7 +141,7 @@ def open_about_dialog(parent, title, icon_path, purpose):
     ttk.Label(box, text="README:", justify="left").grid(row=6, column=1, sticky="w", pady=(10, 0))
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
-    wiki_link.bind("<Button-1>", lambda _event: webbrowser.open(wiki_url(), new=2))
+    wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
     ttk.Label(box, text=COPYRIGHT_NOTE, justify="left").grid(row=8, column=1, sticky="w", pady=(10, 0))
 
     ttk.Button(box, text="Close", command=win.destroy).grid(row=9, column=0, columnspan=2, sticky="e", pady=(14, 0))

@@ -41,10 +41,15 @@ DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: ORCA Input Builder"
+README_ANCHOR = "orca-input-builder"
 
 
 def wiki_url() -> str:
-    return GITHUB_URL + "#orca-input-builder"
+    return GITHUB_URL + f"#{README_ANCHOR}"
+
+
+def open_readme_or_wiki():
+    webbrowser.open(wiki_url(), new=2)
 ICON_DIR = TOOLS_ROOT / "images"
 ORCA_ICON_PATH = ICON_DIR / "tr_orca_icon.png"
 HOMO_LUMO_ICON_PATH = ICON_DIR / "tr_homo_lumo_icon.png"
@@ -2842,7 +2847,7 @@ class App(tk.Tk):
         ttk.Label(box, text="README:", justify="left").grid(row=4, column=1, sticky="w", pady=(10, 0))
         wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
         wiki_link.grid(row=5, column=1, sticky="w", pady=(2, 0))
-        wiki_link.bind("<Button-1>", lambda _e: webbrowser.open(wiki_url(), new=2))
+        wiki_link.bind("<Button-1>", lambda _e: open_readme_or_wiki())
         ttk.Label(box, text=COPYRIGHT_NOTE, justify="left").grid(row=6, column=1, sticky="w", pady=(10, 0))
 
         buttons = ttk.Frame(box)
@@ -3566,6 +3571,115 @@ class App(tk.Tk):
         except Exception:
             return ""
         return ""
+
+    def _matching_input_path_for_output(self, out_path: str) -> str:
+        out_file = Path(out_path)
+        candidates = [
+            out_file.with_suffix(".inp"),
+            out_file.with_suffix(".gjf"),
+            out_file.with_suffix(".com"),
+        ]
+        if self.current_input_path:
+            candidates.insert(0, Path(self.current_input_path))
+        selected_text = self.path_var.get().strip()
+        if selected_text:
+            candidates.insert(0, Path(selected_text))
+        for candidate in candidates:
+            try:
+                if candidate.is_file() and candidate.stem == out_file.stem:
+                    return str(candidate)
+            except Exception:
+                pass
+        return ""
+
+    def _data_from_orca_input_file(self, inp_path: str) -> Dict:
+        data = self.collect()
+        data.update({
+            "program": "ORCA",
+            "functional": "",
+            "basis": "",
+            "dispersion": "",
+            "ri_jcosx": False,
+            "tight_scf": False,
+            "grid": "",
+            "print_mos": False,
+            "job_sp": False,
+            "job_opt": False,
+            "job_freq": False,
+            "job_density": False,
+            "job_esp": False,
+            "job_wfn_wfx": False,
+            "job_esp_mep": False,
+            "job_nmr": False,
+            "job_tddft": False,
+            "job_interaction": False,
+            "freeze_heavy": False,
+            "freeze_all": False,
+            "solvent_text": "",
+        })
+
+        simple = self._read_simple_input_line(inp_path)
+        tokens = simple[1:].split() if simple.startswith("!") else []
+        upper_tokens = {token.upper() for token in tokens}
+        functional_lookup = {item.upper(): item for item in ORCA_FUNCTIONALS}
+        basis_lookup = {item.upper(): item for item in ORCA_BASIS}
+
+        for token in tokens:
+            upper = token.upper()
+            if not data["functional"] and upper in functional_lookup:
+                data["functional"] = functional_lookup[upper]
+            if not data["basis"] and upper in basis_lookup:
+                data["basis"] = basis_lookup[upper]
+
+        if "D3BJ" in upper_tokens:
+            data["dispersion"] = "D3BJ"
+        elif "D4" in upper_tokens:
+            data["dispersion"] = "D4"
+        data["ri_jcosx"] = "RIJCOSX" in upper_tokens
+        data["tight_scf"] = "TIGHTSCF" in upper_tokens
+        for token in tokens:
+            if token in {"DefGrid1", "DefGrid2", "DefGrid3"}:
+                data["grid"] = token
+                break
+        data["job_opt"] = "OPT" in upper_tokens
+        data["job_freq"] = "FREQ" in upper_tokens
+        data["job_sp"] = "SP" in upper_tokens or not any([data["job_opt"], data["job_freq"], data["job_nmr"], data["job_tddft"]])
+        data["job_density"] = "KEEPDENS" in upper_tokens
+        data["job_esp"] = data["job_density"]
+        data["job_wfn_wfx"] = data["job_density"]
+        data["job_esp_mep"] = data["job_density"]
+        data["print_mos"] = "P_MOS" in simple.upper() or bool(re.search(r"Print\s*\[\s*P_MOs\s*\]\s+[1-9]", simple, re.IGNORECASE))
+
+        try:
+            text = Path(inp_path).read_text(encoding="utf-8", errors="replace")
+            xyz_match = re.search(r"^\s*\*\s+xyz\s+(-?\d+)\s+(\d+)", text, re.IGNORECASE | re.MULTILINE)
+            if xyz_match:
+                data["charge"] = int(xyz_match.group(1))
+                data["multiplicity"] = int(xyz_match.group(2))
+            if re.search(r"^\s*Print\s*\[\s*P_MOs\s*\]\s+[1-9]", text, re.IGNORECASE | re.MULTILINE):
+                data["print_mos"] = True
+            solvent_match = re.search(r"^\s*SMD\s+true\s*$.*?^\s*SMDSolvent\s+\"?([^\"\r\n]+)\"?", text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+            if solvent_match:
+                data["solvent_text"] = solvent_match.group(1).strip()
+            if re.search(r"^\s*Constraints\s*$", text, re.IGNORECASE | re.MULTILINE):
+                data["freeze_all"] = True
+        except Exception:
+            pass
+        return data
+
+    def _summary_context_for_output(self, out_path: str) -> Dict:
+        active = dict(self.active_run_context or {})
+        active_input = active.get("input_path")
+        if active and active_input and Path(active_input).with_suffix(".out") == Path(out_path):
+            return active
+
+        inp_path = self._matching_input_path_for_output(out_path)
+        data = self._data_from_orca_input_file(inp_path) if inp_path else self.collect()
+        return {
+            "input_path": inp_path,
+            "data": data,
+            "post_processing": {},
+        }
 
     def _describe_requested_targets(self, data: Dict) -> List[str]:
         targets: List[str] = []
@@ -4563,19 +4677,27 @@ class App(tk.Tk):
         try:
             out_path = self._available_output_path()
         except Exception as exc:
-            messagebox.showinfo("Show summary", str(exc))
+            messagebox.showinfo("Show summary", "Summary not found because no output file is available yet.")
             return
 
         summary_path = self._project_summary_path(out_path)
         if not summary_path.is_file():
-            messagebox.showinfo("Show summary", f"No summary file was found for:\n{out_path}")
-            return
-
-        try:
-            summary_text = summary_path.read_text(encoding="utf-8", errors="replace")
-        except Exception as exc:
-            messagebox.showerror("Show summary error", str(exc))
-            return
+            output_ok, output_reason = validate_orca_output_file(out_path)
+            if not output_ok:
+                messagebox.showinfo("Show summary", f"No valid completed ORCA output is available.\n{output_reason}\n\nOutput:\n{out_path}")
+                return
+            try:
+                calc_summary = self._build_calculation_summary(self._summary_context_for_output(out_path), out_path)
+                summary_path, summary_text = self._write_project_summary(out_path, calc_summary)
+            except Exception as exc:
+                messagebox.showerror("Show summary error", f"Summary file was not found and could not be generated:\n{exc}")
+                return
+        else:
+            try:
+                summary_text = summary_path.read_text(encoding="utf-8", errors="replace")
+            except Exception as exc:
+                messagebox.showerror("Show summary error", str(exc))
+                return
 
         self.append_monitor(f"=== Project summary ===\nSaved: {summary_path}\n\n{summary_text}", clear=True, scroll_to_end=False, wrap="word")
         self._set_monitor_stage("Summary shown")

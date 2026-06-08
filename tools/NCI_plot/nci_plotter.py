@@ -64,10 +64,15 @@ NCI_ICON_PATH = TOOLS_ROOT / "images" / "tr_NCI_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 README_LINK_TEXT = "README section: NCI Plotter"
+README_ANCHOR = "nci-plotter"
 
 
 def wiki_url() -> str:
-    return GITHUB_URL + "#nci-plotter"
+    return GITHUB_URL + f"#{README_ANCHOR}"
+
+
+def open_readme_or_wiki() -> None:
+    webbrowser.open(wiki_url(), new=2)
 ABOUT_PURPOSE = (
     "Creates noncovalent-interaction surfaces from .wfn or .wfx files. It is useful for "
     "visualizing weak contacts, attractive regions, and repulsive regions in molecular "
@@ -742,7 +747,7 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     ttk.Label(box, text="README:", justify="left").grid(row=4, column=1, sticky="w", pady=(10, 0))
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=5, column=1, sticky="w", pady=(2, 0))
-    wiki_link.bind("<Button-1>", lambda _event: webbrowser.open(wiki_url(), new=2))
+    wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
     ttk.Label(box, text=COPYRIGHT_NOTE, justify="left").grid(row=6, column=1, sticky="w", pady=(10, 0))
 
     ttk.Button(box, text="Close", command=win.destroy).grid(row=7, column=0, columnspan=2, sticky="e", pady=(14, 0))
