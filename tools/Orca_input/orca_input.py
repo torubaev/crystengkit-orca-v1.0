@@ -2362,12 +2362,13 @@ class App(tk.Tk):
 
         monbtn = ttk.Frame(monbox)
         monbtn.grid(row=1, column=0, sticky="ew", pady=(6, 6))
-        for i in range(4):
+        for i in range(5):
             monbtn.columnconfigure(i, weight=1)
         ttk.Button(monbtn, text="Stop job", command=self.stop_orca).grid(row=0, column=0, sticky="ew")
         ttk.Button(monbtn, text="Open .out", command=self.open_last_output).grid(row=0, column=1, sticky="ew", padx=(6, 0))
         ttk.Button(monbtn, text="Open folder", command=self.open_last_output_folder).grid(row=0, column=2, sticky="ew", padx=(6, 0))
-        ttk.Button(monbtn, text="Clear monitor", command=self.clear_monitor).grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        ttk.Button(monbtn, text="Show summary", command=self.show_project_summary).grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        ttk.Button(monbtn, text="Clear monitor", command=self.clear_monitor).grid(row=0, column=4, sticky="ew", padx=(6, 0))
 
         self.monitor_text = tk.Text(monbox, wrap="none", height=24, font=("Consolas", 10), relief="solid", bd=1)
         self.monitor_text.grid(row=2, column=0, sticky="nsew")
@@ -3548,7 +3549,10 @@ class App(tk.Tk):
         except Exception:
             return ""
         match = re.search(r"Program Version\s+([^\r\n]+)", text, re.IGNORECASE)
-        return match.group(1).strip() if match else ""
+        if not match:
+            return ""
+        version = re.sub(r"\s+-\s+RELEASE\s+-\s*$", "", match.group(1).strip(), flags=re.IGNORECASE)
+        return version.strip()
 
     def _read_simple_input_line(self, inp_path: str) -> str:
         if not inp_path or not os.path.isfile(inp_path):
@@ -3617,6 +3621,10 @@ class App(tk.Tk):
                 "print_mos": bool(data.get("print_mos")),
                 "job_esp_mep": bool(data.get("job_esp_mep")),
                 "job_interaction": bool(data.get("job_interaction")),
+                "job_sp": bool(data.get("job_sp")),
+                "job_opt": bool(data.get("job_opt")),
+                "freeze_heavy": bool(data.get("freeze_heavy")),
+                "freeze_all": bool(data.get("freeze_all")),
             },
             "post_processing": dict(context.get("post_processing", {})),
             "analysis_files": {
@@ -3626,16 +3634,45 @@ class App(tk.Tk):
             "results_hartree": energies,
         }
 
-    def _computational_details_paragraphs(self, summary: Dict[str, object], line1: str, line2: str, extra: List[str], ref_map: Dict[str, str]) -> List[str]:
-        paragraphs = [line1 + line2]
-        if extra:
-            paragraphs.append(" ".join(extra))
-        paragraphs.append(
-            f"CrystEngKit ({GITHUB_URL}) was used to prepare the ORCA input and render the output in Multiwfn "
-            f"{ref_map['MULTIWFN']} to analyze and visualize the HOMO-LUMO, ESP maps, NCI plots "
-            f"{ref_map['NCI']}, {ref_map['NCIPLOT']}, and QTAIM critical-point and bonding paths {ref_map['QTAIM']}."
-        )
-        return paragraphs
+    def _summary_reference_library(self) -> Dict[str, str]:
+        return {
+            "ORCA": "Neese, F.; Wennmohs, F.; Becker, U.; Riplinger, C. The ORCA quantum chemistry program package. J. Chem. Phys. 2020, 152, 224108. https://doi.org/10.1063/5.0004608; Neese, F. Software Update: The ORCA Program System-Version 6.0. WIREs Comput. Mol. Sci. 2025, 15, e70019. https://doi.org/10.1002/wcms.70019",
+            "B3LYP": "Becke, A. D. Density-functional thermochemistry. III. The role of exact exchange. J. Chem. Phys. 1993, 98, 5648-5652. https://doi.org/10.1063/1.464913; Lee, C.; Yang, W.; Parr, R. G. Development of the Colle-Salvetti correlation-energy formula into a functional of the electron density. Phys. Rev. B 1988, 37, 785-789. https://doi.org/10.1103/PhysRevB.37.785",
+            "PBE": "Perdew, J. P.; Burke, K.; Ernzerhof, M. Generalized Gradient Approximation Made Simple. Phys. Rev. Lett. 1996, 77, 3865-3868. https://doi.org/10.1103/PhysRevLett.77.3865",
+            "PBE0": "Adamo, C.; Barone, V. Toward reliable density functional methods without adjustable parameters: The PBE0 model. J. Chem. Phys. 1999, 110, 6158-6170. https://doi.org/10.1063/1.478522",
+            "DEF2_BASIS": "Weigend, F.; Ahlrichs, R. Balanced basis sets of split valence, triple zeta valence and quadruple zeta valence quality for H to Rn: Design and assessment of accuracy. Phys. Chem. Chem. Phys. 2005, 7, 3297-3305. https://doi.org/10.1039/b508541a",
+            "DEF2_J": "Weigend, F. Accurate Coulomb-fitting basis sets for H to Rn. Phys. Chem. Chem. Phys. 2006, 8, 1057-1065. https://doi.org/10.1039/b515623h",
+            "RIJCOSX": "Izsak, R.; Neese, F. An overlap fitted chain of spheres exchange method. J. Chem. Phys. 2011, 135, 144105. https://doi.org/10.1063/1.3646921",
+            "D3BJ": "Grimme, S.; Ehrlich, S.; Goerigk, L. Effect of the damping function in dispersion corrected density functional theory. J. Comput. Chem. 2011, 32, 1456-1465. https://doi.org/10.1002/jcc.21759",
+            "D4": "Caldeweyher, E.; Bannwarth, C.; Grimme, S. Extension of the D3 dispersion coefficient model. J. Chem. Phys. 2017, 147, 034112. https://doi.org/10.1063/1.4993215; Caldeweyher, E.; Ehlert, S.; Hansen, A.; Neugebauer, H.; Spicher, S.; Bannwarth, C.; Grimme, S. A generally applicable atomic-charge dependent London dispersion correction. J. Chem. Phys. 2019, 150, 154122. https://doi.org/10.1063/1.5090222",
+            "BSSE": "Boys, S. F.; Bernardi, F. The calculation of small molecular interactions by the differences of separate total energies. Some procedures with reduced errors. Mol. Phys. 1970, 19, 553-566. https://doi.org/10.1080/00268977000101561",
+            "MULTIWFN": "Lu, T.; Chen, F. Multiwfn: A multifunctional wavefunction analyzer. J. Comput. Chem. 2012, 33, 580-592. https://doi.org/10.1002/jcc.22885",
+            "NCI": "Johnson, E. R.; Keinan, S.; Mori-Sanchez, P.; Contreras-Garcia, J.; Cohen, A. J.; Yang, W. Revealing noncovalent interactions. J. Am. Chem. Soc. 2010, 132, 6498-6506. https://doi.org/10.1021/ja100936w",
+            "NCIPLOT": "Contreras-Garcia, J.; Johnson, E. R.; Keinan, S.; Chaudret, R.; Piquemal, J.-P.; Beratan, D. N.; Yang, W. NCIPLOT: A program for plotting noncovalent interaction regions. J. Chem. Theory Comput. 2011, 7, 625-632. https://doi.org/10.1021/ct100641a",
+            "QTAIM": "Bader, R. F. W. Atoms in Molecules: A Quantum Theory; Oxford University Press: Oxford, 1990. https://doi.org/10.1093/oso/9780198551683.001.0001",
+        }
+
+    def _reference_marker(self, key: str, used_refs: List[str]) -> str:
+        if key not in used_refs:
+            used_refs.append(key)
+        return f"[{used_refs.index(key) + 1}]"
+
+    def _functional_reference_key(self, functional: str) -> str:
+        key = functional.strip().upper().replace(" ", "").replace("-", "")
+        if key in {"B3LYP", "B3LYPG"}:
+            return "B3LYP"
+        if key in {"PBE", "PBEPBE"}:
+            return "PBE"
+        if key in {"PBE0", "PBE1PBE"}:
+            return "PBE0"
+        return ""
+
+    def _geometry_descriptor_for_summary(self, settings: Dict[str, object]) -> str:
+        if settings.get("job_opt") and (settings.get("freeze_all") or settings.get("freeze_heavy")):
+            return "constrained optimized"
+        if settings.get("job_opt"):
+            return "optimized"
+        return "single-point"
 
     def _calculation_summary_lines(self, summary: Dict[str, object]) -> List[str]:
         settings = summary.get("settings", {})
@@ -3646,65 +3683,99 @@ class App(tk.Tk):
         grid = settings.get("grid", "")
         solvent = settings.get("solvent_resolved") or settings.get("solvent_input") or ""
 
-        ref_map = {
-            "ORCA": "[Neese, 2017, #2682] {DOI:10.1002/wcms.1327}",
-            "PBE": "[Perdew, 1996, #2797] {DOI:10.1103/PhysRevLett.77.3865}",
-            "PBE0": "[Adamo, 1999, #2688] {DOI:10.1063/1.478522}",
-            "DEF2_BASIS": "[Weigend, 2005, #2684] {DOI:10.1039/b508541a}",
-            "DEF2_J": "[Weigend, 2006, #2799] {DOI:10.1039/b515623h}",
-            "RIJCOSX": "[Izsak, 2011, #3168] {DOI:10.1063/1.3646921}",
-            "D3BJ": "[Grimme, 2011, #2689] {DOI:10.1002/jcc.21759}",
-            "DLPNO_CCSDT": "[Riplinger, 2016, #2683] {DOI:10.1063/1.4939030}",
-            "BSSE": "[Boys, 2006, #4937] {DOI:10.1080/00268977000101561}",
-            "MULTIWFN": "[Lu, 2012, #6001] {DOI:10.1002/jcc.22885}",
-            "NCI": "[Johnson, 2010, #6002] {DOI:10.1021/ja100936w}",
-            "NCIPLOT": "[Contreras-Garcia, 2011, #6003] {DOI:10.1021/ct100641a}",
-            "QTAIM": "[Bader, 1990, #6004] {DOI:10.1093/oso/9780198551683.001.0001}",
-        }
+        refs = self._summary_reference_library()
+        used_refs: List[str] = []
+        orca_ref = self._reference_marker("ORCA", used_refs)
+        functional_ref_key = self._functional_reference_key(str(functional))
+        functional_ref = self._reference_marker(functional_ref_key, used_refs) if functional_ref_key else ""
+        basis_ref = self._reference_marker("DEF2_BASIS", used_refs) if str(basis).lower().startswith(("def2", "ma-def2")) else ""
+        dispersion_ref_key = str(dispersion).upper()
+        dispersion_ref = ""
+        if dispersion_ref_key in {"D3BJ", "D4"}:
+            dispersion_ref = self._reference_marker(dispersion_ref_key, used_refs)
 
-        functional_key = functional.strip().upper().replace(" ", "")
-        functional_ref = ""
-        if functional_key in {"PBE", "PBEPBE"}:
-            functional_ref = ref_map["PBE"]
-        elif functional_key in {"PBE0", "PBE1PBE"}:
-            functional_ref = ref_map["PBE0"]
-
-        basis_ref = ref_map["DEF2_BASIS"] if basis.lower().startswith("def2") or basis.lower().startswith("ma-def2") else ""
-        dispersion_ref = ref_map["D3BJ"] if dispersion.upper() == "D3BJ" else ""
-
-        line1 = "Theoretical calculations were carried out with the ORCA program package"
-        if version:
-            line1 += f" (version {version})"
-        line1 += f" {ref_map['ORCA']}."
-        line2 = f" The calculation used the {functional} functional"
+        version_text = f" (version {version})" if version else ""
+        method_bits = [f"a {functional} functional"]
         if functional_ref:
-            line2 += f" {functional_ref}"
+            method_bits[-1] += f" {functional_ref}"
         if dispersion:
-            line2 += f" with the {dispersion} dispersion correction"
+            dispersion_text = f"dispersion correction ({dispersion})"
             if dispersion_ref:
-                line2 += f" {dispersion_ref}"
+                dispersion_text += f" {dispersion_ref}"
+            method_bits.append(dispersion_text)
         if basis:
-            line2 += f" and the {basis} basis set"
+            basis_text = f"a {basis} basis set"
             if basis_ref:
-                line2 += f" {basis_ref}"
-            line2 += "."
-        else:
-            line2 += "."
+                basis_text += f" {basis_ref}"
+            method_bits.append(basis_text)
+
+        primary_task = "geometry optimization" if settings.get("job_opt") else "the requested single-point calculation"
+        paragraphs = [
+            f"Theoretical calculations were carried out with the ORCA{version_text} program package {orca_ref}. "
+            + ", ".join(method_bits)
+            + f" were used for {primary_task}."
+        ]
+        if settings.get("ri_jcosx"):
+            rij_ref = self._reference_marker("RIJCOSX", used_refs)
+            aux_ref = self._reference_marker("DEF2_J", used_refs)
+            paragraphs.append(
+                f"The RIJCOSX approximation {rij_ref} was used to improve the computational speed of Hartree-Fock exchange together with the def2/J auxiliary basis set {aux_ref}."
+            )
 
         extra = []
-        if settings.get("ri_jcosx"):
-            extra.append(f"The RIJCOSX approximation {ref_map['RIJCOSX']} was used together with the def2/J auxiliary basis set {ref_map['DEF2_J']}.")
         if settings.get("tight_scf"):
             extra.append("TightSCF convergence criteria were requested.")
         if grid:
             extra.append(f"The numerical integration grid was {grid}.")
         if solvent:
             extra.append(f"Solvent effects were included with the SMD model for {solvent}.")
+        if extra:
+            paragraphs.append(" ".join(extra))
+
+        if settings.get("job_interaction"):
+            geometry_text = self._geometry_descriptor_for_summary(settings)
+            interaction_text = (
+                f"Dimer interaction energy was calculated using single-point energies evaluated using {geometry_text} geometry "
+                f"with {functional} {basis}."
+            )
+            interaction_text += f" Basis set superposition error (BSSE) was accounted using counterpoise correction scheme {self._reference_marker('BSSE', used_refs)}."
+            paragraphs.append(interaction_text)
+
+        post = summary.get("post_processing", {})
+        analysis_files = summary.get("analysis_files", {})
+        has_analysis = bool(
+            settings.get("print_mos")
+            or settings.get("job_esp_mep")
+            or post.get("wfn_wfx_generated")
+            or post.get("esp_mep_generated")
+            or analysis_files.get("wavefunction_files")
+            or analysis_files.get("cube_files")
+        )
+        if has_analysis:
+            multiwfn_ref = self._reference_marker("MULTIWFN", used_refs)
+            nci_ref = self._reference_marker("NCI", used_refs)
+            nciplot_ref = self._reference_marker("NCIPLOT", used_refs)
+            qtaim_ref = self._reference_marker("QTAIM", used_refs)
+            paragraphs.append(
+                "HOMO-LUMO, QTAIM, NCI plot and MEP were evaluated by the Multiwfn program "
+                f"{multiwfn_ref}, and respective plot figures (Fig. X) were prepared using CrystEngKit software ({GITHUB_URL}). "
+                f"NCI analysis follows the reduced-density-gradient/sign(lambda2)rho formalism {nci_ref} and NCIPLOT convention {nciplot_ref}; "
+                f"QTAIM analysis follows Bader's atoms-in-molecules formalism {qtaim_ref}."
+            )
+            paragraphs.extend([
+                "MEP parameters used in CrystEngKit: electron-density isovalue 0.001 e/A3 isosurface unless changed in the ESP/MEP viewer.",
+                "QTAIM parameters used in CrystEngKit: Multiwfn critical-point and bond-path output with CrystEngKit viewer settings for CP visibility, CP colors, bond-path radius, and background.",
+                "NCI parameters used in CrystEngKit: RDG isovalue 0.50 and sign(lambda2)rho coloring unless changed in the NCI plotter.",
+            ])
+
+        reference_lines = ["", "References"]
+        reference_lines.extend(f"[{index}] {refs[key]}" for index, key in enumerate(used_refs, start=1) if key in refs)
 
         lines = [
             "Computational details",
             "",
-            *self._computational_details_paragraphs(summary, line1, line2, extra, ref_map),
+            *paragraphs,
+            *reference_lines,
         ]
         return lines
 
@@ -3752,7 +3823,7 @@ class App(tk.Tk):
 
     def _write_project_summary(self, out_path: str, calc_summary: Dict[str, object], interaction_summary: Optional[Dict[str, object]] = None, interaction_error: str = "") -> Tuple[Path, str]:
         out_file = Path(out_path)
-        txt_path = out_file.parent / f"{out_file.stem}_summary.txt"
+        txt_path = self._project_summary_path(out_path)
         lines = self._calculation_summary_lines(calc_summary)
         if interaction_summary is not None:
             lines.extend(["", ""] + self._interaction_summary_lines(interaction_summary))
@@ -3761,6 +3832,10 @@ class App(tk.Tk):
         text = "\n".join(lines) + "\n"
         txt_path.write_text(text, encoding="utf-8")
         return txt_path, text
+
+    def _project_summary_path(self, out_path: str) -> Path:
+        out_file = Path(out_path)
+        return out_file.parent / f"{out_file.stem}_summary.txt"
 
     def _interaction_root_for_output(self, dimer_out_path: str) -> Path:
         out_file = Path(dimer_out_path)
@@ -4095,14 +4170,22 @@ class App(tk.Tk):
             self.fragment_status_var.set(str(exc))
             messagebox.showerror("Interaction job generation", str(exc))
 
-    def append_monitor(self, message: str, clear: bool = False):
+    def append_monitor(self, message: str, clear: bool = False, scroll_to_end: bool = True, wrap: Optional[str] = None):
+        previous_wrap = str(self.monitor_text.cget("wrap"))
+        if wrap is not None:
+            self.monitor_text.configure(wrap=wrap)
         if clear:
             self.monitor_text.delete("1.0", "end")
+        elif wrap is None and previous_wrap != "none":
+            self.monitor_text.configure(wrap="none")
         if message:
             if not message.endswith("\n"):
                 message += "\n"
             self.monitor_text.insert("end", message)
-            self.monitor_text.see("end")
+            if scroll_to_end:
+                self.monitor_text.see("end")
+            else:
+                self.monitor_text.see("1.0")
 
     def report_validation(self, errors, warnings, solvent):
         lines = ["=== Validation ==="]
@@ -4426,6 +4509,7 @@ class App(tk.Tk):
 
 
     def clear_monitor(self, reset_status: bool = True):
+        self.monitor_text.configure(wrap="none")
         self.monitor_text.delete("1.0", "end")
         self.monitor_offset = 0
         if reset_status:
@@ -4474,6 +4558,28 @@ class App(tk.Tk):
             open_path_in_system(folder)
         except Exception as exc:
             messagebox.showerror("Open folder error", str(exc))
+
+    def show_project_summary(self):
+        try:
+            out_path = self._available_output_path()
+        except Exception as exc:
+            messagebox.showinfo("Show summary", str(exc))
+            return
+
+        summary_path = self._project_summary_path(out_path)
+        if not summary_path.is_file():
+            messagebox.showinfo("Show summary", f"No summary file was found for:\n{out_path}")
+            return
+
+        try:
+            summary_text = summary_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            messagebox.showerror("Show summary error", str(exc))
+            return
+
+        self.append_monitor(f"=== Project summary ===\nSaved: {summary_path}\n\n{summary_text}", clear=True, scroll_to_end=False, wrap="word")
+        self._set_monitor_stage("Summary shown")
+        self.status.configure(text=f"Summary shown: {summary_path}")
 
     def _find_orca_2aim(self) -> str:
         orca_path = self.orca_path_var.get().strip().strip('"')
@@ -4612,7 +4718,7 @@ class App(tk.Tk):
                 calc_summary = self._build_calculation_summary(context, out_path)
                 summary_path, summary_text = self._write_project_summary(out_path, calc_summary, interaction_summary, interaction_error)
                 post_messages.append(f"Summary saved: {summary_path}")
-                self.append_monitor(f"\n=== Project summary ===\nSaved: {summary_path}\n\n{summary_text}")
+                self.append_monitor(f"\n=== Project summary ===\nSaved: {summary_path}\n\n{summary_text}", wrap="word")
             except Exception as exc:
                 post_messages.append(f"Project summary could not be created: {exc}")
                 self.append_monitor(f"Project summary could not be created: {exc}\n")
