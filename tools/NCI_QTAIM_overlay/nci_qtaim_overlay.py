@@ -1248,6 +1248,19 @@ def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
 
     ttk.Button(box, text="Save image", command=lambda: save_callback()).grid(row=2, column=0, sticky="ew", padx=(0, 6))
     ttk.Button(box, text="Reset view", command=reset_view).grid(row=2, column=1, sticky="ew", padx=(0, 6))
+    def lift_controls() -> None:
+        try:
+            if not win.winfo_exists():
+                return
+            win.attributes("-topmost", True)
+            win.lift()
+        except Exception:
+            return
+        try:
+            win.after(1000, lift_controls)
+        except Exception:
+            pass
+
     ttk.Button(box, text="Bring front", command=lambda: bring_pyvista_window_to_front(plotter, delay_s=0.05)).grid(row=2, column=2, sticky="ew", padx=(0, 6))
     ttk.Button(box, text="Close", command=close_view).grid(row=2, column=3, sticky="ew")
     for col in range(4):
@@ -1257,7 +1270,7 @@ def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
     try:
         win.lift()
         win.attributes("-topmost", True)
-        win.after(400, lambda: win.attributes("-topmost", False))
+        win.after(1000, lift_controls)
     except Exception:
         pass
 
