@@ -402,6 +402,38 @@ def save_pyvista_screenshot(plotter, path: str, background: str, **kwargs):
             pass
     return plotter.screenshot(path, **kwargs)
 
+
+def bring_pyvista_window_to_front(plotter, delay_s: float = 0.25) -> None:
+    def worker() -> None:
+        try:
+            if delay_s > 0:
+                time.sleep(delay_s)
+            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
+            if render_window is None:
+                return
+            handle = None
+            for attr in ("GetGenericWindowId", "GetWindowId"):
+                getter = getattr(render_window, attr, None)
+                if callable(getter):
+                    handle = getter()
+                    if handle:
+                        break
+            if not handle or os.name != "nt":
+                return
+            hwnd = int(handle)
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            flags = 0x0001 | 0x0002 | 0x0040
+            user32.ShowWindow(hwnd, 5)
+            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
+            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
+            user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
+
 LEGACY_SAFE_MULTIWFN_TEMPLATE = """\
 # Multiwfn batch-command template.
 #
@@ -448,21 +480,101 @@ q
 
 COVALENT_RADII = {
     1: 0.31,
+    2: 0.28,
+    3: 1.28,
+    4: 0.96,
     5: 0.84,
     6: 0.76,
     7: 0.71,
     8: 0.66,
     9: 0.57,
+    10: 0.58,
+    11: 1.66,
+    12: 1.41,
+    13: 1.21,
     14: 1.11,
     15: 1.07,
     16: 1.05,
     17: 1.02,
+    18: 1.06,
+    19: 2.03,
+    20: 1.76,
+    21: 1.70,
+    22: 1.60,
+    23: 1.53,
+    24: 1.39,
+    25: 1.39,
+    26: 1.32,
+    27: 1.26,
+    28: 1.24,
+    29: 1.32,
+    30: 1.22,
+    31: 1.22,
+    32: 1.20,
+    33: 1.19,
+    34: 1.20,
     35: 1.20,
+    36: 1.16,
+    37: 2.20,
+    38: 1.95,
+    39: 1.90,
+    40: 1.75,
+    41: 1.64,
+    42: 1.54,
+    43: 1.47,
     44: 1.46,
     45: 1.42,
     46: 1.39,
+    47: 1.45,
+    48: 1.44,
+    49: 1.42,
+    50: 1.39,
+    51: 1.39,
+    52: 1.38,
     53: 1.39,
+    54: 1.40,
+    55: 2.44,
+    56: 2.15,
+    57: 2.07,
+    58: 2.04,
+    59: 2.03,
+    60: 2.01,
+    61: 1.99,
+    62: 1.98,
+    63: 1.98,
+    64: 1.96,
+    65: 1.94,
+    66: 1.92,
+    67: 1.92,
+    68: 1.89,
+    69: 1.90,
+    70: 1.87,
+    71: 1.87,
+    72: 1.75,
+    73: 1.70,
+    74: 1.62,
+    75: 1.51,
+    76: 1.44,
+    77: 1.41,
     78: 1.36,
+    79: 1.36,
+    80: 1.32,
+    81: 1.45,
+    82: 1.46,
+    83: 1.48,
+    84: 1.40,
+    85: 1.50,
+    86: 1.50,
+    87: 2.60,
+    88: 2.21,
+    89: 2.15,
+    90: 2.06,
+    91: 2.00,
+    92: 1.96,
+    93: 1.90,
+    94: 1.87,
+    95: 1.80,
+    96: 1.69,
 }
 
 
@@ -477,12 +589,20 @@ ATOM_COLORS = {
     15: "#FF8000",
     16: "#FFFF30",
     17: "#1FF01F",
+    26: "#E06633",
+    27: "#F090A0",
+    28: "#50D050",
+    29: "#C88033",
+    30: "#7D80B0",
     35: "#A62929",
     44: "#248F8F",
     45: "#0A7D8C",
     46: "#006985",
+    47: "#C0C0C0",
     53: "#940094",
+    77: "#175487",
     78: "#D0D0E0",
+    79: "#FFD123",
 }
 
 NCI_SCALAR_NAME = "sign(lambda2)rho"
@@ -792,6 +912,8 @@ class NCIPlotterApp:
         self.rdg_cube_path: Optional[Path] = None
         self.signrho_cube_path: Optional[Path] = None
         self.auto_start_requested = bool(initial_wavefunction_path)
+        self.generation_lock = threading.Lock()
+        self.generate_button: Optional[ttk.Button] = None
 
         self.plotter = None
         self.header_icon: Optional[tk.PhotoImage] = None
@@ -948,12 +1070,13 @@ class NCIPlotterApp:
         gen_frame = ttk.LabelFrame(main, text="NCI data generation", padding=8)
         gen_frame.pack(fill="x", pady=(0, 8))
 
-        ttk.Button(
+        self.generate_button = ttk.Button(
             gen_frame,
             text="Generate NCI data",
             command=self.start_generate_nci,
             style="Primary.TButton",
-        ).pack(side="left", padx=(0, 6))
+        )
+        self.generate_button.pack(side="left", padx=(0, 6))
 
         ttk.Button(
             gen_frame,
@@ -1210,7 +1333,17 @@ class NCIPlotterApp:
             self.log(f"ERROR: {exc}")
             return
 
+        if not self.generation_lock.acquire(blocking=False):
+            self.log("NCI generation is already running. Waiting for the current Multiwfn job to finish.")
+            return
+
         self.save_config()
+        self.rdg_cube = None
+        self.signrho_cube = None
+        self.rdg_cube_path = None
+        self.signrho_cube_path = None
+        if self.generate_button is not None:
+            self.generate_button.configure(state="disabled")
         thread = threading.Thread(
             target=self.generate_nci_worker,
             args=(wf, mwfn, outdir, auto_open),
@@ -1338,6 +1471,10 @@ class NCIPlotterApp:
         except Exception as exc:
             self.log(f"ERROR: {exc}")
             self.root.after(0, lambda e=exc: messagebox.showerror("NCI generation failed", str(e)))
+        finally:
+            self.generation_lock.release()
+            if self.generate_button is not None:
+                self.root.after(0, lambda: self.generate_button.configure(state="normal"))
 
     def detect_nci_cubes(self, outdir: Path) -> tuple[Optional[Path], Optional[Path]]:
         cube_files = list(outdir.glob("*.cube")) + list(outdir.glob("*.cub"))
@@ -1502,6 +1639,10 @@ class NCIPlotterApp:
 
         try:
             if self.rdg_cube is None or self.signrho_cube is None:
+                if self.generation_lock.locked():
+                    self.log("NCI generation is still running. The plot will be available after Multiwfn finishes.")
+                    return
+
                 output_text = self.output_dir.get().strip()
                 if not output_text:
                     self.log("No NCI cube files loaded yet. Select a WFN/WFX file and click 'Generate NCI data'.")
@@ -1602,7 +1743,9 @@ class NCIPlotterApp:
                     )
                 except Exception:
                     pass
+            bring_pyvista_window_to_front(self.plotter)
             self.plotter.show(interactive_update=True, auto_close=False)
+            bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
 
             self.log("Plot updated.")
 

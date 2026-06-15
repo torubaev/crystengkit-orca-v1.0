@@ -279,6 +279,70 @@ def pyvista_screenshot(plotter: Any, path: Optional[str] = None, **kwargs: Any) 
     return plotter.screenshot(path, **kwargs) if path else plotter.screenshot(**kwargs)
 
 
+def bring_pyvista_window_to_front(plotter: Any, delay_s: float = 0.25) -> None:
+    def worker() -> None:
+        try:
+            if delay_s > 0:
+                time.sleep(delay_s)
+            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
+            if render_window is None:
+                return
+            handle = None
+            for attr in ("GetGenericWindowId", "GetWindowId"):
+                getter = getattr(render_window, attr, None)
+                if callable(getter):
+                    handle = getter()
+                    if handle:
+                        break
+            if not handle or os.name != "nt":
+                return
+            hwnd = int(handle)
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            flags = 0x0001 | 0x0002 | 0x0040
+            user32.ShowWindow(hwnd, 5)
+            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
+            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
+            user32.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def add_pyvista_keypress_observer(plotter: Any, key: str, callback: Any) -> None:
+    target_key = str(key).lower()
+
+    def on_key_press(obj: Any, _event: Any = None) -> None:
+        try:
+            key_sym = str(obj.GetKeySym() or "") if hasattr(obj, "GetKeySym") else ""
+            key_code = str(obj.GetKeyCode() or "") if hasattr(obj, "GetKeyCode") else ""
+            if key_sym.lower() == target_key or key_code.lower() == target_key:
+                callback()
+        except Exception as exc:
+            _show_error("PyVista key command", exc)
+
+    candidates = [
+        getattr(plotter, "iren", None),
+        getattr(plotter, "interactor", None),
+    ]
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        for obj in (candidate, getattr(candidate, "interactor", None)):
+            add_observer = getattr(obj, "AddObserver", None) or getattr(obj, "add_observer", None)
+            if callable(add_observer):
+                try:
+                    add_observer(
+                        "KeyPressEvent",
+                        lambda *args, _obj=obj: on_key_press(args[0] if args else _obj, args[1] if len(args) > 1 else None),
+                    )
+                    return
+                except Exception:
+                    pass
+
+
 def load_recent_files() -> List[str]:
     try:
         data = json.loads(RECENT_FILES_PATH.read_text(encoding="utf-8"))
@@ -876,13 +940,29 @@ def parse_cube_file(cube_path: Path) -> Dict[str, Any]:
 
 def atomic_symbol(atomic_no: int) -> str:
     symbols = {
-        1: "H", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F", 15: "P", 16: "S", 17: "Cl",
-        35: "Br", 46: "Pd", 53: "I", 78: "Pt", 79: "Au",
+        1: "H", 2: "He", 3: "Li", 4: "Be", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F", 10: "Ne",
+        11: "Na", 12: "Mg", 13: "Al", 14: "Si", 15: "P", 16: "S", 17: "Cl", 18: "Ar",
+        19: "K", 20: "Ca", 21: "Sc", 22: "Ti", 23: "V", 24: "Cr", 25: "Mn", 26: "Fe",
+        27: "Co", 28: "Ni", 29: "Cu", 30: "Zn", 31: "Ga", 32: "Ge", 33: "As", 34: "Se",
+        35: "Br", 36: "Kr", 37: "Rb", 38: "Sr", 39: "Y", 40: "Zr", 41: "Nb", 42: "Mo",
+        43: "Tc", 44: "Ru", 45: "Rh", 46: "Pd", 47: "Ag", 48: "Cd", 49: "In", 50: "Sn",
+        51: "Sb", 52: "Te", 53: "I", 54: "Xe", 55: "Cs", 56: "Ba", 57: "La", 58: "Ce",
+        59: "Pr", 60: "Nd", 61: "Pm", 62: "Sm", 63: "Eu", 64: "Gd", 65: "Tb", 66: "Dy",
+        67: "Ho", 68: "Er", 69: "Tm", 70: "Yb", 71: "Lu", 72: "Hf", 73: "Ta", 74: "W",
+        75: "Re", 76: "Os", 77: "Ir", 78: "Pt", 79: "Au", 80: "Hg", 81: "Tl", 82: "Pb",
+        83: "Bi", 84: "Po", 85: "At", 86: "Rn", 87: "Fr", 88: "Ra", 89: "Ac", 90: "Th",
+        91: "Pa", 92: "U", 93: "Np", 94: "Pu", 95: "Am", 96: "Cm",
     }
     return symbols.get(atomic_no, str(atomic_no))
 
 
-ATOM_COLORS = {"H": "white", "C": "#d1d5db", "N": "#93c5fd", "O": "#fca5a5", "F": "#bbf7d0", "Cl": "#86efac", "Br": "#fca5a5", "I": "#d8b4fe", "Pd": "#67e8f9"}
+ATOM_COLORS = {
+    "H": "white", "C": "#d1d5db", "N": "#93c5fd", "O": "#fca5a5", "F": "#bbf7d0",
+    "Cl": "#86efac", "Br": "#fca5a5", "I": "#d8b4fe", "Fe": "#f4a261",
+    "Co": "#f0a0b8", "Ni": "#86efac", "Cu": "#d19a66", "Zn": "#a5b4fc",
+    "Ru": "#5eead4", "Rh": "#67e8f9", "Pd": "#67e8f9", "Ag": "#d1d5db",
+    "Ir": "#60a5fa", "Pt": "#c7d2fe", "Au": "#fde047",
+}
 WIREFRAME_ATOM_COLORS = {
     "H": "#ffffff",
     "C": "#e5e7eb",
@@ -892,9 +972,37 @@ WIREFRAME_ATOM_COLORS = {
     "Cl": "#bbf7d0",
     "Br": "#fecaca",
     "I": "#e9d5ff",
+    "Fe": "#fed7aa",
+    "Co": "#fbcfe8",
+    "Ni": "#bbf7d0",
+    "Cu": "#fdba74",
+    "Zn": "#c7d2fe",
+    "Ru": "#99f6e4",
+    "Rh": "#a5f3fc",
     "Pd": "#a5f3fc",
+    "Ag": "#e5e7eb",
+    "Ir": "#bfdbfe",
+    "Pt": "#ddd6fe",
+    "Au": "#fef08a",
 }
-COVALENT_RADII = {"H": 0.31, "B": 0.84, "C": 0.76, "N": 0.71, "O": 0.66, "F": 0.57, "P": 1.07, "S": 1.05, "Cl": 1.02, "Br": 1.20, "I": 1.39, "Pd": 1.39}
+COVALENT_RADII = {
+    "H": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C": 0.76,
+    "N": 0.71, "O": 0.66, "F": 0.57, "Ne": 0.58, "Na": 1.66, "Mg": 1.41,
+    "Al": 1.21, "Si": 1.11, "P": 1.07, "S": 1.05, "Cl": 1.02, "Ar": 1.06,
+    "K": 2.03, "Ca": 1.76, "Sc": 1.70, "Ti": 1.60, "V": 1.53, "Cr": 1.39,
+    "Mn": 1.39, "Fe": 1.32, "Co": 1.26, "Ni": 1.24, "Cu": 1.32, "Zn": 1.22,
+    "Ga": 1.22, "Ge": 1.20, "As": 1.19, "Se": 1.20, "Br": 1.20, "Kr": 1.16,
+    "Rb": 2.20, "Sr": 1.95, "Y": 1.90, "Zr": 1.75, "Nb": 1.64, "Mo": 1.54,
+    "Tc": 1.47, "Ru": 1.46, "Rh": 1.42, "Pd": 1.39, "Ag": 1.45, "Cd": 1.44,
+    "In": 1.42, "Sn": 1.39, "Sb": 1.39, "Te": 1.38, "I": 1.39, "Xe": 1.40,
+    "Cs": 2.44, "Ba": 2.15, "La": 2.07, "Ce": 2.04, "Pr": 2.03, "Nd": 2.01,
+    "Pm": 1.99, "Sm": 1.98, "Eu": 1.98, "Gd": 1.96, "Tb": 1.94, "Dy": 1.92,
+    "Ho": 1.92, "Er": 1.89, "Tm": 1.90, "Yb": 1.87, "Lu": 1.87, "Hf": 1.75,
+    "Ta": 1.70, "W": 1.62, "Re": 1.51, "Os": 1.44, "Ir": 1.41, "Pt": 1.36,
+    "Au": 1.36, "Hg": 1.32, "Tl": 1.45, "Pb": 1.46, "Bi": 1.48, "Po": 1.40,
+    "At": 1.50, "Rn": 1.50, "Fr": 2.60, "Ra": 2.21, "Ac": 2.15, "Th": 2.06,
+    "Pa": 2.00, "U": 1.96, "Np": 1.90, "Pu": 1.87, "Am": 1.80, "Cm": 1.69,
+}
 
 
 def molecule_material_parameters(
@@ -2088,7 +2196,14 @@ class App(tk.Tk):
             except ValueError:
                 pass
 
+            save_in_progress = False
+            save_completed = False
+
             def save_current_view() -> None:
+                nonlocal save_in_progress, save_completed
+                if save_in_progress or save_completed:
+                    return
+                save_in_progress = True
                 try:
                     try:
                         plotter.remove_actor("save_prompt", render=False)
@@ -2108,17 +2223,24 @@ class App(tk.Tk):
                         live_image=live_image,
                         camera_state=camera_state,
                     )
+                    save_completed = True
                 except Exception as exc:
                     _show_error("Save MO surface image", exc)
+                finally:
+                    save_in_progress = False
 
             plotter.add_key_event("s", save_current_view)
             plotter.add_key_event("S", save_current_view)
+            add_pyvista_keypress_observer(plotter, "s", save_current_view)
             plotter.add_key_event("r", lambda: plotter.reset_camera())
             plotter.add_key_event("R", lambda: plotter.reset_camera())
             plotter.add_key_event("Escape", self._close_active_mo_plotter)
             try:
+                bring_pyvista_window_to_front(plotter)
                 plotter.show(title=f"{orbital['display_label']} MO #{orbital['mo_number']}", auto_close=False)
+                bring_pyvista_window_to_front(plotter, delay_s=0.05)
             except TypeError:
+                bring_pyvista_window_to_front(plotter)
                 plotter.show(title=f"{orbital['display_label']} MO #{orbital['mo_number']}")
         except Exception as exc:
             _show_error("MO surface viewer", exc)

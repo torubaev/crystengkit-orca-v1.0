@@ -39,7 +39,7 @@ The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
 ## Installation and Requirements
 
-For most users, start with the provided installer/checker. It checks the software already present on your computer, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.
+For most users, start with the provided installer. It checks the software already present on your computer, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.
 
 The installer itself needs Python. If Python is not installed yet, the Windows and Linux/macOS launchers will stop and show where to download or install Python first. After Python 3.9 or newer is installed, run the installer again.
 
@@ -49,13 +49,14 @@ On Windows, run:
 install\install.bat
 ```
 
-On macOS or Linux, run the matching checker from the `install` folder, or run:
+On macOS or Linux, run:
 
 ```bash
-python install/install.py
+chmod +x install_crystengkit.sh
+./install_crystengkit.sh
 ```
 
-If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the checker again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The checker looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.
+If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the installer again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The installer looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.
 
 The full suite uses:
 
@@ -114,7 +115,7 @@ Creates noncovalent-interaction surfaces[^nci] from `.wfn` or `.wfx` files. It i
 
 ![](images/wiki/orca_qtaim_1.png)
 
-Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
+Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output. The visualization settings include separate `Strong interaction CPs` and `Weak interaction CPs` checkboxes for BCP filtering, plus `CP energy` with `kJ/mol` or `kcal/mol` labels when `CPprop.txt` provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
 
 ![](images/wiki/orca_qtaim_2.png)
 
@@ -290,6 +291,12 @@ A point in the electron density where the gradient is zero. Different kinds of c
 
 **BCP**  
 Bond critical point. In QTAIM, a BCP is often discussed in connection with a bond path between atoms. Its presence should be interpreted chemically, not treated as automatic proof of a conventional bond. Wiki: [Atoms in molecules](https://en.wikipedia.org/wiki/Atoms_in_molecules).
+
+**Strong and weak interaction CPs**  
+In the QTAIM viewer, BCPs can be filtered as strong or weak interactions using local CP properties such as H(r), |V|/G, the Laplacian, and rho when available.
+
+**CP energy labels**  
+The `CP energy` checkbox shows an energy label for selected CPs, using 0.5V(r) when Multiwfn exports V(r), with units chosen as kJ/mol or kcal/mol.
 
 **RCP and CCP**  
 Ring critical point and cage critical point. These appear in ring-like or cage-like topological features of the electron density. Wiki: [Atoms in molecules](https://en.wikipedia.org/wiki/Atoms_in_molecules).

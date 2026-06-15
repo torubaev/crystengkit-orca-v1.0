@@ -84,6 +84,8 @@ IMAGE_PRESETS = {
     "Poster / high-res: 8000 x 6000 px": (8000, 6000),
 }
 DEFAULT_IMAGE_PRESET = "Paper 300 dpi: 3000 x 2250 px"
+HARTREE_TO_KJ_MOL = 2625.499638
+HARTREE_TO_KCAL_MOL = 627.509474
 
 
 # -----------------------------
@@ -101,19 +103,28 @@ ELEMENTS_BY_Z = {
     59: "Pr", 60: "Nd", 61: "Pm", 62: "Sm", 63: "Eu", 64: "Gd", 65: "Tb", 66: "Dy",
     67: "Ho", 68: "Er", 69: "Tm", 70: "Yb", 71: "Lu", 72: "Hf", 73: "Ta", 74: "W",
     75: "Re", 76: "Os", 77: "Ir", 78: "Pt", 79: "Au", 80: "Hg", 81: "Tl", 82: "Pb",
-    83: "Bi", 84: "Po", 85: "At", 86: "Rn",
+    83: "Bi", 84: "Po", 85: "At", 86: "Rn", 87: "Fr", 88: "Ra", 89: "Ac", 90: "Th",
+    91: "Pa", 92: "U", 93: "Np", 94: "Pu", 95: "Am", 96: "Cm",
 }
 Z_BY_ELEMENT = {v: k for k, v in ELEMENTS_BY_Z.items()}
 
 COVALENT_RADII = {
-    "H": 0.31, "B": 0.85, "C": 0.76, "N": 0.71, "O": 0.66, "F": 0.57,
-    "P": 1.07, "S": 1.05, "Cl": 1.02, "Br": 1.20, "I": 1.39,
-    "Si": 1.11, "Se": 1.20, "Te": 1.38,
-    "Li": 1.28, "Na": 1.66, "K": 2.03, "Mg": 1.41, "Ca": 1.76,
-    "Fe": 1.24, "Co": 1.18, "Ni": 1.17, "Cu": 1.32, "Zn": 1.22,
-    "Pd": 1.39, "Pt": 1.36, "Ag": 1.45, "Au": 1.36, "Rh": 1.42, "Ru": 1.46,
-    "Cd": 1.44, "Hg": 1.32, "Al": 1.21, "Ga": 1.22, "Ge": 1.20, "As": 1.19,
-    "Ti": 1.60, "V": 1.53, "Cr": 1.39, "Mn": 1.39,
+    "H": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C": 0.76,
+    "N": 0.71, "O": 0.66, "F": 0.57, "Ne": 0.58, "Na": 1.66, "Mg": 1.41,
+    "Al": 1.21, "Si": 1.11, "P": 1.07, "S": 1.05, "Cl": 1.02, "Ar": 1.06,
+    "K": 2.03, "Ca": 1.76, "Sc": 1.70, "Ti": 1.60, "V": 1.53, "Cr": 1.39,
+    "Mn": 1.39, "Fe": 1.32, "Co": 1.26, "Ni": 1.24, "Cu": 1.32, "Zn": 1.22,
+    "Ga": 1.22, "Ge": 1.20, "As": 1.19, "Se": 1.20, "Br": 1.20, "Kr": 1.16,
+    "Rb": 2.20, "Sr": 1.95, "Y": 1.90, "Zr": 1.75, "Nb": 1.64, "Mo": 1.54,
+    "Tc": 1.47, "Ru": 1.46, "Rh": 1.42, "Pd": 1.39, "Ag": 1.45, "Cd": 1.44,
+    "In": 1.42, "Sn": 1.39, "Sb": 1.39, "Te": 1.38, "I": 1.39, "Xe": 1.40,
+    "Cs": 2.44, "Ba": 2.15, "La": 2.07, "Ce": 2.04, "Pr": 2.03, "Nd": 2.01,
+    "Pm": 1.99, "Sm": 1.98, "Eu": 1.98, "Gd": 1.96, "Tb": 1.94, "Dy": 1.92,
+    "Ho": 1.92, "Er": 1.89, "Tm": 1.90, "Yb": 1.87, "Lu": 1.87, "Hf": 1.75,
+    "Ta": 1.70, "W": 1.62, "Re": 1.51, "Os": 1.44, "Ir": 1.41, "Pt": 1.36,
+    "Au": 1.36, "Hg": 1.32, "Tl": 1.45, "Pb": 1.46, "Bi": 1.48, "Po": 1.40,
+    "At": 1.50, "Rn": 1.50, "Fr": 2.60, "Ra": 2.21, "Ac": 2.15, "Th": 2.06,
+    "Pa": 2.00, "U": 1.96, "Np": 1.90, "Pu": 1.87, "Am": 1.80, "Cm": 1.69,
 }
 
 ATOM_COLORS = {
@@ -149,6 +160,9 @@ CP_LABELS = {
     "(3,3)": "CCP",
     "unknown": "CP",
 }
+DEFAULT_BCP_COVALENT_RHO_THRESHOLD = 0.05
+DEFAULT_BCP_VG_COVALENT_THRESHOLD = 2.0
+DEFAULT_BCP_VG_NONCOVALENT_THRESHOLD = 1.0
 
 CP_DESCRIPTIONS = {
     "(3,-3)": "Nuclear critical point (NCP): local maximum of electron density at/near a nucleus.",
@@ -157,7 +171,7 @@ CP_DESCRIPTIONS = {
     "(3,+3)": "Cage critical point (CCP): local minimum associated with a cage enclosed by ring paths.",
 }
 
-QTAIM_UI_BUILD = "2026-05-10 parser/run guard update"
+QTAIM_UI_BUILD = "2026-06-12 CPprop energy export template"
 
 
 def configure_builder_ui_style(widget: tk.Misc) -> None:
@@ -337,6 +351,9 @@ class CriticalPoint:
     rho: Optional[float] = None
     laplacian: Optional[float] = None
     ellipticity: Optional[float] = None
+    kinetic_energy_density: Optional[float] = None
+    potential_energy_density: Optional[float] = None
+    energy_density: Optional[float] = None
 
 
 @dataclass
@@ -358,6 +375,28 @@ _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?"
 
 def _to_float(s: str) -> float:
     return float(s.replace("D", "E").replace("d", "e"))
+
+
+def cp_energy_value(cp: CriticalPoint) -> tuple[Optional[float], str]:
+    if cp.potential_energy_density is not None:
+        return 0.5 * cp.potential_energy_density, "0.5V"
+    if cp.energy_density is not None:
+        return cp.energy_density, "H"
+    return None, ""
+
+
+def convert_cp_energy(value_hartree: float, unit: str) -> float:
+    if str(unit).lower().startswith("kcal"):
+        return value_hartree * HARTREE_TO_KCAL_MOL
+    return value_hartree * HARTREE_TO_KJ_MOL
+
+
+def format_cp_energy_label(cp: CriticalPoint, unit: str) -> str:
+    value_hartree, source = cp_energy_value(cp)
+    if value_hartree is None:
+        return "E n/a"
+    unit_label = "kcal/mol" if str(unit).lower().startswith("kcal") else "kJ/mol"
+    return f"E({source}) {convert_cp_energy(value_hartree, unit):.1f} {unit_label}"
 
 
 def read_atoms_from_wfn(path: Path) -> List[Atom]:
@@ -561,6 +600,9 @@ def convert_cps_from_bohr_to_angstrom_if_needed(
             cp.rho,
             cp.laplacian,
             cp.ellipticity,
+            cp.kinetic_energy_density,
+            cp.potential_energy_density,
+            cp.energy_density,
         )
         for cp in cps
     ]
@@ -593,6 +635,9 @@ DEFAULT_MULTIWFN_COMMANDS = """\
 #   3  = Search CPs from atom-pair midpoints
 #   4  = Search CPs from triangle centers
 #   5  = Search CPs from pyramid centers
+#   7  = Export real-space function values at all CPs
+#   -1 = Write CPprop.txt for all CPs while skipping expensive ESP output
+#        (includes V(r)/H(r) in Multiwfn builds that provide them)
 #   8  = Generate paths connected with CPs
 #   -4 = CP export menu
 #   4  = Save CPs.txt
@@ -615,6 +660,8 @@ DEFAULT_MULTIWFN_COMMANDS = """\
 3
 4
 5
+7
+-1
 8
 -4
 4
@@ -766,6 +813,8 @@ def run_multiwfn(input_file: Path, multiwfn_exe: str, commands: str, log_path: P
     if not Path(multiwfn_exe).exists() and shutil.which(multiwfn_exe) is None:
         raise FileNotFoundError(f"Multiwfn executable not found: {multiwfn_exe}")
 
+    if not commands.startswith("\n"):
+        commands = "\n" + commands
     if not commands.endswith("\n"):
         commands += "\n"
 
@@ -934,6 +983,9 @@ def parse_critical_points_from_text(text: str) -> List[CriticalPoint]:
         rho = None
         lap = None
         ellip = None
+        kinetic = None
+        potential = None
+        energy = None
 
         rho_m = re.search(rf"(?:rho|density|electron density)\s*(?:=|:)?\s*({_FLOAT})", context, re.I)
         if rho_m:
@@ -947,7 +999,80 @@ def parse_critical_points_from_text(text: str) -> List[CriticalPoint]:
         if ell_m:
             ellip = _to_float(ell_m.group(1))
 
-        cps.append(CriticalPoint(idx, normalize_cp_type(cpt), xyz[0], xyz[1], xyz[2], rho, lap, ellip))
+        kinetic_patterns = [
+            rf"(?:lagrangian\s+kinetic\s+energy\s+G\s*\(\s*r\s*\)|kinetic\s+energy\s+density\s+G\s*\(\s*r\s*\)|\bG\s*\(\s*r\s*\))\s*(?:=|:)?\s*({_FLOAT})",
+            rf"\bG\s*=\s*({_FLOAT})",
+        ]
+        for pat in kinetic_patterns:
+            m = re.search(pat, context, re.I)
+            if m:
+                kinetic = _to_float(m.group(1))
+                break
+
+        potential_patterns = [
+            rf"(?:potential\s+energy\s+density|potential\s+energy|V\s*\(\s*r\s*\)|\bV\b)\s*(?:=|:)?\s*({_FLOAT})",
+            rf"\bV\s*=\s*({_FLOAT})",
+        ]
+        for pat in potential_patterns:
+            m = re.search(pat, context, re.I)
+            if m:
+                potential = _to_float(m.group(1))
+                break
+
+        energy_patterns = [
+            rf"(?:total\s+energy\s+density|energy\s+density|H\s*\(\s*r\s*\)|\bH\b)\s*(?:=|:)?\s*({_FLOAT})",
+            rf"\bH\s*=\s*({_FLOAT})",
+        ]
+        for pat in energy_patterns:
+            m = re.search(pat, context, re.I)
+            if m:
+                energy = _to_float(m.group(1))
+                break
+
+        cps.append(
+            CriticalPoint(
+                idx,
+                normalize_cp_type(cpt),
+                xyz[0],
+                xyz[1],
+                xyz[2],
+                rho,
+                lap,
+                ellip,
+                kinetic,
+                potential,
+                energy,
+            )
+        )
+
+    cp_prop_header_re = re.compile(
+        r"-+\s*CP\s+(\d+)\s*,\s*Type\s*(\(\s*3\s*,\s*[+-]?\s*[0-3]\s*\))\s*-+",
+        re.I,
+    )
+    cp_prop_matches = list(cp_prop_header_re.finditer(text))
+    if cp_prop_matches:
+        for pos, match in enumerate(cp_prop_matches):
+            end = cp_prop_matches[pos + 1].start() if pos + 1 < len(cp_prop_matches) else len(text)
+            block = text[match.start():end]
+            idx = int(match.group(1))
+            cpt = normalize_cp_type(match.group(2))
+            pos_m = re.search(
+                rf"Position\s*\(\s*Bohr\s*\)\s*:\s*({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})",
+                block,
+                re.I,
+            )
+            if pos_m is None:
+                pos_m = re.search(
+                    rf"Position\s*\(\s*Angstrom\s*\)\s*:\s*({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})",
+                    block,
+                    re.I,
+                )
+            if pos_m is None:
+                continue
+            xyz = (_to_float(pos_m.group(1)), _to_float(pos_m.group(2)), _to_float(pos_m.group(3)))
+            add_cp(idx, cpt, xyz, block)
+        if cps:
+            return cps
 
     def coords_from_context(s: str) -> Optional[Tuple[float, float, float]]:
         coord_patterns = [
@@ -1140,13 +1265,22 @@ def parse_critical_points_file(path: Path) -> List[CriticalPoint]:
 
 
 def save_cp_table(cps: List[CriticalPoint], out_path: Path) -> None:
-    lines = ["index\ttype\tx\ty\tz\trho\tlaplacian\tellipticity"]
+    lines = ["index\ttype\tx\ty\tz\trho\tlaplacian\tellipticity\tG_r_au\tV_r_au\tH_r_au\tabsV_over_G\tE_0.5V_kjmol\tE_0.5V_kcalmol"]
     for cp in cps:
+        espinosa_hartree, source = cp_energy_value(cp)
+        if source != "0.5V":
+            espinosa_hartree = None
         lines.append(
             f"{cp.index}\t{cp.cp_type}\t{cp.x:.10f}\t{cp.y:.10f}\t{cp.z:.10f}\t"
             f"{'' if cp.rho is None else f'{cp.rho:.10g}'}\t"
             f"{'' if cp.laplacian is None else f'{cp.laplacian:.10g}'}\t"
-            f"{'' if cp.ellipticity is None else f'{cp.ellipticity:.10g}'}"
+            f"{'' if cp.ellipticity is None else f'{cp.ellipticity:.10g}'}\t"
+            f"{'' if cp.kinetic_energy_density is None else f'{cp.kinetic_energy_density:.10g}'}\t"
+            f"{'' if cp.potential_energy_density is None else f'{cp.potential_energy_density:.10g}'}\t"
+            f"{'' if cp.energy_density is None else f'{cp.energy_density:.10g}'}\t"
+            f"{'' if bcp_abs_v_over_g(cp) is None else f'{bcp_abs_v_over_g(cp):.10g}'}\t"
+            f"{'' if espinosa_hartree is None else f'{convert_cp_energy(espinosa_hartree, 'kJ/mol'):.10g}'}\t"
+            f"{'' if espinosa_hartree is None else f'{convert_cp_energy(espinosa_hartree, 'kcal/mol'):.10g}'}"
         )
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -1167,6 +1301,9 @@ def convert_pdb_cps_to_atom_units(cps: List[CriticalPoint], atoms: Optional[List
             cp.rho,
             cp.laplacian,
             cp.ellipticity,
+            cp.kinetic_energy_density,
+            cp.potential_energy_density,
+            cp.energy_density,
         )
         for cp in cps
     ]
@@ -1773,44 +1910,38 @@ def save_pyvista_screenshot(plotter, path: str, background: str, **kwargs):
         except TypeError:
             pass
     return plotter.screenshot(path, **kwargs)
-    try:
-        plotter.renderer.SetTwoSidedLighting(True)
-    except Exception:
-        pass
-    if parallel_projection:
+
+
+def bring_pyvista_window_to_front(plotter, delay_s: float = 0.25) -> None:
+    def worker() -> None:
         try:
-            plotter.enable_parallel_projection()
+            if delay_s > 0:
+                time.sleep(delay_s)
+            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
+            if render_window is None:
+                return
+            handle = None
+            for attr in ("GetGenericWindowId", "GetWindowId"):
+                getter = getattr(render_window, attr, None)
+                if callable(getter):
+                    handle = getter()
+                    if handle:
+                        break
+            if not handle or os.name != "nt":
+                return
+            hwnd = int(handle)
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            flags = 0x0001 | 0x0002 | 0x0040
+            user32.ShowWindow(hwnd, 5)
+            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
+            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
+            user32.SetForegroundWindow(hwnd)
         except Exception:
             pass
-    try:
-        plotter.remove_all_lights()
-    except Exception:
-        pass
-    try:
-        extent = max(float(extent), 1.0)
-    except Exception:
-        extent = 1.0
-    light_specs = [
-        ("headlight", None, 0.95),
-        ("camera light", None, 0.45),
-        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
-        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
-    ]
-    for light_type, position, intensity in light_specs:
-        try:
-            if light_type in {"headlight", "camera light"}:
-                light = pv_module.Light(light_type=light_type)
-            else:
-                light = pv_module.Light(
-                    position=position,
-                    focal_point=(0.0, 0.0, 0.0),
-                    color="white",
-                    light_type="scene light",
-                )
-            light.intensity = intensity
-            plotter.add_light(light)
-        except Exception:
-            pass
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def molecule_material_parameters() -> Dict[str, object]:
@@ -1963,39 +2094,132 @@ def count_bcps(cps: List[CriticalPoint]) -> int:
     return sum(1 for cp in cps if normalize_cp_type(cp.cp_type) == "(3,-1)")
 
 
+def bcp_abs_v_over_g(cp: CriticalPoint) -> Optional[float]:
+    if cp.potential_energy_density is None or cp.kinetic_energy_density is None:
+        return None
+    try:
+        g = float(cp.kinetic_energy_density)
+        if abs(g) <= 1.0e-14:
+            return None
+        return abs(float(cp.potential_energy_density)) / abs(g)
+    except Exception:
+        return None
+
+
+def bcp_interaction_class(cp: CriticalPoint, rho_threshold: float = DEFAULT_BCP_COVALENT_RHO_THRESHOLD) -> str:
+    if normalize_cp_type(cp.cp_type) != "(3,-1)":
+        return "not-bcp"
+
+    h = cp.energy_density
+    lap = cp.laplacian
+    ratio = bcp_abs_v_over_g(cp)
+
+    if h is not None and ratio is not None:
+        try:
+            h_val = float(h)
+            ratio_val = float(ratio)
+            if h_val > 0 and ratio_val < DEFAULT_BCP_VG_NONCOVALENT_THRESHOLD:
+                return "noncovalent"
+            if h_val < 0 and ratio_val > DEFAULT_BCP_VG_COVALENT_THRESHOLD:
+                return "covalent"
+            if h_val < 0:
+                return "intermediate"
+            if ratio_val >= DEFAULT_BCP_VG_COVALENT_THRESHOLD:
+                return "intermediate"
+        except Exception:
+            pass
+
+    if h is not None and lap is not None:
+        try:
+            h_val = float(h)
+            lap_val = float(lap)
+            if h_val > 0 and lap_val > 0:
+                return "noncovalent"
+            if h_val < 0 and lap_val < 0:
+                return "covalent"
+            if h_val < 0:
+                return "intermediate"
+        except Exception:
+            pass
+
+    if lap is not None:
+        try:
+            return "covalent" if float(lap) < 0 else "noncovalent"
+        except Exception:
+            pass
+
+    if cp.rho is not None:
+        try:
+            return "covalent" if float(cp.rho) >= float(rho_threshold) else "noncovalent"
+        except Exception:
+            pass
+
+    return "unknown"
+
+
+def is_covalent_bcp(cp: CriticalPoint, threshold: float = DEFAULT_BCP_COVALENT_RHO_THRESHOLD) -> Optional[bool]:
+    if normalize_cp_type(cp.cp_type) != "(3,-1)":
+        return None
+    cls = bcp_interaction_class(cp, threshold)
+    if cls == "noncovalent":
+        return False
+    if cls in {"covalent", "intermediate"}:
+        return True
+    if cls == "unknown":
+        return None
+    return None
+
+
+def bcp_visible_by_strength(
+    cp: CriticalPoint,
+    show_covalent_bcp: bool,
+    show_non_covalent_bcp: bool,
+    threshold: float = DEFAULT_BCP_COVALENT_RHO_THRESHOLD,
+) -> bool:
+    covalent = is_covalent_bcp(cp, threshold)
+    if covalent is True:
+        return show_covalent_bcp
+    if covalent is False:
+        return show_non_covalent_bcp
+    return show_covalent_bcp or show_non_covalent_bcp
+
+
 def _path_min_distance_to_cp(path: BondPath, cp: CriticalPoint) -> float:
     cp_point = (cp.x, cp.y, cp.z)
     return min((_point_distance(point, cp_point) for point in path.points), default=float("inf"))
 
 
-def _bond_path_associated_cp_type(
+def _bond_path_associated_cp(
     path: BondPath,
     cps: List[CriticalPoint],
     tolerance: float,
-) -> Optional[str]:
+) -> Optional[CriticalPoint]:
     if path.bcp_index is not None:
         for cp in cps:
             if cp.index == path.bcp_index:
-                return normalize_cp_type(cp.cp_type)
+                return cp
 
     ranked = [
-        (_path_min_distance_to_cp(path, cp), normalize_cp_type(cp.cp_type))
+        (_path_min_distance_to_cp(path, cp), cp)
         for cp in cps
         if normalize_cp_type(cp.cp_type) != "(3,-3)"
     ]
     if not ranked:
-        ranked = [(_path_min_distance_to_cp(path, cp), normalize_cp_type(cp.cp_type)) for cp in cps]
+        ranked = [(_path_min_distance_to_cp(path, cp), cp) for cp in cps]
     if not ranked:
         return None
 
-    distance, cp_type = min(ranked, key=lambda item: item[0])
-    return cp_type if distance <= tolerance else None
+    distance, cp = min(ranked, key=lambda item: item[0])
+    return cp if distance <= tolerance else None
 
 
 def filter_bond_paths_by_visible_cp_types(
     bond_paths: List[BondPath],
     cps: List[CriticalPoint],
     visible_types: set[str],
+    show_covalent_bcp: bool = True,
+    show_non_covalent_bcp: bool = True,
+    bcp_rho_threshold: float = DEFAULT_BCP_COVALENT_RHO_THRESHOLD,
 ) -> List[BondPath]:
     if not bond_paths or not cps:
         return bond_paths
@@ -2004,8 +2228,12 @@ def filter_bond_paths_by_visible_cp_types(
     tolerance = max(0.12, min(0.60, typical_step * 3.0 if typical_step else 0.30))
     visible_paths = []
     for path in bond_paths:
-        cp_type = _bond_path_associated_cp_type(path, cps, tolerance)
+        cp = _bond_path_associated_cp(path, cps, tolerance)
+        cp_type = normalize_cp_type(cp.cp_type) if cp is not None else None
         if cp_type is None or cp_type in visible_types:
+            if cp_type == "(3,-1)" and cp is not None:
+                if not bcp_visible_by_strength(cp, show_covalent_bcp, show_non_covalent_bcp, bcp_rho_threshold):
+                    continue
             visible_paths.append(path)
     return visible_paths
 
@@ -2015,11 +2243,16 @@ def draw_qtaim_scene(
     atoms: List[Atom],
     cps: List[CriticalPoint],
     show_ncp: bool = False,
-    show_bcp: bool = True,
+    show_bcp: Optional[bool] = None,
+    show_covalent_bcp: bool = True,
+    show_non_covalent_bcp: bool = True,
+    bcp_rho_threshold: float = DEFAULT_BCP_COVALENT_RHO_THRESHOLD,
     show_rcp: bool = False,
     show_ccp: bool = False,
     show_unknown: bool = False,
     show_labels: bool = False,
+    show_cp_energy: bool = False,
+    cp_energy_unit: str = "kJ/mol",
     show_molecule: bool = True,
     show_covalent_bonds: bool = True,
     show_bond_paths: bool = True,
@@ -2062,10 +2295,14 @@ def draw_qtaim_scene(
             bond_radius=bond_radius,
         )
 
+    if show_bcp is not None:
+        show_covalent_bcp = bool(show_bcp)
+        show_non_covalent_bcp = bool(show_bcp)
+
     visible_types = set()
     if show_ncp:
         visible_types.add(normalize_cp_type("(3,-3)"))
-    if show_bcp:
+    if show_covalent_bcp or show_non_covalent_bcp:
         visible_types.add(normalize_cp_type("(3,-1)"))
     if show_rcp:
         visible_types.add(normalize_cp_type("(3,+1)"))
@@ -2078,7 +2315,14 @@ def draw_qtaim_scene(
     exact_path_count = 0
     bcp_n = count_bcps(cps)
     if show_bond_paths and bond_paths:
-        visible_bond_paths = filter_bond_paths_by_visible_cp_types(bond_paths, cps, visible_types)
+        visible_bond_paths = filter_bond_paths_by_visible_cp_types(
+            bond_paths,
+            cps,
+            visible_types,
+            show_covalent_bcp=show_covalent_bcp,
+            show_non_covalent_bcp=show_non_covalent_bcp,
+            bcp_rho_threshold=bcp_rho_threshold,
+        )
         exact_path_count = add_exact_bond_paths(
             plotter,
             visible_bond_paths,
@@ -2093,6 +2337,8 @@ def draw_qtaim_scene(
     for cp in cps:
         cpt = normalize_cp_type(cp.cp_type)
         if cpt not in visible_types:
+            continue
+        if cpt == "(3,-1)" and not bcp_visible_by_strength(cp, show_covalent_bcp, show_non_covalent_bcp, bcp_rho_threshold):
             continue
         visible_cp_count += 1
         color = (cp_colors or CP_COLORS).get(cpt, CP_COLORS.get(cpt, "white"))
@@ -2110,9 +2356,20 @@ def draw_qtaim_scene(
             diffuse=0.85,
             specular=0.50,
         )
-        if show_labels:
+        if show_labels or show_cp_energy:
             label_points.append((cp.x, cp.y, cp.z))
-            label_text.append(f"{CP_LABELS.get(cpt, 'CP')}{cp.index}")
+            label = f"{CP_LABELS.get(cpt, 'CP')}{cp.index}"
+            if cpt == "(3,-1)" and show_covalent_bcp and show_non_covalent_bcp:
+                cls = bcp_interaction_class(cp, bcp_rho_threshold)
+                if cls == "covalent":
+                    label = f"c{label}"
+                elif cls == "intermediate":
+                    label = f"i{label}"
+                elif cls == "noncovalent":
+                    label = f"nc{label}"
+            if show_cp_energy:
+                label += "\n" + format_cp_energy_label(cp, cp_energy_unit)
+            label_text.append(label)
 
     if visible_cp_count == 0:
         parsed_types = sorted({normalize_cp_type(cp.cp_type) for cp in cps})
@@ -2122,7 +2379,7 @@ def draw_qtaim_scene(
             "Enable Unknown CPs or the corresponding CP type(s)."
         )
 
-    if show_labels and label_points:
+    if (show_labels or show_cp_energy) and label_points:
         plotter.add_point_labels(
             label_points,
             label_text,
@@ -2200,11 +2457,16 @@ def visualize_qtaim(
     atoms: List[Atom],
     cps: List[CriticalPoint],
     show_ncp: bool = False,
-    show_bcp: bool = True,
+    show_bcp: Optional[bool] = None,
+    show_covalent_bcp: bool = True,
+    show_non_covalent_bcp: bool = True,
+    bcp_rho_threshold: float = DEFAULT_BCP_COVALENT_RHO_THRESHOLD,
     show_rcp: bool = False,
     show_ccp: bool = False,
     show_unknown: bool = False,
     show_labels: bool = False,
+    show_cp_energy: bool = False,
+    cp_energy_unit: str = "kJ/mol",
     show_bond_paths: bool = True,
     bond_paths: Optional[List[BondPath]] = None,
     atom_scale: float = 0.38,
@@ -2223,10 +2485,15 @@ def visualize_qtaim(
         cps=cps,
         show_ncp=show_ncp,
         show_bcp=show_bcp,
+        show_covalent_bcp=show_covalent_bcp,
+        show_non_covalent_bcp=show_non_covalent_bcp,
+        bcp_rho_threshold=bcp_rho_threshold,
         show_rcp=show_rcp,
         show_ccp=show_ccp,
         show_unknown=show_unknown,
         show_labels=show_labels,
+        show_cp_energy=show_cp_energy,
+        cp_energy_unit=cp_energy_unit,
         show_bond_paths=show_bond_paths,
         bond_paths=bond_paths,
         atom_scale=atom_scale,
@@ -2236,6 +2503,7 @@ def visualize_qtaim(
         cp_colors=cp_colors,
         bond_path_color=bond_path_color,
     )
+    bring_pyvista_window_to_front(plotter)
     plotter.show(title="QTAIM")
 
 
@@ -2259,11 +2527,13 @@ class QTAIMGui(tk.Tk):
         self.path_file_path = tk.StringVar()
 
         self.show_ncp = tk.BooleanVar(value=False)
-        self.show_bcp = tk.BooleanVar(value=True)
+        self.show_covalent_bcp = tk.BooleanVar(value=False)
+        self.show_non_covalent_bcp = tk.BooleanVar(value=True)
         self.show_rcp = tk.BooleanVar(value=False)
         self.show_ccp = tk.BooleanVar(value=False)
         self.show_unknown = tk.BooleanVar(value=False)
         self.show_labels = tk.BooleanVar(value=False)
+        self.show_cp_energy = tk.BooleanVar(value=False)
         self.show_molecule = tk.BooleanVar(value=True)
         self.show_covalent_bonds = tk.BooleanVar(value=True)
         self.show_bond_paths = tk.BooleanVar(value=True)
@@ -2273,6 +2543,7 @@ class QTAIMGui(tk.Tk):
         self.bond_radius = tk.DoubleVar(value=0.075)
         self.timeout_s = tk.IntVar(value=600)
         self.background = tk.StringVar(value="white")
+        self.cp_energy_unit = tk.StringVar(value="kJ/mol")
         self.open_native_after_run = tk.BooleanVar(value=False)
         self.use_existing_outputs = tk.BooleanVar(value=False)
         self.path_display_range = tk.StringVar(value="")
@@ -2317,11 +2588,13 @@ class QTAIMGui(tk.Tk):
 
         bool_vars = {
             "show_ncp": self.show_ncp,
-            "show_bcp": self.show_bcp,
+            "show_covalent_bcp": self.show_covalent_bcp,
+            "show_non_covalent_bcp": self.show_non_covalent_bcp,
             "show_rcp": self.show_rcp,
             "show_ccp": self.show_ccp,
             "show_unknown": self.show_unknown,
             "show_labels": self.show_labels,
+            "show_cp_energy": self.show_cp_energy,
             "show_molecule": self.show_molecule,
             "show_covalent_bonds": self.show_covalent_bonds,
             "show_bond_paths": self.show_bond_paths,
@@ -2329,6 +2602,10 @@ class QTAIMGui(tk.Tk):
         for key, var in bool_vars.items():
             if key in settings:
                 var.set(graphics_bool(settings[key]))
+        if "show_bcp" in settings and "show_covalent_bcp" not in settings and "show_non_covalent_bcp" not in settings:
+            legacy_bcp = graphics_bool(settings["show_bcp"])
+            self.show_covalent_bcp.set(legacy_bcp)
+            self.show_non_covalent_bcp.set(legacy_bcp)
 
         float_vars = {
             "atom_scale": self.atom_scale,
@@ -2344,6 +2621,8 @@ class QTAIMGui(tk.Tk):
 
         if str(settings.get("background", "")).lower() in {"white", "black"}:
             self.background.set(str(settings["background"]).lower())
+        if str(settings.get("cp_energy_unit", "")).lower() in {"kj/mol", "kcal/mol"}:
+            self.cp_energy_unit.set(str(settings["cp_energy_unit"]))
         if settings.get("path_display_range") is not None:
             self.path_display_range.set(str(settings.get("path_display_range", "")))
         cp_colors = settings.get("cp_colors")
@@ -2359,11 +2638,13 @@ class QTAIMGui(tk.Tk):
     def current_graphics_settings(self) -> Dict[str, object]:
         return {
             "show_ncp": bool(self.show_ncp.get()),
-            "show_bcp": bool(self.show_bcp.get()),
+            "show_covalent_bcp": bool(self.show_covalent_bcp.get()),
+            "show_non_covalent_bcp": bool(self.show_non_covalent_bcp.get()),
             "show_rcp": bool(self.show_rcp.get()),
             "show_ccp": bool(self.show_ccp.get()),
             "show_unknown": bool(self.show_unknown.get()),
             "show_labels": bool(self.show_labels.get()),
+            "show_cp_energy": bool(self.show_cp_energy.get()),
             "show_molecule": bool(self.show_molecule.get()),
             "show_covalent_bonds": bool(self.show_covalent_bonds.get()),
             "show_bond_paths": bool(self.show_bond_paths.get()),
@@ -2371,6 +2652,7 @@ class QTAIMGui(tk.Tk):
             "cp_scale": float(self.cp_scale.get()),
             "bond_radius": float(self.bond_radius.get()),
             "background": str(self.background.get()),
+            "cp_energy_unit": str(self.cp_energy_unit.get()),
             "path_display_range": str(self.path_display_range.get()),
             "cp_colors": {key: var.get() for key, var in self.cp_color_vars.items()},
             "bond_path_color": str(self.bond_path_color.get()),
@@ -2397,11 +2679,13 @@ class QTAIMGui(tk.Tk):
     def bind_graphics_setting_traces(self) -> None:
         for var in (
             self.show_ncp,
-            self.show_bcp,
+            self.show_covalent_bcp,
+            self.show_non_covalent_bcp,
             self.show_rcp,
             self.show_ccp,
             self.show_unknown,
             self.show_labels,
+            self.show_cp_energy,
             self.show_molecule,
             self.show_covalent_bonds,
             self.show_bond_paths,
@@ -2409,6 +2693,7 @@ class QTAIMGui(tk.Tk):
             self.cp_scale,
             self.bond_radius,
             self.background,
+            self.cp_energy_unit,
             self.path_display_range,
             self.bond_path_color,
             *self.cp_color_vars.values(),
@@ -2579,11 +2864,12 @@ class QTAIMGui(tk.Tk):
 
         cp_items = [
             ("NCP (3,-3)", self.show_ncp, "nuclei", self.cp_color_vars["(3,-3)"], 0, 0),
-            ("BCP (3,-1)", self.show_bcp, "bond/contact", self.cp_color_vars["(3,-1)"], 0, 3),
-            ("RCP (3,+1)", self.show_rcp, "ring", self.cp_color_vars["(3,+1)"], 0, 6),
-            ("CCP (3,+3)", self.show_ccp, "cage", self.cp_color_vars["(3,+3)"], 1, 0),
-            ("Unknown CPs", self.show_unknown, "unclassified", self.cp_color_vars["unknown"], 1, 3),
-            ("Labels", self.show_labels, "names", None, 1, 6),
+            ("Strong interaction CPs", self.show_covalent_bcp, "shared/intermediate", self.cp_color_vars["(3,-1)"], 0, 3),
+            ("Weak interaction CPs", self.show_non_covalent_bcp, "closed-shell/weak", self.cp_color_vars["(3,-1)"], 0, 6),
+            ("RCP (3,+1)", self.show_rcp, "ring", self.cp_color_vars["(3,+1)"], 1, 0),
+            ("CCP (3,+3)", self.show_ccp, "cage", self.cp_color_vars["(3,+3)"], 1, 3),
+            ("Unknown CPs", self.show_unknown, "unclassified", self.cp_color_vars["unknown"], 1, 6),
+            ("Labels", self.show_labels, "names", None, 2, 0),
         ]
         for text, var, note, color_var, row, col in cp_items:
             cp_wrap = ttk.Frame(settings, style="Panel.TFrame")
@@ -2593,30 +2879,41 @@ class QTAIMGui(tk.Tk):
                 self.make_color_swatch(cp_wrap, color_var, f"Select {text} color").pack(side="left", padx=(3, 2))
             ttk.Label(cp_wrap, text=note, style="Muted.TLabel", anchor="w").pack(side="left", padx=(0, 0))
 
-        ttk.Checkbutton(settings, text="Molecule", variable=self.show_molecule).grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Checkbutton(settings, text="Covalent bonds", variable=self.show_covalent_bonds).grid(row=2, column=3, sticky="w", pady=(8, 0))
+        ttk.Checkbutton(settings, text="Molecule", variable=self.show_molecule).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Checkbutton(settings, text="Covalent bonds", variable=self.show_covalent_bonds).grid(row=3, column=3, sticky="w", pady=(8, 0))
         path_wrap = ttk.Frame(settings, style="Panel.TFrame")
-        path_wrap.grid(row=2, column=6, columnspan=3, sticky="w", pady=(8, 0))
+        path_wrap.grid(row=3, column=6, columnspan=3, sticky="w", pady=(8, 0))
         ttk.Checkbutton(path_wrap, text="QTAIM paths", variable=self.show_bond_paths).pack(side="left")
         self.make_color_swatch(path_wrap, self.bond_path_color, "Select QTAIM path color").pack(side="left", padx=(4, 2))
 
-        ttk.Label(settings, text="Atom size").grid(row=3, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(settings, textvariable=self.atom_scale, width=10).grid(row=3, column=1, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="CP size").grid(row=3, column=3, sticky="w", pady=(8, 0))
-        ttk.Entry(settings, textvariable=self.cp_scale, width=10).grid(row=3, column=4, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="Bond/path radius").grid(row=3, column=6, sticky="w", pady=(8, 0))
-        ttk.Entry(settings, textvariable=self.bond_radius, width=10).grid(row=3, column=7, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text="Atom size").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(settings, textvariable=self.atom_scale, width=10).grid(row=4, column=1, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text="CP size").grid(row=4, column=3, sticky="w", pady=(8, 0))
+        ttk.Entry(settings, textvariable=self.cp_scale, width=10).grid(row=4, column=4, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text="Bond/path radius").grid(row=4, column=6, sticky="w", pady=(8, 0))
+        ttk.Entry(settings, textvariable=self.bond_radius, width=10).grid(row=4, column=7, sticky="w", pady=(8, 0))
 
-        ttk.Label(settings, text="Background").grid(row=4, column=0, sticky="w", pady=(8, 0))
-        ttk.Combobox(settings, textvariable=self.background, values=["black", "white"], width=10, state="readonly").grid(row=4, column=1, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="Image size").grid(row=4, column=3, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text="Background").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        ttk.Combobox(settings, textvariable=self.background, values=["black", "white"], width=10, state="readonly").grid(row=5, column=1, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text="Image size").grid(row=5, column=3, sticky="w", pady=(8, 0))
         ttk.Combobox(
             settings,
             textvariable=self.image_resolution,
             values=list(IMAGE_PRESETS.keys()),
             width=28,
             state="readonly",
-        ).grid(row=4, column=4, columnspan=4, sticky="w", pady=(8, 0))
+        ).grid(row=5, column=4, columnspan=4, sticky="w", pady=(8, 0))
+
+        ttk.Checkbutton(settings, text="CP energy", variable=self.show_cp_energy).grid(row=6, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text="Energy unit").grid(row=6, column=3, sticky="w", pady=(8, 0))
+        ttk.Combobox(
+            settings,
+            textvariable=self.cp_energy_unit,
+            values=["kJ/mol", "kcal/mol"],
+            width=10,
+            state="readonly",
+        ).grid(row=6, column=4, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text="uses 0.5V(r) when available", style="Muted.TLabel").grid(row=6, column=6, columnspan=3, sticky="w", pady=(8, 0))
 
         buttons = ttk.Frame(root)
         buttons.pack(fill="x", pady=(0, 8))
@@ -2730,7 +3027,7 @@ class QTAIMGui(tk.Tk):
 
         note = (
             "Important: Multiwfn menu numbers are version-dependent. These commands are used for the automatic "
-            "QTAIM run and exact path export. PyVista only plots generated CP/path files."
+            "QTAIM run, CP-property export, and exact path export. PyVista only plots generated CP/property/path files."
         )
         ttk.Label(seq_frame, text=note, style="Muted.TLabel", wraplength=900).pack(anchor="w", pady=(4, 0))
 
@@ -3021,6 +3318,12 @@ class QTAIMGui(tk.Tk):
         self.cps = parse_critical_points_file(path)
         self.cps = convert_cps_to_atom_units(self.cps, self.atoms or None, path.suffix)
         self.log(f"Parsed CPs: {len(self.cps)}")
+        energy_count = sum(1 for cp in self.cps if cp_energy_value(cp)[0] is not None)
+        if self.cps:
+            if energy_count:
+                self.log(f"CP energy values available: {energy_count}/{len(self.cps)}")
+            else:
+                self.log("CP energy values unavailable in this CP source; export CPprop.txt with topology option 7.")
         counts: Dict[str, int] = {}
         for cp in self.cps:
             counts[normalize_cp_type(cp.cp_type)] = counts.get(normalize_cp_type(cp.cp_type), 0) + 1
@@ -3028,7 +3331,8 @@ class QTAIMGui(tk.Tk):
             self.log("CP counts: " + ", ".join(f"{k}: {v}" for k, v in sorted(counts.items())))
             parsed_norm_types = {normalize_cp_type(cp.cp_type) for cp in self.cps}
             if "(3,-1)" in parsed_norm_types:
-                self.show_bcp.set(True)
+                if not bool(self.show_covalent_bcp.get()) and not bool(self.show_non_covalent_bcp.get()):
+                    self.show_non_covalent_bcp.set(True)
 
             preview = []
             for cp in self.cps[:8]:
@@ -3036,6 +3340,20 @@ class QTAIMGui(tk.Tk):
             self.log("CP preview: " + "; ".join(preview))
             bcp_count = sum(1 for cp in self.cps if normalize_cp_type(cp.cp_type) == "(3,-1)")
             self.log(f"BCPs available for exact Multiwfn path stitching: {bcp_count}")
+            if bcp_count:
+                bcp_classes = [bcp_interaction_class(cp) for cp in self.cps if normalize_cp_type(cp.cp_type) == "(3,-1)"]
+                covalent_bcp_count = sum(1 for cls in bcp_classes if cls == "covalent")
+                intermediate_bcp_count = sum(1 for cls in bcp_classes if cls == "intermediate")
+                non_covalent_bcp_count = sum(1 for cls in bcp_classes if cls == "noncovalent")
+                unclassified_bcp_count = bcp_count - covalent_bcp_count - intermediate_bcp_count - non_covalent_bcp_count
+                self.log(
+                    "BCP interaction split using H(r), |V|/G and Laplacian when available "
+                    f"(rho fallback {DEFAULT_BCP_COVALENT_RHO_THRESHOLD:.2f} a.u.): "
+                    f"covalent/shared-shell {covalent_bcp_count}, "
+                    f"intermediate/partial-covalent {intermediate_bcp_count}, "
+                    f"weak/closed-shell {non_covalent_bcp_count}, "
+                    f"unclassified {unclassified_bcp_count}"
+                )
             if self.atoms:
                 bonds = infer_bonds(self.atoms)
                 matched, total = count_covalent_bonds_with_nearby_bcp(self.atoms, bonds, self.cps)
@@ -3145,11 +3463,14 @@ class QTAIMGui(tk.Tk):
                 atoms=self.atoms,
                 cps=self.cps,
                 show_ncp=bool(self.show_ncp.get()),
-                show_bcp=bool(self.show_bcp.get()),
+                show_covalent_bcp=bool(self.show_covalent_bcp.get()),
+                show_non_covalent_bcp=bool(self.show_non_covalent_bcp.get()),
                 show_rcp=bool(self.show_rcp.get()),
                 show_ccp=bool(self.show_ccp.get()),
                 show_unknown=bool(self.show_unknown.get()),
                 show_labels=bool(self.show_labels.get()),
+                show_cp_energy=bool(self.show_cp_energy.get()),
+                cp_energy_unit=self.cp_energy_unit.get(),
                 show_molecule=bool(self.show_molecule.get()),
                 show_covalent_bonds=bool(self.show_covalent_bonds.get()),
                 show_bond_paths=bool(self.show_bond_paths.get()),
@@ -3175,8 +3496,11 @@ class QTAIMGui(tk.Tk):
                 initialized = False
             if initialized:
                 self.plotter.render()
+                bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
             else:
+                bring_pyvista_window_to_front(self.plotter)
                 self.plotter.show(title="QTAIM", interactive_update=True, auto_close=False)
+                bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
         except Exception as exc:
             self.show_exception("Plot update failed", exc)
 
@@ -3186,11 +3510,13 @@ class QTAIMGui(tk.Tk):
 
     def reset_view(self):
         self.show_ncp.set(False)
-        self.show_bcp.set(True)
+        self.show_covalent_bcp.set(False)
+        self.show_non_covalent_bcp.set(True)
         self.show_rcp.set(False)
         self.show_ccp.set(False)
         self.show_unknown.set(False)
         self.show_labels.set(False)
+        self.show_cp_energy.set(False)
         self.show_molecule.set(True)
         self.show_covalent_bonds.set(True)
         self.show_bond_paths.set(True)
@@ -3198,6 +3524,7 @@ class QTAIMGui(tk.Tk):
         self.cp_scale.set(0.14)
         self.bond_radius.set(0.075)
         self.background.set("white")
+        self.cp_energy_unit.set("kJ/mol")
         for key, var in self.cp_color_vars.items():
             var.set(CP_COLORS[key])
         self.bond_path_color.set(DEFAULT_BOND_PATH_COLOR)
@@ -3256,12 +3583,12 @@ class QTAIMGui(tk.Tk):
                 "--show-molecule", "1" if bool(self.show_molecule.get()) else "0",
                 "--show-nci", "1",
                 "--show-cps", "1" if any(
-                    bool(var.get()) for var in (self.show_ncp, self.show_bcp, self.show_rcp, self.show_ccp, self.show_unknown)
+                    bool(var.get()) for var in (self.show_ncp, self.show_covalent_bcp, self.show_non_covalent_bcp, self.show_rcp, self.show_ccp, self.show_unknown)
                 ) else "0",
                 "--show-bond-paths", "1" if bool(self.show_bond_paths.get()) else "0",
                 "--show-labels", "1" if bool(self.show_labels.get()) else "0",
                 "--show-ncp", "1" if bool(self.show_ncp.get()) else "0",
-                "--show-bcp", "1" if bool(self.show_bcp.get()) else "0",
+                "--show-bcp", "1" if (bool(self.show_covalent_bcp.get()) or bool(self.show_non_covalent_bcp.get())) else "0",
                 "--show-rcp", "1" if bool(self.show_rcp.get()) else "0",
                 "--show-ccp", "1" if bool(self.show_ccp.get()) else "0",
                 "--show-unknown", "1" if bool(self.show_unknown.get()) else "0",

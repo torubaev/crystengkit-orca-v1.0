@@ -289,13 +289,14 @@
 <li>launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.</li>
 </ul>
 <h2 id="installation-and-requirements">Installation and Requirements</h2>
-<p>For most users, start with the provided installer/checker. It checks the software already present on your computer, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.</p>
+<p>For most users, start with the provided installer. It checks the software already present on your computer, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.</p>
 <p>The installer itself needs Python. If Python is not installed yet, the Windows and Linux/macOS launchers will stop and show where to download or install Python first. After Python 3.9 or newer is installed, run the installer again.</p>
 <p>On Windows, run:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>install\install.bat</code></pre></div>
-<p>On macOS or Linux, run the matching checker from the <code>install</code> folder, or run:</p>
-<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python install/install.py</code></pre></div>
-<p>If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the checker again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The checker looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.</p>
+<p>On macOS or Linux, run:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>chmod +x install_crystengkit.sh
+./install_crystengkit.sh</code></pre></div>
+<p>If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the installer again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The installer looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.</p>
 <p>The full suite uses:</p>
 <ul>
 <li><strong>Python 3.9+</strong></li>
@@ -329,7 +330,7 @@
 <p>Creates noncovalent-interaction surfaces<sup><a href="#ref-nci">nci</a></sup> from <code>.wfn</code> or <code>.wfx</code> files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.</p>
 <h3 id="qtaim-critical-points-viewer">QTAIM Critical Points Viewer</h3>
 <figure><img src="../images/wiki/orca_qtaim_1.png" alt=""></figure>
-<p>Shows QTAIM bond, ring, and cage critical points<sup><a href="#ref-qtaim">qtaim</a></sup> from <code>.wfn</code> or <code>.wfx</code> files and Multiwfn QTAIM output. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.</p>
+<p>Shows QTAIM bond, ring, and cage critical points<sup><a href="#ref-qtaim">qtaim</a></sup> from <code>.wfn</code> or <code>.wfx</code> files and Multiwfn QTAIM output. The visualization settings include separate <code>Strong interaction CPs</code> and <code>Weak interaction CPs</code> checkboxes for BCP filtering, plus <code>CP energy</code> with <code>kJ/mol</code> or <code>kcal/mol</code> labels when <code>CPprop.txt</code> provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.</p>
 <figure><img src="../images/wiki/orca_qtaim_2.png" alt=""></figure>
 <h3 id="nci-qtaim-overlay">NCI + QTAIM Overlay</h3>
 <figure><img src="../images/wiki/orca_qtaim_nci_overlay.png" alt=""></figure>
@@ -431,6 +432,8 @@
 <p><strong>QTAIM</strong> Quantum Theory of Atoms in Molecules. It analyzes the topology of the electron density and is often used to discuss bonding, bond paths, and critical points. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>. FACCTs: <a href="https://www.faccts.de/docs/orca/6.1/manual/contents/utilitiesvisualization/index_utilitiesvisualization.html" target="_blank" rel="noopener noreferrer">Utility programs</a>.</p>
 <p><strong>Critical point</strong> A point in the electron density where the gradient is zero. Different kinds of critical points correspond to nuclei, bonds, rings, or cages. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
 <p><strong>BCP</strong> Bond critical point. In QTAIM, a BCP is often discussed in connection with a bond path between atoms. Its presence should be interpreted chemically, not treated as automatic proof of a conventional bond. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
+<p><strong>Strong and weak interaction CPs</strong> In the QTAIM viewer, BCPs can be filtered as strong or weak interactions using local CP properties such as H(r), |V|/G, the Laplacian, and rho when available.</p>
+<p><strong>CP energy labels</strong> The <code>CP energy</code> checkbox shows an energy label for selected CPs, using 0.5V(r) when Multiwfn exports V(r), with units chosen as kJ/mol or kcal/mol.</p>
 <p><strong>RCP and CCP</strong> Ring critical point and cage critical point. These appear in ring-like or cage-like topological features of the electron density. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
 <p><strong>Bond path</strong> A path through the electron density connecting atoms through a bond critical point. Bond paths are useful for visual discussion of QTAIM results. Wiki: <a href="https://en.wikipedia.org/wiki/Atoms_in_molecules" target="_blank" rel="noopener noreferrer">Atoms in molecules</a>.</p>
 <h3 id="dimer-and-interaction-energy-terms">Dimer and Interaction-Energy Terms</h3>
