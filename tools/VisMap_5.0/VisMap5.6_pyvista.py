@@ -83,6 +83,12 @@ IMAGE_PRESETS = {
     "Poster / high-res: 8000 x 6000 px": (8000, 6000),
 }
 DEFAULT_IMAGE_PRESET = "Paper 300 dpi: 3000 x 2250 px"
+HQ_ATOM_RESOLUTION = 96
+HQ_BOND_RESOLUTION = 72
+HQ_BACKGROUND_TOP = {
+    "white": "#eef3f8",
+    "black": "#171b22",
+}
 
 
 def selected_image_size(var=None):
@@ -401,7 +407,7 @@ ELEMENT_COLORS = {
     "Pb": "#575961",
 }
 
-FALLBACK_COVALENT_RADII = {
+COVALENT_RADII = {
     "H": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C": 0.76,
     "N": 0.71, "O": 0.66, "F": 0.57, "Ne": 0.58, "Na": 1.66, "Mg": 1.41,
     "Al": 1.21, "Si": 1.11, "P": 1.07, "S": 1.05, "Cl": 1.02, "Ar": 1.06,
@@ -419,6 +425,20 @@ FALLBACK_COVALENT_RADII = {
     "At": 1.50, "Rn": 1.50, "Fr": 2.60, "Ra": 2.21, "Ac": 2.15, "Th": 2.06,
     "Pa": 2.00, "U": 1.96, "Np": 1.90, "Pu": 1.87, "Am": 1.80, "Cm": 1.69,
 }
+
+COVALENT_RADIUS_VARIANTS = {
+    "C_sp3": 0.76,
+    "C_sp2": 0.73,
+    "C_sp": 0.69,
+    "Mn_low_spin": 1.39,
+    "Mn_high_spin": 1.61,
+    "Fe_low_spin": 1.32,
+    "Fe_high_spin": 1.52,
+    "Co_low_spin": 1.26,
+    "Co_high_spin": 1.50,
+}
+
+FALLBACK_COVALENT_RADII = COVALENT_RADII
 
 
 def hex_to_rgb01(hex_color):
@@ -440,7 +460,7 @@ def display_atom_radius_from_number(atomic_number):
         symbol = dnc2all[int(atomic_number)][0]
     except Exception:
         symbol = ""
-    covalent = FALLBACK_COVALENT_RADII.get(symbol, 0.77)
+    covalent = COVALENT_RADII.get(symbol, 0.77)
     return float(np.clip(covalent * 0.42, 0.16, 0.55))
 
 
@@ -939,15 +959,25 @@ def CalcPoints(isoval):
     return MAXMIN
 
 
-def BuildBondPairs(CENTERS):
+def covalent_radius_from_number(atomic_number):
+    try:
+        symbol = dnc2all[int(atomic_number)][0]
+    except Exception:
+        symbol = ""
+    return COVALENT_RADII.get(symbol, 0.77)
+
+
+def BuildBondPairs(CENTERS, scale=1.20):
     bond_pairs = []
     for i, atom1 in enumerate(CENTERS):
         pos1 = np.array(atom1[1:4], dtype=float)
+        radius1 = covalent_radius_from_number(atom1[0])
         for j in range(i + 1, len(CENTERS)):
             atom2 = CENTERS[j]
             pos2 = np.array(atom2[1:4], dtype=float)
+            radius2 = covalent_radius_from_number(atom2[0])
             dist = np.linalg.norm(pos1 - pos2)
-            if 1.0e-8 < dist < (dnc2all[atom1[0]][1] + dnc2all[atom2[0]][1]):
+            if 1.0e-8 < dist <= scale * (radius1 + radius2):
                 bond_pairs.append((i, j))
     return bond_pairs
 
@@ -1215,12 +1245,6 @@ def viewer_copy_to_clipboard():
 
 
 ESP_SCALAR_BAR_TITLE = "ESP\n\nkcal/mol"
-HQ_ATOM_RESOLUTION = 96
-HQ_BOND_RESOLUTION = 72
-HQ_BACKGROUND_TOP = {
-    "white": "#eef3f8",
-    "black": "#171b22",
-}
 
 
 def _set_scalar_bar_style(plotter, text_color=None):

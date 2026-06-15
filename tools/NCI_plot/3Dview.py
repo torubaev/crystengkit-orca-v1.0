@@ -72,7 +72,7 @@ ELEMENT_COLORS: Dict[str, str] = {
     "Pb": "#575961",
 }
 
-FALLBACK_COVALENT_RADII: Dict[str, float] = {
+COVALENT_RADII: Dict[str, float] = {
     "H": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84, "C": 0.76,
     "N": 0.71, "O": 0.66, "F": 0.57, "Ne": 0.58, "Na": 1.66, "Mg": 1.41,
     "Al": 1.21, "Si": 1.11, "P": 1.07, "S": 1.05, "Cl": 1.02, "Ar": 1.06,
@@ -90,6 +90,20 @@ FALLBACK_COVALENT_RADII: Dict[str, float] = {
     "At": 1.50, "Rn": 1.50, "Fr": 2.60, "Ra": 2.21, "Ac": 2.15, "Th": 2.06,
     "Pa": 2.00, "U": 1.96, "Np": 1.90, "Pu": 1.87, "Am": 1.80, "Cm": 1.69,
 }
+
+COVALENT_RADIUS_VARIANTS: Dict[str, float] = {
+    "C_sp3": 0.76,
+    "C_sp2": 0.73,
+    "C_sp": 0.69,
+    "Mn_low_spin": 1.39,
+    "Mn_high_spin": 1.61,
+    "Fe_low_spin": 1.32,
+    "Fe_high_spin": 1.52,
+    "Co_low_spin": 1.26,
+    "Co_high_spin": 1.50,
+}
+
+FALLBACK_COVALENT_RADII = COVALENT_RADII
 
 
 @dataclass

@@ -18,10 +18,8 @@ try:
 except Exception:
     np = None
 
-try:
-    import pyvista as pv
-except Exception:
-    pv = None
+pv = None
+_pyvista_import_error = None
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Dict, List, Optional, Tuple
@@ -89,6 +87,21 @@ def active_python_command() -> str:
     if sys.executable and os.path.isfile(sys.executable):
         return sys.executable
     return "python3" if os.name != "nt" else "python"
+
+
+def require_pyvista():
+    """Import PyVista only when a builder preview actually needs it."""
+    global pv, _pyvista_import_error
+    if pv is not None:
+        return pv
+    try:
+        import pyvista as pv_module
+    except Exception as exc:
+        _pyvista_import_error = exc
+        raise ValueError(f"PyVista is required for the molecule viewer but could not be imported: {exc}") from exc
+    pv = pv_module
+    _pyvista_import_error = None
+    return pv
 
 
 def subprocess_env_with_executable_dir(executable_path: str) -> Dict[str, str]:
@@ -1028,6 +1041,18 @@ COVALENT_RADII = {
     "Au": 1.36, "Hg": 1.32, "Tl": 1.45, "Pb": 1.46, "Bi": 1.48, "Po": 1.40,
     "At": 1.50, "Rn": 1.50, "Fr": 2.60, "Ra": 2.21, "Ac": 2.15, "Th": 2.06,
     "Pa": 2.00, "U": 1.96, "Np": 1.90, "Pu": 1.87, "Am": 1.80, "Cm": 1.69,
+}
+
+COVALENT_RADIUS_VARIANTS = {
+    "C_sp3": 0.76,
+    "C_sp2": 0.73,
+    "C_sp": 0.69,
+    "Mn_low_spin": 1.39,
+    "Mn_high_spin": 1.61,
+    "Fe_low_spin": 1.32,
+    "Fe_high_spin": 1.52,
+    "Co_low_spin": 1.26,
+    "Co_high_spin": 1.50,
 }
 
 
@@ -3162,7 +3187,7 @@ class App(tk.Tk):
         return [part.strip().strip('"').strip("'") for part in split_cli_args(command) if part.strip()]
 
     def _launch_python_tool(self, script_path: str, input_path: Optional[str] = None, python_command: Optional[str] = None) -> bool:
-        py_parts = [active_python_command()]
+        py_parts = self._python_command_parts(python_command or active_python_command())
         script = script_path.strip().strip('"')
         if py_parts[0].lower().endswith(".exe") and not os.path.isfile(py_parts[0]):
             raise ValueError(f"Python executable was not found:\n{py_parts[0]}")
@@ -3430,20 +3455,21 @@ class App(tk.Tk):
 
     def launch_structure_viewer(self):
         try:
-            if pv is None or np is None:
-                raise ValueError("PyVista and NumPy are required for the molecule viewer.")
+            pv_module = require_pyvista()
+            if np is None:
+                raise ValueError("NumPy is required for the molecule viewer.")
             structure = self.parse_current_structure()
             bonds = infer_bonds(structure, scale=1.20)
             points = np.array([[x, y, z] for _, x, y, z in structure.atoms], dtype=float)
             extent = float(np.linalg.norm(points.max(axis=0) - points.min(axis=0))) if len(points) else 1.0
-            plotter = pv.Plotter(window_size=self._screen_fraction_window_size(1200), lighting="none")
-            configure_pyvista_defaults(pv, plotter, extent=extent)
+            plotter = pv_module.Plotter(window_size=self._screen_fraction_window_size(1200), lighting="none")
+            configure_pyvista_defaults(pv_module, plotter, extent=extent)
             for i, j in bonds:
                 sym_i = structure.atoms[i][0]
                 sym_j = structure.atoms[j][0]
-                add_split_colored_bond(pv, plotter, points[i], points[j], ATOM_COLORS.get(sym_i, "#FF69B4"), ATOM_COLORS.get(sym_j, "#FF69B4"))
+                add_split_colored_bond(pv_module, plotter, points[i], points[j], ATOM_COLORS.get(sym_i, "#FF69B4"), ATOM_COLORS.get(sym_j, "#FF69B4"))
             for idx, (sym, *_rest) in enumerate(structure.atoms):
-                add_ball_and_stick_atom(pv, plotter, sym, points[idx])
+                add_ball_and_stick_atom(pv_module, plotter, sym, points[idx])
             labels = [f"{idx+1}:{sym}" for idx, (sym, *_rest) in enumerate(structure.atoms)]
             plotter.add_point_labels(points, labels, font_size=10, show_points=False, always_visible=False)
             plotter.add_text("Molecule view", position="upper_left", font_size=10)
@@ -3457,8 +3483,9 @@ class App(tk.Tk):
 
     def update_fragment_selection_view(self):
         try:
-            if pv is None or np is None:
-                raise ValueError("PyVista and NumPy are required for the selection view.")
+            require_pyvista()
+            if np is None:
+                raise ValueError("NumPy is required for the selection view.")
             structure = self.parse_current_structure()
             if not self.fragment_a_indices or not self.fragment_b_indices:
                 self._auto_detect_fragments_for_structure(structure)
@@ -3468,19 +3495,20 @@ class App(tk.Tk):
             messagebox.showerror("Selection view", str(exc))
 
     def _show_fragment_selection_view(self, structure: Structure):
-        if pv is None or np is None:
-            raise ValueError("PyVista and NumPy are required for the selection view.")
+        pv_module = require_pyvista()
+        if np is None:
+            raise ValueError("NumPy is required for the selection view.")
         if not self.fragment_a_indices or not self.fragment_b_indices:
             raise ValueError("Run Auto-detect A/B before opening the selection view.")
         try:
             bonds = infer_bonds(structure, scale=1.20)
             points = np.array([[x, y, z] for _, x, y, z in structure.atoms], dtype=float)
             extent = float(np.linalg.norm(points.max(axis=0) - points.min(axis=0))) if len(points) else 1.0
-            plotter = pv.Plotter(window_size=self._screen_fraction_window_size(1200), lighting="none")
-            configure_pyvista_defaults(pv, plotter, extent=extent)
+            plotter = pv_module.Plotter(window_size=self._screen_fraction_window_size(1200), lighting="none")
+            configure_pyvista_defaults(pv_module, plotter, extent=extent)
 
             for i, j in bonds:
-                add_split_colored_bond(pv, plotter, points[i], points[j], "#A8A8A8", "#A8A8A8")
+                add_split_colored_bond(pv_module, plotter, points[i], points[j], "#A8A8A8", "#A8A8A8")
             for idx, (sym, *_rest) in enumerate(structure.atoms):
                 if idx in self.fragment_a_indices:
                     color = "royalblue"
@@ -3488,7 +3516,7 @@ class App(tk.Tk):
                     color = "tomato"
                 else:
                     color = "lightgray"
-                add_ball_and_stick_atom(pv, plotter, sym, points[idx], color=color, name=f"fragment_view_atom_{idx}")
+                add_ball_and_stick_atom(pv_module, plotter, sym, points[idx], color=color, name=f"fragment_view_atom_{idx}")
 
             plotter.add_text(
                 "Blue = fragment A\n"
