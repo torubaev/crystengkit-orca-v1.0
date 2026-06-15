@@ -1004,6 +1004,18 @@ COVALENT_RADII = {
     "Pa": 2.00, "U": 1.96, "Np": 1.90, "Pu": 1.87, "Am": 1.80, "Cm": 1.69,
 }
 
+COVALENT_RADIUS_VARIANTS = {
+    "C_sp3": 0.76,
+    "C_sp2": 0.73,
+    "C_sp": 0.69,
+    "Mn_low_spin": 1.39,
+    "Mn_high_spin": 1.61,
+    "Fe_low_spin": 1.32,
+    "Fe_high_spin": 1.52,
+    "Co_low_spin": 1.26,
+    "Co_high_spin": 1.50,
+}
+
 
 def molecule_material_parameters(
     ambient: float = 0.82,

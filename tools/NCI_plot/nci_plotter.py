@@ -579,6 +579,18 @@ COVALENT_RADII = {
     96: 1.69,
 }
 
+COVALENT_RADIUS_VARIANTS = {
+    "C_sp3": 0.76,
+    "C_sp2": 0.73,
+    "C_sp": 0.69,
+    "Mn_low_spin": 1.39,
+    "Mn_high_spin": 1.61,
+    "Fe_low_spin": 1.32,
+    "Fe_high_spin": 1.52,
+    "Co_low_spin": 1.26,
+    "Co_high_spin": 1.50,
+}
+
 
 ATOM_COLORS = {
     1: "#F2F2F2",
