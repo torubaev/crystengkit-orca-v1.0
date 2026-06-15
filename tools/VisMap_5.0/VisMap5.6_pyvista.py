@@ -83,6 +83,7 @@ IMAGE_PRESETS = {
     "Poster / high-res: 8000 x 6000 px": (8000, 6000),
 }
 DEFAULT_IMAGE_PRESET = "Paper 300 dpi: 3000 x 2250 px"
+BOHR_PER_ANGSTROM = 1.0 / 0.529177210903
 HQ_ATOM_RESOLUTION = 96
 HQ_BOND_RESOLUTION = 72
 HQ_BACKGROUND_TOP = {
@@ -461,7 +462,7 @@ def display_atom_radius_from_number(atomic_number):
     except Exception:
         symbol = ""
     covalent = COVALENT_RADII.get(symbol, 0.77)
-    return float(np.clip(covalent * 0.42, 0.16, 0.55))
+    return float(0.5 * np.clip(covalent * 0.42, 0.16, 0.55) * BOHR_PER_ANGSTROM)
 
 
 def atom_color_from_number(atomic_number):
@@ -971,11 +972,11 @@ def BuildBondPairs(CENTERS, scale=1.20):
     bond_pairs = []
     for i, atom1 in enumerate(CENTERS):
         pos1 = np.array(atom1[1:4], dtype=float)
-        radius1 = covalent_radius_from_number(atom1[0])
+        radius1 = covalent_radius_from_number(atom1[0]) * BOHR_PER_ANGSTROM
         for j in range(i + 1, len(CENTERS)):
             atom2 = CENTERS[j]
             pos2 = np.array(atom2[1:4], dtype=float)
-            radius2 = covalent_radius_from_number(atom2[0])
+            radius2 = covalent_radius_from_number(atom2[0]) * BOHR_PER_ANGSTROM
             dist = np.linalg.norm(pos1 - pos2)
             if 1.0e-8 < dist <= scale * (radius1 + radius2):
                 bond_pairs.append((i, j))
@@ -1244,7 +1245,7 @@ def viewer_copy_to_clipboard():
         update_status(f"Clipboard copy failed: {exc}", "red")
 
 
-ESP_SCALAR_BAR_TITLE = "ESP\n\nkcal/mol"
+ESP_SCALAR_BAR_TITLE = "ESP\n\nkcal/mol\n\n"
 
 
 def _set_scalar_bar_style(plotter, text_color=None):
@@ -1260,7 +1261,7 @@ def _set_scalar_bar_style(plotter, text_color=None):
 
         scalar_bars = getattr(plotter, "scalar_bars", {})
         bars = []
-        for key in (ESP_SCALAR_BAR_TITLE, "ESP\nkcal/mol\n\n", "ESP, kcal/mol\n\n\n", "ESP, kcal/mol"):
+        for key in (ESP_SCALAR_BAR_TITLE, "ESP\n\nkcal/mol", "ESP\nkcal/mol\n\n", "ESP, kcal/mol\n\n\n", "ESP, kcal/mol"):
             bar = scalar_bars.get(key)
             if bar is not None and bar not in bars:
                 bars.append(bar)
@@ -1610,10 +1611,10 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
 
     state = {
         "isovalue": 0.001,
-        "opacity": 0.5,
+        "opacity": 1.0,
         "cmap_index": 0,
-        "show_molecule_overlay": False,
-        "overlay_opacity": 1.0,
+        "show_molecule_overlay": True,
+        "overlay_opacity": 0.40,
         "esp_min": esp_min_data,
         "esp_max": esp_max_data,
         "esp_use_custom_range": False,
@@ -1844,6 +1845,18 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         p2 = np.array(CENTERS[j][1:4], dtype=float)
         return p1, p2
 
+    def _trim_bond_to_atom_surfaces(i, j):
+        p1, p2 = _bond_segment_points(i, j)
+        vector = p2 - p1
+        length = float(np.linalg.norm(vector))
+        if length <= 1.0e-8:
+            return p1, p2
+        direction = vector / length
+        half_length = length * 0.5
+        r1 = min(display_atom_radius_from_number(CENTERS[i][0]), half_length * 0.85)
+        r2 = min(display_atom_radius_from_number(CENTERS[j][0]), half_length * 0.85)
+        return p1 + direction * r1, p2 - direction * r2
+
     def build_overlay_atoms():
         for actor in state["overlay_atom_actors"]:
             _remove_overlay_actor(actor)
@@ -1873,7 +1886,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             bring_pyvista_window_to_front(plotter, delay_s=0.05)
             return
         for i, j in bond_pairs:
-            p1, p2 = _bond_segment_points(i, j)
+            p1, p2 = _trim_bond_to_atom_surfaces(i, j)
             midpoint = (np.asarray(p1, dtype=float) + np.asarray(p2, dtype=float)) / 2.0
             colors = (atom_color_from_number(CENTERS[i][0]), atom_color_from_number(CENTERS[j][0]))
             for a, b, color in ((p1, midpoint, colors[0]), (midpoint, p2, colors[1])):
@@ -1932,8 +1945,8 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
 
     apply_colors()
     rebuild_surface()
-    build_overlay_atoms()
     build_overlay_bonds()
+    build_overlay_atoms()
     if APP_STATE.get("root") is None:
         bring_pyvista_window_to_front(plotter)
         plotter.show(title="VisMap PyVista Viewer", auto_close=False)
@@ -2270,7 +2283,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     APP_STATE["esp_min_var"] = tk.StringVar(value="-50")
     APP_STATE["esp_max_var"] = tk.StringVar(value="50")
     APP_STATE["cmap_var"] = tk.StringVar(value="gist_rainbow")
-    APP_STATE["show_molecule_var"] = tk.BooleanVar(value=False)
+    APP_STATE["show_molecule_var"] = tk.BooleanVar(value=True)
     APP_STATE["kill_value_var"] = tk.StringVar(value="0.0")
     APP_STATE["kill_pm_var"] = tk.StringVar(value="1.0")
     APP_STATE["bg_color_var"] = tk.StringVar(value="black")
@@ -2289,7 +2302,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
 
     tk.Label(surface_box, text="Opacity", font=subsection_font).grid(row=1, column=0, sticky="w")
     opacity_scale = tk.Scale(surface_box, from_=0, to=100, orient="horizontal", resolution=1, command=viewer_update_opacity, showvalue=True, length=210)
-    opacity_scale.set(50)
+    opacity_scale.set(100)
     opacity_scale.grid(row=1, column=1, columnspan=2, sticky="we", pady=(0, 6))
     APP_STATE["opacity_scale"] = opacity_scale
 
@@ -2316,7 +2329,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
         showvalue=True,
         length=210,
     )
-    molecule_opacity_scale.set(100)
+    molecule_opacity_scale.set(40)
     molecule_opacity_scale.grid(row=4, column=1, columnspan=2, sticky="we", pady=(8, 0))
     APP_STATE["molecule_opacity_scale"] = molecule_opacity_scale
 
