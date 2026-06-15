@@ -163,6 +163,12 @@ CP_LABELS = {
 DEFAULT_BCP_COVALENT_RHO_THRESHOLD = 0.05
 DEFAULT_BCP_VG_COVALENT_THRESHOLD = 2.0
 DEFAULT_BCP_VG_NONCOVALENT_THRESHOLD = 1.0
+HQ_ATOM_RESOLUTION = 96
+HQ_BOND_RESOLUTION = 72
+HQ_BACKGROUND_TOP = {
+    "white": "#eef3f8",
+    "black": "#171b22",
+}
 
 CP_DESCRIPTIONS = {
     "(3,-3)": "Nuclear critical point (NCP): local maximum of electron density at/near a nucleus.",
@@ -1860,9 +1866,26 @@ def configure_pyvista_defaults(pv_module, plotter, background="black", parallel_
     except Exception:
         pass
     try:
-        plotter.set_background(background)
+        bg = str(background or "white").strip().lower()
+        plotter.set_background(background, top=HQ_BACKGROUND_TOP.get(bg))
+    except Exception:
+        try:
+            plotter.set_background(background)
+        except Exception:
+            pass
+    try:
+        plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)
     except Exception:
         pass
+    try:
+        plotter.renderer.SetTwoSidedLighting(True)
+    except Exception:
+        pass
+    if parallel_projection:
+        try:
+            plotter.enable_parallel_projection()
+        except Exception:
+            pass
     if antialiasing:
         try:
             plotter.enable_anti_aliasing(antialiasing)
@@ -1877,10 +1900,11 @@ def configure_pyvista_defaults(pv_module, plotter, background="black", parallel_
     except Exception:
         extent = 1.0
     light_specs = [
-        ("headlight", None, 0.95),
-        ("camera light", None, 0.45),
-        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
-        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+        ("headlight", None, 0.72),
+        ("camera light", None, 0.34),
+        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
+        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
+        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
     ]
     for light_type, position, intensity in light_specs:
         try:
@@ -1910,6 +1934,35 @@ def save_pyvista_screenshot(plotter, path: str, background: str, **kwargs):
         except TypeError:
             pass
     return plotter.screenshot(path, **kwargs)
+
+
+def contrast_text_color(background: str) -> str:
+    bg = str(background or "").strip().lower()
+    named = {
+        "white": "black",
+        "lightgray": "black",
+        "lightgrey": "black",
+        "gray": "white",
+        "grey": "white",
+        "black": "white",
+    }
+    if bg in named:
+        return named[bg]
+    if bg.startswith("#") and len(bg) in {4, 7}:
+        try:
+            if len(bg) == 4:
+                r = int(bg[1] * 2, 16)
+                g = int(bg[2] * 2, 16)
+                b = int(bg[3] * 2, 16)
+            else:
+                r = int(bg[1:3], 16)
+                g = int(bg[3:5], 16)
+                b = int(bg[5:7], 16)
+            luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+            return "black" if luminance > 0.55 else "white"
+        except Exception:
+            pass
+    return "black"
 
 
 def bring_pyvista_window_to_front(plotter, delay_s: float = 0.25) -> None:
@@ -1948,10 +2001,10 @@ def molecule_material_parameters() -> Dict[str, object]:
     return {
         "lighting": True,
         "smooth_shading": True,
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
+        "ambient": 0.34,
+        "diffuse": 0.72,
+        "specular": 0.34,
+        "specular_power": 38,
     }
 
 
@@ -1975,7 +2028,7 @@ def molecule_bond_radius(unit_factor: float, scale: float = 1.0) -> float:
     return float(max(0.045 * unit_factor, 0.075 * unit_factor * scale))
 
 
-def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=48):
+def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=HQ_BOND_RESOLUTION):
     import numpy as np
 
     p1 = np.asarray(p1, dtype=float)
@@ -2001,7 +2054,7 @@ def add_split_colored_bond(pv_module, plotter, p1, p2, color1: str, color2: str,
     p2 = np.asarray(p2, dtype=float)
     midpoint = (p1 + p2) / 2.0
     for a, b, color in ((p1, midpoint, color1), (midpoint, p2, color2)):
-        cylinder = cylinder_between(pv_module, a, b, radius=radius, resolution=48)
+        cylinder = cylinder_between(pv_module, a, b, radius=radius, resolution=HQ_BOND_RESOLUTION)
         if cylinder is not None:
             add_mesh_safe(plotter, cylinder, color=color, **molecule_material_parameters())
 
@@ -2016,8 +2069,8 @@ def add_ball_and_stick_atom(
     sphere = pv_module.Sphere(
         radius=display_atom_radius(atom.symbol, unit_factor, scale=scale),
         center=(atom.x, atom.y, atom.z),
-        theta_resolution=64,
-        phi_resolution=64,
+        theta_resolution=HQ_ATOM_RESOLUTION,
+        phi_resolution=HQ_ATOM_RESOLUTION,
     )
     add_mesh_safe(
         plotter,
@@ -2380,12 +2433,14 @@ def draw_qtaim_scene(
         )
 
     if (show_labels or show_cp_energy) and label_points:
+        label_color = contrast_text_color(background)
+        label_shape_color = "black" if label_color == "white" else "white"
         plotter.add_point_labels(
             label_points,
             label_text,
             font_size=16,
-            text_color="white" if background.lower() == "black" else "black",
-            shape_color="black" if background.lower() == "black" else "white",
+            text_color=label_color,
+            shape_color=label_shape_color,
             shape_opacity=0.45,
             always_visible=True,
         )

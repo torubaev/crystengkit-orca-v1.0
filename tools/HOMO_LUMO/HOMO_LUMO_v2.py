@@ -1148,6 +1148,12 @@ def camera_position_to_json(camera_position: Any) -> Any:
         return repr(camera_position)
 
 
+def camera_position_from_state(camera_state: Any) -> Any:
+    if isinstance(camera_state, dict):
+        return camera_state.get("camera_position")
+    return None
+
+
 def capture_plotter_camera_state(plotter: Any) -> Dict[str, Any]:
     camera = getattr(plotter, "camera", None)
     state: Dict[str, Any] = {"camera_position": camera_position_to_json(plotter.camera_position)}
@@ -1893,8 +1899,11 @@ class App(tk.Tk):
             orbital.update({"cube_path": str(cube), "image_path": str(image), "thumbnail_path": str(thumb), "isovalue": isovalue, "opacity": opacity})
             saved = image.is_file()
             existing = meta.get("orbitals", {}).get(orbital["safe_label"], {})
-            if existing.get("camera_position") is not None:
-                orbital["camera_position"] = existing.get("camera_position")
+            existing_camera_position = existing.get("camera_position")
+            if existing_camera_position is None:
+                existing_camera_position = camera_position_from_state(existing.get("camera_state"))
+            if existing_camera_position is not None:
+                orbital["camera_position"] = existing_camera_position
             if existing.get("camera_state") is not None:
                 orbital["camera_state"] = existing.get("camera_state")
             for visual_key in ("isovalue", "opacity", "color_scheme"):
@@ -2276,15 +2285,35 @@ class App(tk.Tk):
         if color_scheme in MO_COLOR_SCHEMES:
             self.mo_color_scheme_var.set(str(color_scheme))
 
-    def _saved_camera_position_for_orbital(self, orbital: Dict[str, Any]) -> Any:
-        camera_position = orbital.get("camera_position")
-        if camera_position is not None:
-            return camera_position
+    def _refresh_mo_metadata_from_disk(self) -> None:
+        try:
+            out_path = self._require_orca_out_for_surfaces()
+            paths = mo_surface_paths(out_path)
+            self.mo_metadata = load_mo_metadata(paths["metadata_file"])
+        except Exception:
+            pass
 
-        meta_orbital = self.mo_metadata.get("orbitals", {}).get(orbital["safe_label"], {})
-        camera_position = meta_orbital.get("camera_position")
+    def _camera_position_from_orbital_record(self, record: Any) -> Any:
+        if not isinstance(record, dict):
+            return None
+        camera_position = record.get("camera_position")
+        if camera_position is None:
+            camera_position = camera_position_from_state(record.get("camera_state"))
+        return camera_position
+
+    def _saved_camera_position_for_orbital(self, orbital: Dict[str, Any]) -> Any:
+        camera_position = self._camera_position_from_orbital_record(orbital)
         if camera_position is not None:
             orbital["camera_position"] = camera_position
+            return camera_position
+
+        self._refresh_mo_metadata_from_disk()
+        meta_orbital = self.mo_metadata.get("orbitals", {}).get(orbital["safe_label"], {})
+        camera_position = self._camera_position_from_orbital_record(meta_orbital)
+        if camera_position is not None:
+            orbital["camera_position"] = camera_position
+            if isinstance(meta_orbital.get("camera_state"), dict):
+                orbital["camera_state"] = meta_orbital["camera_state"]
             return camera_position
 
         raise ValueError(
@@ -2296,10 +2325,26 @@ class App(tk.Tk):
         camera_state = orbital.get("camera_state")
         if isinstance(camera_state, dict):
             return camera_state
+        camera_position = orbital.get("camera_position")
+        if camera_position is not None:
+            camera_state = {"camera_position": camera_position}
+            orbital["camera_state"] = camera_state
+            return camera_state
 
+        self._refresh_mo_metadata_from_disk()
         meta_orbital = self.mo_metadata.get("orbitals", {}).get(orbital["safe_label"], {})
         camera_state = meta_orbital.get("camera_state")
         if isinstance(camera_state, dict):
+            orbital["camera_state"] = camera_state
+            if orbital.get("camera_position") is None:
+                camera_position = camera_position_from_state(camera_state)
+                if camera_position is not None:
+                    orbital["camera_position"] = camera_position
+            return camera_state
+        camera_position = meta_orbital.get("camera_position")
+        if camera_position is not None:
+            camera_state = {"camera_position": camera_position}
+            orbital["camera_position"] = camera_position
             orbital["camera_state"] = camera_state
             return camera_state
 
@@ -2316,6 +2361,7 @@ class App(tk.Tk):
                 messagebox.showinfo("Use view for all", "MO surface rendering is already running.")
                 return
             self._close_active_mo_plotter()
+            self._refresh_mo_metadata_from_disk()
             camera_position = self._saved_camera_position_for_orbital(source_orbital)
             camera_state = self._saved_camera_state_for_orbital(source_orbital, require=False)
             if not self.mo_orbitals:

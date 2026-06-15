@@ -286,7 +286,8 @@ def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_
         pass
 
     try:
-        plotter.set_background(background)
+        bg = str(background or "white").strip().lower()
+        plotter.set_background(background, top=HQ_BACKGROUND_TOP.get(bg))
     except Exception:
         try:
             plotter.set_background("white")
@@ -326,10 +327,11 @@ def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_
         extent = 1.0
 
     light_specs = [
-        ("headlight", None, 0.95),
-        ("camera light", None, 0.45),
-        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
-        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+        ("headlight", None, 0.72),
+        ("camera light", None, 0.34),
+        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
+        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
+        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
     ]
 
     for light_type, position, intensity in light_specs:
@@ -363,10 +365,11 @@ def configure_molecule_renderer_lights(pv_module, renderer, extent=1.0):
         extent = 1.0
 
     light_specs = [
-        ("headlight", None, 0.95),
-        ("camera light", None, 0.45),
-        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
-        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+        ("headlight", None, 0.72),
+        ("camera light", None, 0.34),
+        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
+        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
+        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
     ]
 
     for light_type, position, intensity in light_specs:
@@ -425,10 +428,10 @@ def hex_to_rgb01(hex_color):
 
 def molecule_material_parameters():
     return {
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
+        "ambient": 0.34,
+        "diffuse": 0.72,
+        "specular": 0.34,
+        "specular_power": 38,
     }
 
 
@@ -449,7 +452,7 @@ def atom_color_from_number(atomic_number):
     return hex_to_rgb01(ELEMENT_COLORS.get(symbol, "#FF69B4"))
 
 
-def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=48):
+def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=HQ_BOND_RESOLUTION):
     p1 = np.asarray(p1, dtype=float)
     p2 = np.asarray(p2, dtype=float)
     vector = p2 - p1
@@ -1212,6 +1215,12 @@ def viewer_copy_to_clipboard():
 
 
 ESP_SCALAR_BAR_TITLE = "ESP\n\nkcal/mol"
+HQ_ATOM_RESOLUTION = 96
+HQ_BOND_RESOLUTION = 72
+HQ_BACKGROUND_TOP = {
+    "white": "#eef3f8",
+    "black": "#171b22",
+}
 
 
 def _set_scalar_bar_style(plotter, text_color=None):
@@ -1702,7 +1711,10 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
     def apply_colors():
         bg_color, label_color = _get_viewer_colors()
         try:
-            plotter.set_background(bg_color)
+            try:
+                plotter.set_background(bg_color, top=HQ_BACKGROUND_TOP.get(str(bg_color).strip().lower()))
+            except Exception:
+                plotter.set_background(bg_color)
         except Exception:
             pass
         rebuild_scalar_bar(label_color)
@@ -1820,7 +1832,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             center = np.array(atom[1:4], dtype=float)
             radius = display_atom_radius_from_number(atom[0])
             color = atom_color_from_number(atom[0])
-            sphere = pv.Sphere(radius=radius, center=center, theta_resolution=64, phi_resolution=64)
+            sphere = pv.Sphere(radius=radius, center=center, theta_resolution=HQ_ATOM_RESOLUTION, phi_resolution=HQ_ATOM_RESOLUTION)
             actor = _make_overlay_actor(sphere, color)
             state["overlay_atom_actors"].append(actor)
         _apply_molecule_overlay_positions()

@@ -327,7 +327,8 @@ def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_
         pass
 
     try:
-        plotter.set_background(background)
+        bg = str(background or "white").strip().lower()
+        plotter.set_background(background, top=HQ_BACKGROUND_TOP.get(bg))
     except Exception:
         try:
             plotter.set_background("white")
@@ -367,10 +368,11 @@ def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_
         extent = 1.0
 
     light_specs = [
-        ("headlight", None, 0.95),
-        ("camera light", None, 0.45),
-        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
-        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+        ("headlight", None, 0.72),
+        ("camera light", None, 0.34),
+        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
+        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
+        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
     ]
 
     for light_type, position, intensity in light_specs:
@@ -607,6 +609,12 @@ ATOM_COLORS = {
 
 NCI_SCALAR_NAME = "sign(lambda2)rho"
 NCI_SCALAR_BAR_TITLE = "sign(lambda2)rho\n\n\n"
+HQ_ATOM_RESOLUTION = 96
+HQ_BOND_RESOLUTION = 72
+HQ_BACKGROUND_TOP = {
+    "white": "#eef3f8",
+    "black": "#171b22",
+}
 
 
 def contrast_text_color(background: str) -> str:
@@ -640,10 +648,10 @@ def molecule_material_parameters() -> dict[str, object]:
     return {
         "lighting": True,
         "smooth_shading": True,
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
+        "ambient": 0.34,
+        "diffuse": 0.72,
+        "specular": 0.34,
+        "specular_power": 38,
     }
 
 
@@ -698,10 +706,11 @@ def configure_molecule_renderer_lights(pv_module, renderer, extent: float) -> No
         extent = 1.0
 
     light_specs = [
-        ("headlight", None, 0.95),
-        ("camera light", None, 0.45),
-        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
-        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+        ("headlight", None, 0.72),
+        ("camera light", None, 0.34),
+        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
+        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
+        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
     ]
 
     for light_type, position, intensity in light_specs:
@@ -1686,7 +1695,18 @@ class NCIPlotterApp:
             self.plotter = pv.Plotter(window_size=(1200, self.window_height))
             bg_color = self.background.get()
             text_color = contrast_text_color(bg_color)
-            self.plotter.set_background(bg_color)
+            try:
+                self.plotter.set_background(bg_color, top=HQ_BACKGROUND_TOP.get(str(bg_color).strip().lower()))
+            except Exception:
+                self.plotter.set_background(bg_color)
+            try:
+                self.plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)
+            except Exception:
+                pass
+            try:
+                self.plotter.renderer.SetTwoSidedLighting(True)
+            except Exception:
+                pass
 
             molecule_renderer = None
             if opacity < 0.999:
@@ -1792,7 +1812,7 @@ class NCIPlotterApp:
                         direction=tuple(float(x) for x in direction / length),
                         radius=0.075,
                         height=length,
-                        resolution=48,
+                        resolution=HQ_BOND_RESOLUTION,
                         capping=True,
                     )
                     self.add_molecule_mesh(plotter, cylinder, color, molecule_renderer)
@@ -1802,8 +1822,8 @@ class NCIPlotterApp:
             sphere = pv.Sphere(
                 radius=radius,
                 center=tuple(float(x) for x in coord),
-                theta_resolution=64,
-                phi_resolution=64,
+                theta_resolution=HQ_ATOM_RESOLUTION,
+                phi_resolution=HQ_ATOM_RESOLUTION,
             )
             self.add_molecule_mesh(plotter, sphere, self.atom_color(number), molecule_renderer)
 

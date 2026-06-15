@@ -232,6 +232,12 @@ CP_COLORS = {
     "(3,3)": "magenta",
     "unknown": "white",
 }
+HQ_ATOM_RESOLUTION = 96
+HQ_BOND_RESOLUTION = 72
+HQ_BACKGROUND_TOP = {
+    "white": "#eef3f8",
+    "black": "#171b22",
+}
 
 CP_LABELS = {
     "(3,-3)": "NCP",
@@ -507,7 +513,7 @@ def cylinder_between(p1, p2, radius: float, color: str, opacity: float = 1.0):
         direction=tuple(direction / length),
         radius=radius,
         height=length,
-        resolution=48,
+        resolution=HQ_BOND_RESOLUTION,
         capping=True,
     )
 
@@ -518,11 +524,39 @@ def add_mesh_material(plotter, mesh, color: str, opacity: float = 1.0):
         color=color,
         opacity=opacity,
         smooth_shading=True,
-        ambient=0.50,
-        diffuse=0.62,
-        specular=0.18,
-        specular_power=20,
+        ambient=0.34,
+        diffuse=0.72,
+        specular=0.34,
+        specular_power=38,
     )
+
+
+def configure_hq_scene_lights(plotter, extent: float) -> None:
+    try:
+        plotter.remove_all_lights()
+    except Exception:
+        pass
+    try:
+        extent = max(float(extent), 1.0)
+    except Exception:
+        extent = 1.0
+    light_specs = [
+        ("headlight", None, 0.72),
+        ("camera light", None, 0.34),
+        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
+        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
+        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
+    ]
+    for light_type, position, intensity in light_specs:
+        try:
+            if light_type in {"headlight", "camera light"}:
+                light = pv.Light(light_type=light_type)
+            else:
+                light = pv.Light(position=position, focal_point=(0.0, 0.0, 0.0), color="white", light_type="scene light")
+            light.intensity = intensity
+            plotter.add_light(light)
+        except Exception:
+            pass
 
 
 def bring_pyvista_window_to_front(plotter, delay_s: float = 0.25) -> None:
@@ -589,8 +623,8 @@ def add_molecule(plotter, nci_module, atom_numbers, atom_coords, show_bonds=True
         sphere = pv.Sphere(
             radius=radius,
             center=tuple(float(x) for x in coord),
-            theta_resolution=64,
-            phi_resolution=64,
+            theta_resolution=HQ_ATOM_RESOLUTION,
+            phi_resolution=HQ_ATOM_RESOLUTION,
         )
         add_mesh_material(plotter, sphere, color=atom_color(int(z)), opacity=1.0)
 
@@ -611,12 +645,59 @@ def normalize_cp_type(qtaim_module, cp_type: str) -> str:
     return "unknown"
 
 
+def contrast_text_color(background: str) -> str:
+    bg = str(background or "").strip().lower()
+    named = {
+        "white": "black",
+        "lightgray": "black",
+        "lightgrey": "black",
+        "gray": "white",
+        "grey": "white",
+        "black": "white",
+    }
+    if bg in named:
+        return named[bg]
+    if bg.startswith("#") and len(bg) in {4, 7}:
+        try:
+            if len(bg) == 4:
+                r = int(bg[1] * 2, 16)
+                g = int(bg[2] * 2, 16)
+                b = int(bg[3] * 2, 16)
+            else:
+                r = int(bg[1:3], 16)
+                g = int(bg[3:5], 16)
+                b = int(bg[5:7], 16)
+            luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+            return "black" if luminance > 0.55 else "white"
+        except Exception:
+            pass
+    return "black"
+
+
+def set_scalar_bar_text_color(plotter, text_color: str, title: Optional[str] = None) -> None:
+    try:
+        rgb = pv.Color(text_color).float_rgb
+        scalar_bars = getattr(plotter, "scalar_bars", {})
+        scalar_bar = scalar_bars.get(title) if title else None
+        if scalar_bar is None:
+            bars = list(scalar_bars.values())
+            scalar_bar = bars[0] if bars else None
+        if scalar_bar is None:
+            return
+        for prop in (scalar_bar.GetTitleTextProperty(), scalar_bar.GetLabelTextProperty()):
+            prop.SetColor(*rgb)
+            prop.BoldOn()
+    except Exception:
+        pass
+
+
 def add_qtaim_bcps(
     plotter,
     qtaim_module,
     cps,
     cp_radius: float = 0.16,
     show_labels: bool = True,
+    background: str = "white",
     show_ncp: bool = False,
     show_bcp: bool = True,
     show_rcp: bool = False,
@@ -687,12 +768,14 @@ def add_qtaim_bcps(
             label_text.append(f"{cp_label}{cp.index}")
 
     if show_labels and label_points:
+        label_color = contrast_text_color(background)
+        label_shape_color = "black" if label_color == "white" else "white"
         plotter.add_point_labels(
             label_points,
             label_text,
             font_size=13,
-            text_color="black",
-            shape_color="white",
+            text_color=label_color,
+            shape_color=label_shape_color,
             shape_opacity=0.55,
             always_visible=True,
         )
@@ -950,7 +1033,25 @@ def build_overlay(
     signrho_cube = nci_module.CubeParser.parse(Path(inputs.signrho_cube))
 
     plotter = pv.Plotter(window_size=window_size or screen_fraction_window_size(1400, 950))
-    plotter.set_background(background)
+    try:
+        plotter.set_background(background, top=HQ_BACKGROUND_TOP.get(str(background).strip().lower()))
+    except Exception:
+        plotter.set_background(background)
+    try:
+        plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)
+    except Exception:
+        pass
+    try:
+        plotter.renderer.SetTwoSidedLighting(True)
+    except Exception:
+        pass
+    try:
+        atom_bounds = np.asarray(rdg_cube.atom_coords, dtype=float)
+        extent = float(np.linalg.norm(np.ptp(atom_bounds, axis=0))) if atom_bounds.size else 1.0
+    except Exception:
+        extent = 1.0
+    configure_hq_scene_lights(plotter, extent)
+    text_color = contrast_text_color(background)
 
     nci_surface_count = 0
     if show_nci:
@@ -974,8 +1075,10 @@ def build_overlay(
                 "position_y": 0.15,
                 "height": 0.70,
                 "width": 0.08,
+                "color": text_color,
             },
         )
+        set_scalar_bar_text_color(plotter, text_color, "sign(lambda2)rho")
         nci_surface_count = 1
 
     if show_molecule:
@@ -1017,6 +1120,7 @@ def build_overlay(
                 cps,
                 cp_radius=cp_scale,
                 show_labels=show_labels,
+                background=background,
                 show_ncp=show_ncp,
                 show_bcp=show_bcp,
                 show_rcp=show_rcp,
@@ -1049,7 +1153,7 @@ def build_overlay(
         f"Layers: molecule {'on' if show_molecule else 'off'} | NCI {nci_surface_count} | BCPs {cp_count} | paths {path_count}",
         position="upper_left",
         font_size=10,
-        color="black" if background.lower() == "white" else "white",
+        color=text_color,
     )
     plotter.reset_camera()
     bring_pyvista_window_to_front(plotter)
