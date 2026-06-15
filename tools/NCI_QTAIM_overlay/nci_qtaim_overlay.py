@@ -1022,6 +1022,9 @@ def build_overlay(
     bond_radius: float = 0.075,
     show_covalent_bonds: bool = True,
     show_bond_paths: bool = True,
+    save_path: Optional[Path] = None,
+    show_window: bool = True,
+    parent_window: Optional[tk.Misc] = None,
 ) -> None:
     nci_module = load_nci_module()
     qtaim_module = load_qtaim_module()
@@ -1156,8 +1159,107 @@ def build_overlay(
         color=text_color,
     )
     plotter.reset_camera()
-    bring_pyvista_window_to_front(plotter)
-    plotter.show(title="NCI + QTAIM overlay")
+
+    def save_current_view(path: Optional[Path] = None) -> None:
+        target = path
+        if target is None:
+            selected = filedialog.asksaveasfilename(
+                title="Save NCI + QTAIM overlay image",
+                defaultextension=".png",
+                filetypes=[("PNG image", "*.png"), ("JPEG image", "*.jpg *.jpeg"), ("TIFF image", "*.tif *.tiff"), ("All files", "*.*")],
+                parent=parent_window if parent_window is not None else None,
+            )
+            if not selected:
+                return
+            target = Path(selected)
+        try:
+            plotter.screenshot(str(target), window_size=window_size, scale=1)
+            print(f"Saved NCI + QTAIM overlay image: {target}")
+        except Exception as exc:
+            messagebox.showerror("Save image failed", str(exc))
+
+    if save_path is not None:
+        save_current_view(Path(save_path))
+        if not show_window:
+            try:
+                plotter.close()
+            except Exception:
+                pass
+            return
+
+    try:
+        plotter.add_key_event("s", lambda: save_current_view())
+        plotter.add_key_event("S", lambda: save_current_view())
+    except Exception:
+        pass
+
+    if show_window:
+        bring_pyvista_window_to_front(plotter)
+        if parent_window is not None:
+            plotter.show(title="NCI + QTAIM overlay", interactive_update=True, auto_close=False)
+            open_quick_control_window(parent_window, plotter, save_current_view)
+            bring_pyvista_window_to_front(plotter, delay_s=0.05)
+        else:
+            plotter.show(title="NCI + QTAIM overlay")
+
+
+def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
+    try:
+        existing = getattr(parent, "_nci_qtaim_quick_controls", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+    except Exception:
+        pass
+
+    win = tk.Toplevel(parent)
+    parent._nci_qtaim_quick_controls = win
+    win.title("QTAIM + NCI controls")
+    win.geometry("360x150")
+    win.resizable(False, False)
+
+    box = ttk.Frame(win, padding=12)
+    box.pack(fill="both", expand=True)
+    ttk.Label(box, text="QTAIM + NCI overlay", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+    ttk.Label(box, text="Live PyVista view controls", foreground="#53627a").grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 10))
+
+    def reset_view() -> None:
+        try:
+            plotter.reset_camera()
+            plotter.render()
+            bring_pyvista_window_to_front(plotter, delay_s=0.05)
+        except Exception as exc:
+            messagebox.showerror("Reset view failed", str(exc), parent=win)
+
+    def close_view() -> None:
+        try:
+            plotter.close()
+        except Exception:
+            pass
+        try:
+            win.destroy()
+        except Exception:
+            pass
+        if bool(getattr(parent, "_nci_qtaim_auto_root", False)):
+            try:
+                parent.destroy()
+            except Exception:
+                pass
+
+    ttk.Button(box, text="Save image", command=lambda: save_callback()).grid(row=2, column=0, sticky="ew", padx=(0, 6))
+    ttk.Button(box, text="Reset view", command=reset_view).grid(row=2, column=1, sticky="ew", padx=(0, 6))
+    ttk.Button(box, text="Bring front", command=lambda: bring_pyvista_window_to_front(plotter, delay_s=0.05)).grid(row=2, column=2, sticky="ew", padx=(0, 6))
+    ttk.Button(box, text="Close", command=close_view).grid(row=2, column=3, sticky="ew")
+    for col in range(4):
+        box.columnconfigure(col, weight=1)
+    ttk.Label(box, text="Shortcut: press S in the PyVista window to save current view.", foreground="#53627a").grid(row=3, column=0, columnspan=4, sticky="w", pady=(12, 0))
+    win.protocol("WM_DELETE_WINDOW", close_view)
+    try:
+        win.lift()
+        win.attributes("-topmost", True)
+        win.after(400, lambda: win.attributes("-topmost", False))
+    except Exception:
+        pass
 
 
 class OverlayApp(tk.Tk):
@@ -1319,6 +1421,7 @@ class OverlayApp(tk.Tk):
         buttons = ttk.Frame(root)
         buttons.grid(row=row, column=0, columnspan=3, sticky="e", pady=(12, 0))
         ttk.Button(buttons, text="Open overlay", command=self.open_overlay).pack(side="right")
+        ttk.Button(buttons, text="Save image", command=self.save_overlay_image).pack(side="right", padx=(0, 6))
 
     def browse_file(self, var: tk.StringVar, title: str):
         path = filedialog.askopenfilename(
@@ -1358,40 +1461,61 @@ class OverlayApp(tk.Tk):
 
     def open_overlay(self):
         try:
-            inputs = OverlayInputs(
-                rdg_cube=Path(self.rdg_cube.get().strip()) if self.rdg_cube.get().strip() else None,
-                signrho_cube=Path(self.signrho_cube.get().strip()) if self.signrho_cube.get().strip() else None,
-                wavefunction_file=Path(self.wavefunction_file.get().strip()) if self.wavefunction_file.get().strip() else None,
-                qtaim_cp_file=Path(self.qtaim_cp_file.get().strip()) if self.qtaim_cp_file.get().strip() else None,
-                qtaim_path_file=Path(self.qtaim_path_file.get().strip()) if self.qtaim_path_file.get().strip() else None,
-            )
-            build_overlay(
-                inputs,
-                rdg_isovalue=float(self.rdg_isovalue.get()),
-                nci_opacity=float(self.nci_opacity.get()),
-                clim_min=float(self.color_min.get()),
-                clim_max=float(self.color_max.get()),
-                colormap=self.colormap.get(),
-                show_molecule=bool(self.show_molecule.get()),
-                show_nci=bool(self.show_nci.get()),
-                show_cps=bool(self.show_cps.get()),
-                show_bond_paths=bool(self.show_bond_paths.get()),
-                show_labels=bool(self.show_labels.get()),
-                background=self.background.get(),
-                window_size=(int(self.image_width.get()), int(self.image_height.get())),
-                # QTAIM settings
-                show_ncp=bool(self.show_ncp.get()),
-                show_bcp=bool(self.show_bcp.get()),
-                show_rcp=bool(self.show_rcp.get()),
-                show_ccp=bool(self.show_ccp.get()),
-                show_unknown=bool(self.show_unknown.get()),
-                cp_scale=float(self.cp_scale.get()),
-                atom_scale=float(self.atom_scale.get()),
-                bond_radius=float(self.bond_radius.get()),
-                show_covalent_bonds=bool(self.show_covalent_bonds.get()),
-            )
+            kwargs = self.overlay_build_kwargs()
+            kwargs["parent_window"] = self
+            build_overlay(**kwargs)
         except Exception as exc:
             messagebox.showerror("Overlay failed", str(exc))
+
+    def overlay_build_kwargs(self) -> dict:
+        inputs = OverlayInputs(
+            rdg_cube=Path(self.rdg_cube.get().strip()) if self.rdg_cube.get().strip() else None,
+            signrho_cube=Path(self.signrho_cube.get().strip()) if self.signrho_cube.get().strip() else None,
+            wavefunction_file=Path(self.wavefunction_file.get().strip()) if self.wavefunction_file.get().strip() else None,
+            qtaim_cp_file=Path(self.qtaim_cp_file.get().strip()) if self.qtaim_cp_file.get().strip() else None,
+            qtaim_path_file=Path(self.qtaim_path_file.get().strip()) if self.qtaim_path_file.get().strip() else None,
+        )
+        return {
+            "inputs": inputs,
+            "rdg_isovalue": float(self.rdg_isovalue.get()),
+            "nci_opacity": float(self.nci_opacity.get()),
+            "clim_min": float(self.color_min.get()),
+            "clim_max": float(self.color_max.get()),
+            "colormap": self.colormap.get(),
+            "show_molecule": bool(self.show_molecule.get()),
+            "show_nci": bool(self.show_nci.get()),
+            "show_cps": bool(self.show_cps.get()),
+            "show_bond_paths": bool(self.show_bond_paths.get()),
+            "show_labels": bool(self.show_labels.get()),
+            "background": self.background.get(),
+            "window_size": (int(self.image_width.get()), int(self.image_height.get())),
+            "show_ncp": bool(self.show_ncp.get()),
+            "show_bcp": bool(self.show_bcp.get()),
+            "show_rcp": bool(self.show_rcp.get()),
+            "show_ccp": bool(self.show_ccp.get()),
+            "show_unknown": bool(self.show_unknown.get()),
+            "cp_scale": float(self.cp_scale.get()),
+            "atom_scale": float(self.atom_scale.get()),
+            "bond_radius": float(self.bond_radius.get()),
+            "show_covalent_bonds": bool(self.show_covalent_bonds.get()),
+        }
+
+    def save_overlay_image(self):
+        try:
+            selected = filedialog.asksaveasfilename(
+                title="Save NCI + QTAIM overlay image",
+                defaultextension=".png",
+                filetypes=[("PNG image", "*.png"), ("JPEG image", "*.jpg *.jpeg"), ("TIFF image", "*.tif *.tiff"), ("All files", "*.*")],
+                parent=self,
+            )
+            if not selected:
+                return
+            kwargs = self.overlay_build_kwargs()
+            kwargs.update({"save_path": Path(selected), "show_window": False})
+            build_overlay(**kwargs)
+            messagebox.showinfo("Save image", f"Saved image:\n{selected}", parent=self)
+        except Exception as exc:
+            messagebox.showerror("Save image failed", str(exc), parent=self)
 
 
 def parse_args():
@@ -1485,31 +1609,47 @@ def run_from_wavefunction(wavefunction_file: Path, args) -> bool:
             root.destroy()
         return False
 
-    build_overlay(
-        inspection.inputs,
-        rdg_isovalue=args.rdg_isovalue,
-        nci_opacity=args.opacity,
-        clim_min=args.color_min,
-        clim_max=args.color_max,
-        colormap=args.colormap,
-        show_molecule=args.show_molecule == "1",
-        show_nci=args.show_nci == "1",
-        show_cps=args.show_cps == "1",
-        show_paths=args.show_bond_paths == "1",
-        show_labels=args.show_labels == "1",
-        background=args.background,
-        window_size=cli_window_size(args),
-        show_ncp=args.show_ncp == "1",
-        show_bcp=args.show_bcp == "1",
-        show_rcp=args.show_rcp == "1",
-        show_ccp=args.show_ccp == "1",
-        show_unknown=args.show_unknown == "1",
-        cp_scale=float(args.cp_scale),
-        atom_scale=float(args.atom_scale),
-        bond_radius=float(args.bond_radius),
-        show_covalent_bonds=args.show_covalent_bonds == "1",
-        show_bond_paths=args.show_bond_paths == "1",
-    )
+    build_kwargs = {
+        "inputs": inspection.inputs,
+        "rdg_isovalue": args.rdg_isovalue,
+        "nci_opacity": args.opacity,
+        "clim_min": args.color_min,
+        "clim_max": args.color_max,
+        "colormap": args.colormap,
+        "show_molecule": args.show_molecule == "1",
+        "show_nci": args.show_nci == "1",
+        "show_cps": args.show_cps == "1",
+        "show_paths": args.show_bond_paths == "1",
+        "show_labels": args.show_labels == "1",
+        "background": args.background,
+        "window_size": cli_window_size(args),
+        "show_ncp": args.show_ncp == "1",
+        "show_bcp": args.show_bcp == "1",
+        "show_rcp": args.show_rcp == "1",
+        "show_ccp": args.show_ccp == "1",
+        "show_unknown": args.show_unknown == "1",
+        "cp_scale": float(args.cp_scale),
+        "atom_scale": float(args.atom_scale),
+        "bond_radius": float(args.bond_radius),
+        "show_covalent_bonds": args.show_covalent_bonds == "1",
+        "show_bond_paths": args.show_bond_paths == "1",
+    }
+    if args.no_gui:
+        build_overlay(**build_kwargs)
+        return True
+
+    root = tk.Tk()
+    root.withdraw()
+    root._nci_qtaim_auto_root = True
+    try:
+        build_kwargs["parent_window"] = root
+        build_overlay(**build_kwargs)
+        root.mainloop()
+    finally:
+        try:
+            root.destroy()
+        except Exception:
+            pass
     return True
 
 
