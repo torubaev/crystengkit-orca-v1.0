@@ -42,6 +42,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "runchecker"; Description: "Run installation checker after setup"; GroupDescription: "Post-install checks:"; Flags: checkedonce
+Name: "installpython"; Description: "Install Python 3.12 with winget if Python 3.9+ is not found"; GroupDescription: "Python setup:"; Flags: unchecked
+Name: "setupvenv"; Description: "Create a local Python environment for CrystEngKit and install required packages"; GroupDescription: "Python setup:"; Flags: checkedonce
 
 [Files]
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -65,4 +67,14 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\ORCA Input Builder"; Filename: "{app}\launch_orca_builder.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\tools\images\orca_builder.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\run_install_checker.cmd"; Description: "Run installation checker"; Flags: postinstall skipifsilent nowait; Tasks: runchecker
+Filename: "{app}\run_install_checker.cmd"; Parameters: "{code:GetCheckerParams}"; Description: "Run installation checker"; Flags: postinstall skipifsilent nowait; Tasks: runchecker
+
+[Code]
+function GetCheckerParams(Param: String): String;
+begin
+  Result := '';
+  if WizardIsTaskSelected('installpython') then
+    Result := Result + ' --install-python-if-missing';
+  if WizardIsTaskSelected('setupvenv') then
+    Result := Result + ' --setup-venv';
+end;

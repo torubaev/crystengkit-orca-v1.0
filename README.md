@@ -39,9 +39,11 @@ The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
 ## Installation and Requirements
 
-For most users, start with the provided installer. It checks the software already present on your computer, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.
+For most users, start with the provided installer. It checks the software already present on your computer, can offer to install Python on Windows if Python 3.9+ is missing, can create a local `.venv` environment for CrystEngKit, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.
 
-The installer itself needs Python. If Python is not installed yet, the Windows and Linux/macOS launchers will stop and show where to download or install Python first. After Python 3.9 or newer is installed, run the installer again.
+The Windows `.exe` installer includes checkbox options for Python setup. If selected, it tries to install Python 3.12 with `winget` only when no Python 3.9+ interpreter is found, and it can create a project-local `.venv` for the Python packages. The manual Windows and Linux/macOS launchers still need Python first; if Python is not installed yet, they stop and show where to download or install Python. After Python 3.9 or newer is installed, run the checker again.
+
+Two Windows installer builds are available from `packaging/windows`: `CrystEngKit_ORCA.iss` creates a self-contained offline installer, while `CrystEngKit_ORCA_Web.iss` creates a smaller web installer that downloads the repository ZIP from GitHub during installation.
 
 On Windows, run:
 
@@ -49,12 +51,19 @@ On Windows, run:
 install\install.bat
 ```
 
-On macOS or Linux, run:
+If you already downloaded or cloned the repository on macOS or Linux, run:
 
 ```bash
-chmod +x install_crystengkit.sh
-./install_crystengkit.sh
+sh install/run_checker.sh
 ```
+
+For a Linux web install from GitHub, use:
+
+```bash
+sh packaging/linux/install_crystengkit_orca.sh
+```
+
+This installs into `~/.local/share/CrystEngKit-ORCA`, creates a `.venv`, runs the checker, and creates a `crystengkit-orca` launcher in `~/.local/bin`.
 
 If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the installer again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The installer looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.
 

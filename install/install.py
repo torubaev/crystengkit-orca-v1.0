@@ -42,7 +42,7 @@ import sys
 import time
 import webbrowser
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 
 REQUIRED_PACKAGES = ["numpy", "pyvista", "matplotlib", "periodictable"]
@@ -52,6 +52,7 @@ PACKAGE_IMPORT_NAMES = {
 }
 
 SETTINGS_FILENAME = "orca_gaussian_builder_settings.json"
+VENV_DIR_NAME = ".venv"
 PROJECT_MAIN_SCRIPT = Path("tools") / "Orca_input" / "orca_input.py"
 PROJECT_ICON = Path("tools") / "images" / "orca_builder.ico"
 DESKTOP_SHORTCUT_NAME = "ORCA input builder.lnk"
@@ -154,6 +155,74 @@ def ask_yes_no_default_yes(question: str) -> bool:
         if answer in {"n", "no"}:
             return False
         print("Please type Y or N. Press Enter for Yes.")
+
+
+def has_arg(name: str) -> bool:
+    return name in sys.argv[1:]
+
+
+def arg_value(prefix: str) -> str:
+    needle = prefix + "="
+    for arg in sys.argv[1:]:
+        if arg.startswith(needle):
+            return arg[len(needle):]
+    return ""
+
+
+def venv_python_path(base_dir: Path) -> Path:
+    if platform.system() == "Windows":
+        return base_dir / VENV_DIR_NAME / "Scripts" / "python.exe"
+    return base_dir / VENV_DIR_NAME / "bin" / "python"
+
+
+def create_venv_and_reexec(base_dir: Path) -> Dict[str, object]:
+    venv_dir = base_dir / VENV_DIR_NAME
+    venv_python = venv_python_path(base_dir)
+    info: Dict[str, object] = {
+        "requested": True,
+        "ok": False,
+        "created": False,
+        "path": str(venv_dir),
+        "python": str(venv_python),
+        "message": "",
+    }
+
+    if not venv_python.is_file():
+        print()
+        print(f"Creating local Python environment: {venv_dir}")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "venv", str(venv_dir)],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                errors="replace",
+            )
+        except Exception as exc:
+            info["message"] = f"Could not create virtual environment: {type(exc).__name__}: {exc}"
+            return info
+        if result.returncode != 0:
+            output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+            info["message"] = f"Could not create virtual environment. {output[-1200:]}"
+            return info
+        info["created"] = True
+
+    if not venv_python.is_file():
+        info["message"] = f"Virtual environment Python was not found: {venv_python}"
+        return info
+
+    command = [
+        str(venv_python),
+        str(Path(__file__).resolve()),
+        "--using-venv",
+        f"--project-root={base_dir}",
+    ]
+    if has_arg("--no-open"):
+        command.append("--no-open")
+
+    print(f"Continuing setup inside local environment: {venv_python}")
+    result = subprocess.run(command)
+    raise SystemExit(result.returncode)
 
 
 def is_project_root(path: Path) -> bool:
@@ -666,7 +735,7 @@ def ensure_settings_file(base_dir: Path) -> Dict[str, object]:
         }
 
 
-def powershell_quote(value: Path | str) -> str:
+def powershell_quote(value: Union[Path, str]) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
@@ -886,6 +955,16 @@ def print_terminal_report(
         for pkg in package_info["installed_now"]:
             print(f"  - {pkg}")
 
+    venv_info = package_info.get("venv_info", {})
+    if venv_info.get("requested"):
+        print()
+        print("Python environment:")
+        print(f"  - Path: {venv_info.get('path', '-')}")
+        print(f"  - Python: {venv_info.get('python', '-')}")
+        print(f"  - Status: {'OK' if venv_info.get('ok') else 'Problem'}")
+        if venv_info.get("message"):
+            print(f"  - Note: {venv_info['message']}")
+
     if package_info["install_failures"]:
         print()
         print("Failed Python package installation:")
@@ -1041,6 +1120,20 @@ def render_short_report(
                 + "</div>"
             )
 
+    venv_info = package_info.get("venv_info", {})
+    venv_html = ""
+    if venv_info.get("requested"):
+        venv_class = "okbox" if venv_info.get("ok") else "badbox"
+        venv_html = f"""
+        <h3>Python environment</h3>
+        <div class='smallbox {venv_class}'>
+            <b>Status:</b> {esc("OK" if venv_info.get("ok") else "Problem")}<br>
+            <b>Path:</b> <code>{esc(venv_info.get("path", "") or "-")}</code><br>
+            <b>Python:</b> <code>{esc(venv_info.get("python", "") or "-")}</code><br>
+            <b>Note:</b> {esc(venv_info.get("message", "") or "-")}
+        </div>
+        """
+
     local_paths_html = ""
     if found_local_not_path_external:
         local_paths_html += "<h3>Found locally but not in PATH</h3>"
@@ -1176,6 +1269,7 @@ def render_short_report(
         {declined_html}
         {python_failures_html}
         {tkinter_html}
+        {venv_html}
 
         {local_paths_html}
         {rejected_paths_html}
@@ -1334,12 +1428,32 @@ Python: {esc(sys.version.split()[0])}
 
 def main() -> None:
     launcher_dir = Path(__file__).resolve().parent
-    default_project_root = launcher_dir.parent
-    base_dir = browse_for_installation_location(default_project_root)
+    project_root_arg = arg_value("--project-root")
+    default_project_root = Path(project_root_arg).expanduser().resolve() if project_root_arg else launcher_dir.parent
+    if project_root_arg and is_project_root(default_project_root):
+        base_dir = default_project_root
+    else:
+        base_dir = browse_for_installation_location(default_project_root)
+
+    venv_info: Dict[str, object] = {"requested": has_arg("--setup-venv"), "ok": False, "created": False, "path": "", "python": "", "message": "Virtual environment was not requested."}
+    if has_arg("--using-venv"):
+        venv_dir = Path(sys.executable).resolve().parent.parent
+        venv_info = {
+            "requested": True,
+            "ok": True,
+            "created": False,
+            "path": str(venv_dir),
+            "python": sys.executable,
+            "message": "Running inside the local CrystEngKit Python environment.",
+        }
+    elif has_arg("--setup-venv"):
+        venv_info = create_venv_and_reexec(base_dir)
+
     output_path = base_dir / "installation_report.html"
 
     package_info = check_and_optionally_install_python_packages()
     package_info["tkinter_info"] = check_tkinter()
+    package_info["venv_info"] = venv_info
     external_info = check_external_software(base_dir)
     settings_info = ensure_settings_file(base_dir)
     shortcut_info = create_desktop_shortcut(base_dir)
