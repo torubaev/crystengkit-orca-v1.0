@@ -43,7 +43,7 @@ For most users, start with the provided installer. It checks the software alread
 
 The Windows `.exe` installer includes checkbox options for Python setup. If selected, it tries to install Python 3.12 with `winget` only when no Python 3.9+ interpreter is found, and it can create a project-local `.venv` for the Python packages. The manual Windows and Linux/macOS launchers still need Python first; if Python is not installed yet, they stop and show where to download or install Python. After Python 3.9 or newer is installed, run the checker again.
 
-Two Windows installer builds are available from `packaging/windows`: `CrystEngKit_ORCA.iss` creates a self-contained offline installer, while `CrystEngKit_ORCA_Web.iss` creates a smaller web installer that downloads the repository ZIP from GitHub during installation.
+The Windows web installer downloads one exact Git commit and verifies the repository archive checksum before installing it. Public installer builds are expected to be code-signed; unsigned builds are intended only for local testing.
 
 On Windows, run:
 
@@ -57,10 +57,11 @@ If you already downloaded or cloned the repository on macOS or Linux, run:
 sh install/run_checker.sh
 ```
 
-For a Linux web install from GitHub, use:
+For a verified Linux web install from GitHub, use the commit and SHA-256 values published with the release:
 
 ```bash
-sh packaging/linux/install_crystengkit_orca.sh
+REPO_REF=COMMIT_SHA REPO_SHA256=ARCHIVE_SHA256 \
+  sh packaging/linux/install_crystengkit_orca.sh
 ```
 
 This installs into `~/.local/share/CrystEngKit-ORCA`, creates a `.venv`, runs the checker, and creates a `crystengkit-orca` launcher in `~/.local/bin`.
@@ -79,6 +80,8 @@ The installer does not install ORCA or Multiwfn automatically, because these pro
 ```bash
 pip install numpy pyvista matplotlib periodictable gemmi Pillow
 ```
+
+The same package list is available in `requirements.txt`.
 
 `numpy` and `pyvista` are needed for structure preview and 3D plotting. `matplotlib` is used by the HOMO-LUMO energy diagram tool. `periodictable` supports the 3D NCI molecular viewer. `gemmi` is recommended for CIF handling. `Pillow` is used by the HOMO-LUMO MO surface workflow for saved images, thumbnails, and contact sheets.
 

@@ -1448,6 +1448,10 @@ def main() -> None:
         }
     elif has_arg("--setup-venv"):
         venv_info = create_venv_and_reexec(base_dir)
+        print()
+        print("ERROR: Local Python environment setup failed.")
+        print(venv_info.get("message", "Unknown virtual environment error."))
+        raise SystemExit(1)
 
     output_path = base_dir / "installation_report.html"
 

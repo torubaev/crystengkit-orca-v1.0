@@ -1288,6 +1288,8 @@ def save_cp_table(cps: List[CriticalPoint], out_path: Path) -> None:
         espinosa_hartree, source = cp_energy_value(cp)
         if source != "0.5V":
             espinosa_hartree = None
+        espinosa_kjmol = "" if espinosa_hartree is None else f"{convert_cp_energy(espinosa_hartree, 'kJ/mol'):.10g}"
+        espinosa_kcalmol = "" if espinosa_hartree is None else f"{convert_cp_energy(espinosa_hartree, 'kcal/mol'):.10g}"
         lines.append(
             f"{cp.index}\t{cp.cp_type}\t{cp.x:.10f}\t{cp.y:.10f}\t{cp.z:.10f}\t"
             f"{'' if cp.rho is None else f'{cp.rho:.10g}'}\t"
@@ -1297,8 +1299,8 @@ def save_cp_table(cps: List[CriticalPoint], out_path: Path) -> None:
             f"{'' if cp.potential_energy_density is None else f'{cp.potential_energy_density:.10g}'}\t"
             f"{'' if cp.energy_density is None else f'{cp.energy_density:.10g}'}\t"
             f"{'' if bcp_abs_v_over_g(cp) is None else f'{bcp_abs_v_over_g(cp):.10g}'}\t"
-            f"{'' if espinosa_hartree is None else f'{convert_cp_energy(espinosa_hartree, 'kJ/mol'):.10g}'}\t"
-            f"{'' if espinosa_hartree is None else f'{convert_cp_energy(espinosa_hartree, 'kcal/mol'):.10g}'}"
+            f"{espinosa_kjmol}\t"
+            f"{espinosa_kcalmol}"
         )
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

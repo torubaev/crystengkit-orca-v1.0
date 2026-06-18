@@ -1,0 +1,41 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-syntax:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile tracked Python files
+        shell: bash
+        run: |
+          git ls-files '*.py' -z |
+            xargs -0 -n1 python -m py_compile
+
+  installer-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell scripts
+        run: |
+          sh -n install/run_checker.sh
+          sh -n packaging/linux/install_crystengkit_orca.sh
+
+  powershell-syntax:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PowerShell build script
+        shell: powershell
+        run: |
+          $content = Get-Content packaging/windows/build_web_installer.ps1 -Raw
+          [void][scriptblock]::Create($content)

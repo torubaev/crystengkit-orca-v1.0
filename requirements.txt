@@ -1,0 +1,6 @@
+numpy
+pyvista
+matplotlib
+periodictable
+gemmi
+Pillow

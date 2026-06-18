@@ -4,6 +4,7 @@ cd /d "%~dp0"
 
 set "INSTALL_PYTHON_IF_MISSING=0"
 set "CHECKER_ARGS="
+set "PYTHON_INSTALLED_EXE="
 
 :parse_args
 if "%~1"=="" goto after_parse
@@ -38,7 +39,13 @@ if not errorlevel 1 (
 if "%INSTALL_PYTHON_IF_MISSING%"=="1" (
     call :install_python
     set "INSTALL_PYTHON_IF_MISSING=0"
-    if not errorlevel 1 goto after_parse
+    if not errorlevel 1 (
+        if defined PYTHON_INSTALLED_EXE (
+            "%PYTHON_INSTALLED_EXE%" "%~dp0install\install.py"%CHECKER_ARGS%
+            exit /b %errorlevel%
+        )
+        goto after_parse
+    )
 )
 
 echo Python 3.9 or newer was not found.
@@ -68,6 +75,10 @@ if errorlevel 1 (
     echo Opening the official Python download page instead.
     start "" "https://www.python.org/downloads/windows/"
     exit /b 1
+)
+
+if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
+    set "PYTHON_INSTALLED_EXE=%LocalAppData%\Programs\Python\Python312\python.exe"
 )
 
 echo.

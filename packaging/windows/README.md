@@ -1,47 +1,46 @@
-# Windows Installer
+# Windows Web Installer
 
-This folder builds a single Windows setup executable for CrystEngKit ORCA using
-Inno Setup.
+CrystEngKit ORCA uses a small Inno Setup web installer. It downloads a ZIP for
+one exact Git commit, verifies the archive SHA-256, installs per-user, and then
+runs the Python/environment checker.
 
-The installer packages CrystEngKit itself, creates Start Menu/Desktop shortcuts,
-and can run the existing installation checker after setup. It does not bundle
-ORCA or Multiwfn; those programs must still be installed from their official
-sources because of their own licenses and distribution routes.
+The installer does not bundle or install ORCA or Multiwfn. Those programs keep
+their own licenses and official distribution routes.
 
-By default, the installer performs a normal per-machine Windows installation in:
+## Release Build
+
+1. Commit and push the release changes to `origin/main`.
+2. Install Inno Setup 6.
+3. Run from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\build_web_installer.ps1 `
+  -CertificateThumbprint YOUR_CODE_SIGNING_CERTIFICATE_THUMBPRINT
+```
+
+The build script:
+
+- refuses a dirty or unpushed working tree;
+- pins the download to the current Git commit;
+- downloads the same GitHub archive and embeds its SHA-256;
+- compiles `CrystEngKit_ORCA_Web.iss`;
+- signs the resulting executable;
+- rejects unsigned public builds.
+
+For local testing only, use `-AllowUnsigned`.
+
+The output is:
 
 ```text
-C:\Program Files\CrystEngKit ORCA
+dist\installer\CrystEngKit-ORCA-WebSetup-1.0.exe
 ```
 
-Administrator permission is required.
+## Linux Release Command
 
-## Build
+The same commit and archive SHA-256 printed by the Windows build script can be
+used for a verified Linux web installation:
 
-1. Install Inno Setup 6 from https://jrsoftware.org/isinfo.php
-2. From the repository root, run:
-
-```bat
-ISCC.exe packaging\windows\CrystEngKit_ORCA.iss
+```bash
+REPO_REF=COMMIT_SHA REPO_SHA256=ARCHIVE_SHA256 \
+  sh packaging/linux/install_crystengkit_orca.sh
 ```
-
-The output installer is written to:
-
-```text
-dist\installer\CrystEngKit-ORCA-Setup-1.0.exe
-```
-
-## Installed Shortcuts
-
-- `ORCA Input Builder`
-- `Installation Checker`
-- optional Desktop shortcut for `ORCA Input Builder`
-
-The launcher uses `pyw.exe`, `pythonw.exe`, `py.exe`, or `python.exe`, in that
-order. Python 3.9 or newer is still required for this installer route.
-
-## Later Fully Frozen EXE Route
-
-A future PyInstaller build can bundle Python into native tool executables, but
-that needs separate handling for companion tools launched by the ORCA Input
-Builder. This Inno Setup route is the lower-risk professional installer first.

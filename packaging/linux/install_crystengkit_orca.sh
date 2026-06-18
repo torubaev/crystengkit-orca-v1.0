@@ -2,7 +2,9 @@
 set -eu
 
 APP_NAME="CrystEngKit ORCA"
-REPO_ZIP_URL="${REPO_ZIP_URL:-https://github.com/torubaev/crystengkit-orca-v1.0/archive/refs/heads/main.zip}"
+REPO_REF="${REPO_REF:-}"
+REPO_SHA256="${REPO_SHA256:-}"
+REPO_ZIP_URL="${REPO_ZIP_URL:-}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/share/CrystEngKit-ORCA}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
@@ -44,8 +46,9 @@ find_python() {
     return 1
 }
 
-install_python_hint() {
-    echo "Python 3.9+ was not found."
+install_system_python_components() {
+    reason="$1"
+    echo "$reason"
     echo
     if command -v apt-get >/dev/null 2>&1; then
         echo "Suggested command:"
@@ -82,6 +85,16 @@ install_python_hint() {
     return 1
 }
 
+check_venv_support() {
+    probe_dir="$(mktemp -d)"
+    if "$PYTHON_CMD" -m venv "$probe_dir/venv" >/dev/null 2>&1; then
+        rm -rf "$probe_dir"
+        return 0
+    fi
+    rm -rf "$probe_dir"
+    return 1
+}
+
 download_file() {
     url="$1"
     output="$2"
@@ -103,6 +116,21 @@ PY
     fi
 }
 
+verify_download() {
+    zip_path="$1"
+    "$PYTHON_CMD" - "$zip_path" "$REPO_SHA256" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+expected = sys.argv[2].strip().lower()
+actual = hashlib.sha256(path.read_bytes()).hexdigest()
+if actual != expected:
+    raise SystemExit(f"Repository archive checksum mismatch. Expected {expected}, got {actual}.")
+PY
+}
+
 extract_zip() {
     zip_path="$1"
     extract_dir="$2"
@@ -117,8 +145,13 @@ zip_path = Path(sys.argv[1])
 extract_dir = Path(sys.argv[2])
 install_dir = Path(sys.argv[3])
 
+extract_root = extract_dir.resolve()
 with zipfile.ZipFile(zip_path) as archive:
-    archive.extractall(extract_dir)
+    for member in archive.infolist():
+        target = (extract_root / member.filename).resolve()
+        if target != extract_root and extract_root not in target.parents:
+            raise SystemExit(f"Unsafe path in repository archive: {member.filename}")
+    archive.extractall(extract_root)
 
 roots = [p for p in extract_dir.iterdir() if p.is_dir()]
 if not roots:
@@ -165,12 +198,21 @@ EOF
 echo "$APP_NAME Linux web installer"
 echo
 echo "Install folder: $INSTALL_DIR"
-echo "Repository ZIP: $REPO_ZIP_URL"
+if [ -z "$REPO_REF" ] || [ -z "$REPO_SHA256" ]; then
+    echo "ERROR: REPO_REF and REPO_SHA256 are required for a verified web install."
+    echo "Use the release-specific command published with the installer."
+    exit 2
+fi
+if [ -z "$REPO_ZIP_URL" ]; then
+    REPO_ZIP_URL="https://github.com/torubaev/crystengkit-orca-v1.0/archive/$REPO_REF.zip"
+fi
+echo "Repository commit: $REPO_REF"
+echo "Repository ZIP SHA-256: $REPO_SHA256"
 echo
 
 PYTHON_CMD="$(find_python || true)"
 if [ -z "$PYTHON_CMD" ]; then
-    install_python_hint || {
+    install_system_python_components "Python 3.9+ was not found." || {
         echo
         echo "Python setup was not completed. Install Python 3.9+ and run this installer again."
         exit 1
@@ -184,6 +226,18 @@ if [ -z "$PYTHON_CMD" ]; then
 fi
 
 echo "Using Python: $PYTHON_CMD"
+if ! check_venv_support; then
+    install_system_python_components "Python venv support was not found." || {
+        echo
+        echo "Python venv setup was not completed. Install the venv package for your distribution and run again."
+        exit 1
+    }
+    if ! check_venv_support; then
+        echo "Python venv support is still unavailable."
+        exit 1
+    fi
+fi
+
 if ! "$PYTHON_CMD" -c "import tkinter" >/dev/null 2>&1; then
     echo
     echo "WARNING: Tkinter was not detected. The graphical tools need Tkinter."
@@ -203,6 +257,7 @@ mkdir -p "$EXTRACT_DIR"
 echo
 echo "Downloading repository..."
 download_file "$REPO_ZIP_URL" "$ZIP_PATH"
+verify_download "$ZIP_PATH"
 
 echo "Installing repository files..."
 extract_zip "$ZIP_PATH" "$EXTRACT_DIR"

@@ -1,9 +1,22 @@
 @echo off
 setlocal EnableExtensions
 
-set "APP_DIR=%~dp0"
 set "REPO_ZIP_URL=%~1"
-if "%REPO_ZIP_URL%"=="" set "REPO_ZIP_URL=https://github.com/torubaev/crystengkit-orca-v1.0/archive/refs/heads/main.zip"
+set "EXPECTED_SHA256=%~2"
+set "APP_DIR=%~3"
+
+if "%REPO_ZIP_URL%"=="" (
+    echo ERROR: Repository ZIP URL was not provided.
+    exit /b 2
+)
+if "%EXPECTED_SHA256%"=="" (
+    echo ERROR: Expected SHA-256 was not provided.
+    exit /b 2
+)
+if "%APP_DIR%"=="" (
+    echo ERROR: Installation directory was not provided.
+    exit /b 2
+)
 
 set "TEMP_ROOT=%TEMP%\CrystEngKit_ORCA_download_%RANDOM%%RANDOM%"
 set "ZIP_PATH=%TEMP_ROOT%\repo.zip"
@@ -22,6 +35,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "New-Item -ItemType Directory -Force -Path $tempRoot, $extractDir | Out-Null;" ^
   "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;" ^
   "Invoke-WebRequest -Uri $env:REPO_ZIP_URL -OutFile $zipPath;" ^
+  "$actualHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash;" ^
+  "if ($actualHash -ne $env:EXPECTED_SHA256) { throw ('Repository archive checksum mismatch. Expected {0}, got {1}.' -f $env:EXPECTED_SHA256, $actualHash) }" ^
   "Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force;" ^
   "$root = Get-ChildItem -LiteralPath $extractDir -Directory | Select-Object -First 1;" ^
   "if (-not $root) { throw 'Downloaded archive did not contain a repository folder.' }" ^

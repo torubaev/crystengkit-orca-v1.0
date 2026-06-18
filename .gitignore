@@ -28,6 +28,7 @@ installation_report.html
 **/installation_report.html
 *-BFM-MachineSect.py
 *-BFM-MachineSect.json
+dist/installer/*.exe
 
 # Example datasets.
 # examples/ is intentionally empty and reserved for future examples.
