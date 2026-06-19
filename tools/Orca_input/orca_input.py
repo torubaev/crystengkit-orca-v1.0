@@ -38,6 +38,8 @@ DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
+CONTACT_EMAIL = "torubaev(at)gmail.com"
+LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
 README_LINK_TEXT = "README section: ORCA Input Builder"
 README_ANCHOR = "orca-input-builder"
 
@@ -2012,6 +2014,7 @@ class App(tk.Tk):
         self.monitor_offset: int = 0
         self.monitor_started_at: Optional[float] = None
         self.monitor_status_text: str = "Idle"
+        self.monitor_progress_value: float = 0.0
         self.active_run_context: Optional[Dict] = None
         self.preview_thread: Optional[threading.Thread] = None
         self.last_helper_launch_key: Optional[Tuple[str, ...]] = None
@@ -2427,8 +2430,14 @@ class App(tk.Tk):
         monhdr.columnconfigure(1, weight=1)
         self.monitor_stage_label = ttk.Label(monhdr, text="Status: Idle")
         self.monitor_stage_label.grid(row=0, column=0, sticky="w")
+        self.monitor_progress_label = ttk.Label(
+            monhdr,
+            text=self._format_monitor_progress(0.0),
+            font=("Consolas", 9),
+        )
+        self.monitor_progress_label.grid(row=1, column=0, columnspan=3, sticky="e", pady=(3, 0))
         self.monitor_elapsed_label = ttk.Label(monhdr, text="Elapsed: 00:00:00")
-        self.monitor_elapsed_label.grid(row=0, column=1, sticky="e")
+        self.monitor_elapsed_label.grid(row=0, column=2, sticky="e")
 
         monbtn = ttk.Frame(monbox)
         monbtn.grid(row=1, column=0, sticky="ew", pady=(6, 6))
@@ -2901,25 +2910,44 @@ class App(tk.Tk):
 
         icon = self._load_header_icon(ORCA_ICON_PATH, max_size=144)
         if icon is not None:
-            ttk.Label(box, image=icon).grid(row=0, column=0, rowspan=7, sticky="n", padx=(0, 14))
+            ttk.Label(box, image=icon).grid(row=0, column=0, rowspan=8, sticky="n", padx=(0, 18))
 
         ttk.Label(box, text="Orca input builder", font=("Segoe UI", 12, "bold")).grid(row=0, column=1, sticky="w")
         ttk.Label(box, text="Build ORCA and Gaussian input files from CIF and XYZ structures.", justify="left", wraplength=380).grid(row=1, column=1, sticky="w", pady=(8, 0))
-        ttk.Label(box, text="GitHub:", justify="left").grid(row=2, column=1, sticky="w", pady=(10, 0))
+        ttk.Separator(box, orient="horizontal").grid(row=2, column=1, sticky="ew", pady=(12, 8))
+        ttk.Label(box, text="GitHub", justify="left").grid(row=3, column=1, sticky="w")
         github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
-        github_link.grid(row=3, column=1, sticky="w", pady=(2, 0))
+        github_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
         github_link.bind("<Button-1>", lambda _e: open_path_in_system(GITHUB_URL))
-        ttk.Label(box, text="README:", justify="left").grid(row=4, column=1, sticky="w", pady=(10, 0))
+        ttk.Label(box, text="Documentation", justify="left").grid(row=5, column=1, sticky="w", pady=(8, 0))
         wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
-        wiki_link.grid(row=5, column=1, sticky="w", pady=(2, 0))
+        wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
         wiki_link.bind("<Button-1>", lambda _e: open_readme_or_wiki())
-        ttk.Label(box, text=COPYRIGHT_NOTE, justify="left").grid(row=6, column=1, sticky="w", pady=(10, 0))
+        ttk.Separator(box, orient="horizontal").grid(row=7, column=1, sticky="ew", pady=(12, 8))
+        ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=8, column=1, sticky="w")
+        contact = ttk.Frame(box)
+        contact.grid(row=9, column=1, sticky="w", pady=(7, 0))
+        ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
+        linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
+        linkedin_icon.grid(row=0, column=1, padx=(10, 0))
+        linkedin_icon.bind("<Button-1>", lambda _e: open_path_in_system(LINKEDIN_URL))
 
         buttons = ttk.Frame(box)
-        buttons.grid(row=7, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        buttons.grid(row=10, column=0, columnspan=2, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=0)
-        self._prepare_dialog_window(win, 560, 360, 480, 300)
+
+        win.update_idletasks()
+        width = max(570, win.winfo_reqwidth())
+        height = max(350, win.winfo_reqheight())
+        screen_w = max(1, win.winfo_screenwidth())
+        screen_h = max(1, win.winfo_screenheight())
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 2)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+        win.resizable(False, False)
         win.deiconify()
+        win.lift(self)
+        win.focus_force()
         win.grab_set()
 
     def _output_candidates_for_source(self, source: Path) -> List[Tuple[int, Path]]:
@@ -4236,7 +4264,8 @@ class App(tk.Tk):
         orca_path = context["orca_path"]
         results: Dict[str, Dict[str, Optional[float]]] = {"dimer": {"output": dimer_out_path, **self._parse_orca_energy_terms(dimer_out_path)}}
         failed_jobs: List[Dict[str, str]] = []
-        for spec in specs:
+        total_specs = max(1, len(specs))
+        for spec_index, spec in enumerate(specs, start=1):
             job_dir = root / spec["name"]
             job_dir.mkdir(exist_ok=True)
             inp_path = job_dir / f"{spec['name']}.inp"
@@ -4248,6 +4277,7 @@ class App(tk.Tk):
                 failed_jobs.append({"name": spec["name"], "error": str(exc)})
                 results[spec["name"]] = {"output": None, "electronic": None, "enthalpy": None, "gibbs": None}
                 self.append_monitor(f"Interaction subjob failed: {spec['name']} - {exc}\n")
+            self._set_monitor_progress(87.0 + 8.0 * spec_index / total_specs)
 
         summary = self._compute_interaction_summary(
             results,
@@ -4602,6 +4632,7 @@ class App(tk.Tk):
                 self.append_monitor(f"Interaction warning: {warning}")
             self.monitor_started_at = time.time()
             self.monitor_offset = 0
+            self._set_monitor_progress(0.0, allow_decrease=True)
             self._set_monitor_stage("Starting ORCA")
             self.status.configure(text="Starting ORCA...")
 
@@ -4619,6 +4650,7 @@ class App(tk.Tk):
                 fout.close()
 
             self.append_monitor(f"$ {' '.join(args)}\nWorking directory: {workdir}\nOutput file: {out_path}\n\n")
+            self._set_monitor_progress(5.0)
             self._schedule_monitor_poll()
         except Exception as exc:
             self.active_run_context = None
@@ -4646,6 +4678,7 @@ class App(tk.Tk):
                     stage = self.parse_orca_stage(chunk)
                     if stage:
                         self._set_monitor_stage(stage)
+                        self._set_monitor_progress(self._progress_for_orca_stage(stage))
             except Exception:
                 pass
 
@@ -4687,9 +4720,40 @@ class App(tk.Tk):
                 return stage
         return None
 
+    @staticmethod
+    def _progress_for_orca_stage(stage: str) -> float:
+        return {
+            "Starting ORCA": 5.0,
+            "SCF start": 10.0,
+            "SCF iterations": 15.0,
+            "SCF / orbital analysis": 20.0,
+            "Gradient evaluation": 25.0,
+            "Geometry optimization": 30.0,
+            "Frequency calculation": 45.0,
+            "TD-DFT excited states": 45.0,
+            "NMR property calculation": 45.0,
+            "Finished normally": 65.0,
+            "Error termination": 65.0,
+        }.get(stage, 5.0)
+
     def _set_monitor_stage(self, stage: str):
         self.monitor_status_text = stage
         self.monitor_stage_label.configure(text=f"Status: {stage}")
+
+    @staticmethod
+    def _format_monitor_progress(percent: float, width: int = 30) -> str:
+        value = max(0.0, min(100.0, float(percent)))
+        filled = int(round(width * value / 100.0))
+        bar = "#" * filled + "-" * (width - filled)
+        return f"Progress: [{bar}] {value:5.1f} %"
+
+    def _set_monitor_progress(self, percent: float, allow_decrease: bool = False):
+        value = max(0.0, min(100.0, float(percent)))
+        if not allow_decrease:
+            value = max(self.monitor_progress_value, value)
+        self.monitor_progress_value = value
+        self.monitor_progress_label.configure(text=self._format_monitor_progress(value))
+        self.update_idletasks()
 
 
     def clear_monitor(self, reset_status: bool = True):
@@ -4700,6 +4764,7 @@ class App(tk.Tk):
             self.monitor_started_at = None
             self.monitor_elapsed_label.configure(text="Elapsed: 00:00:00")
             self._set_monitor_stage("Idle")
+            self._set_monitor_progress(0.0, allow_decrease=True)
 
     def stop_orca(self):
         proc = self.run_process
@@ -4874,6 +4939,7 @@ class App(tk.Tk):
         context = self.active_run_context or {}
         output_ok, output_reason = validate_orca_output_file(out_path)
         if code == 0 and output_ok:
+            self._set_monitor_progress(65.0)
             post_messages = []
             interaction_summary = None
             interaction_root = None
@@ -4882,31 +4948,41 @@ class App(tk.Tk):
             if self.job_esp_mep_var.get():
                 try:
                     self._set_monitor_stage("Generating WFN/WFX")
+                    self._set_monitor_progress(70.0)
                     wavefunction_path = self.run_orca_2aim(out_path)
+                    self._set_monitor_progress(75.0)
                     context["post_processing"]["wfn_wfx_generated"] = True
                     context["post_processing"]["wavefunction_path"] = wavefunction_path
                     post_messages.append("WFN/WFX generation completed.")
                     self._set_monitor_stage("Generating ESP/MEP cubes")
+                    self._set_monitor_progress(78.0)
                     self.run_esp_cube_generation(wavefunction_path)
+                    self._set_monitor_progress(85.0)
                     context["post_processing"]["esp_mep_generated"] = True
                     post_messages.append("ESP/MEP cube generation completed.")
                 except Exception as exc:
+                    self._set_monitor_progress(85.0)
                     context["post_processing"]["esp_mep_error"] = str(exc)
                     post_messages.append(f"ESP/MEP post-processing failed: {exc}")
                     self.append_monitor(f"ESP/MEP post-processing failed: {exc}\n")
             if context.get("interaction_enabled"):
                 try:
                     self._set_monitor_stage("Interaction workflow")
+                    self._set_monitor_progress(87.0)
                     interaction_summary, interaction_root = self._run_interaction_pipeline(out_path, context)
+                    self._set_monitor_progress(95.0)
                     post_messages.append(f"Interaction workflow completed: {interaction_root}")
                     warnings = interaction_summary.get("warnings", [])
                     if warnings:
                         post_messages.extend(warnings)
                 except Exception as exc:
+                    self._set_monitor_progress(95.0)
                     interaction_error = str(exc)
                     post_messages.append(f"Interaction workflow failed: {exc}")
                     self.append_monitor(f"Interaction workflow failed: {exc}\n")
             try:
+                self._set_monitor_stage("Creating project summary")
+                self._set_monitor_progress(97.0)
                 calc_summary = self._build_calculation_summary(context, out_path)
                 summary_path, summary_text = self._write_project_summary(out_path, calc_summary, interaction_summary, interaction_error)
                 post_messages.append(f"Summary saved: {summary_path}")
@@ -4915,6 +4991,7 @@ class App(tk.Tk):
                 post_messages.append(f"Project summary could not be created: {exc}")
                 self.append_monitor(f"Project summary could not be created: {exc}\n")
             self._set_monitor_stage("Finished normally")
+            self._set_monitor_progress(100.0)
             status = f"ORCA finished. Output: {out_path}"
             if post_messages:
                 status += " | " + " ".join(post_messages)

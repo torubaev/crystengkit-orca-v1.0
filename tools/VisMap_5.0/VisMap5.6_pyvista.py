@@ -56,6 +56,8 @@ APP_ROOT = TOOLS_ROOT.parent
 ESP_ICON_PATH = TOOLS_ROOT / "images" / "tr_ESP_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
+CONTACT_EMAIL = "torubaev(at)gmail.com"
+LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
 ORIGINAL_VISMAP_URL = "https://github.com/aaan1s/VisMap"
 README_LINK_TEXT = "README section: ESP / VisMap"
 README_ANCHOR = "esp--vismap"
@@ -165,27 +167,35 @@ def open_about_dialog(parent, title, icon_path, purpose):
     icon = load_header_icon(icon_path, max_size=144)
     if icon is not None:
         win.about_icon = icon
-        ttk.Label(box, image=icon).grid(row=0, column=0, rowspan=9, sticky="n", padx=(0, 14))
+        ttk.Label(box, image=icon).grid(row=0, column=0, rowspan=10, sticky="n", padx=(0, 18))
 
     ttk.Label(box, text=title, font=("Segoe UI", 12, "bold")).grid(row=0, column=1, sticky="w")
     ttk.Label(box, text=purpose, justify="left", wraplength=420).grid(row=1, column=1, sticky="w", pady=(8, 0))
-    ttk.Label(box, text="Original VisMap by aaan1s:", justify="left").grid(row=2, column=1, sticky="w", pady=(10, 0))
+    ttk.Separator(box, orient="horizontal").grid(row=2, column=1, sticky="ew", pady=(12, 8))
+    ttk.Label(box, text="Original VisMap by aaan1s").grid(row=3, column=1, sticky="w")
     original_link = ttk.Label(box, text=ORIGINAL_VISMAP_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
-    original_link.grid(row=3, column=1, sticky="w", pady=(2, 0))
+    original_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
     original_link.bind("<Button-1>", lambda _event: webbrowser.open(ORIGINAL_VISMAP_URL))
-    ttk.Label(box, text="GitHub:", justify="left").grid(row=4, column=1, sticky="w", pady=(10, 0))
+    ttk.Label(box, text="GitHub").grid(row=5, column=1, sticky="w", pady=(8, 0))
     github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
-    github_link.grid(row=5, column=1, sticky="w", pady=(2, 0))
+    github_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
     github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL))
-    ttk.Label(box, text="README:", justify="left").grid(row=6, column=1, sticky="w", pady=(10, 0))
+    ttk.Label(box, text="Documentation").grid(row=7, column=1, sticky="w", pady=(8, 0))
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
-    wiki_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
+    wiki_link.grid(row=8, column=1, sticky="w", pady=(2, 0))
     wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
-    ttk.Label(box, text=COPYRIGHT_NOTE, justify="left").grid(row=8, column=1, sticky="w", pady=(10, 0))
+    ttk.Separator(box, orient="horizontal").grid(row=9, column=1, sticky="ew", pady=(12, 8))
+    ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=10, column=1, sticky="w")
+    contact = ttk.Frame(box)
+    contact.grid(row=11, column=1, sticky="w", pady=(7, 0))
+    ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
+    linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
+    linkedin_icon.grid(row=0, column=1, padx=(10, 0))
+    linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL))
 
-    ttk.Button(box, text="Close", command=win.destroy).grid(row=9, column=0, columnspan=2, sticky="e", pady=(14, 0))
-    win.geometry("600x420")
-    win.minsize(500, 370)
+    ttk.Button(box, text="Close", command=win.destroy).grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
+    win.geometry("610x410")
+    win.minsize(550, 380)
     win.grab_set()
 
 

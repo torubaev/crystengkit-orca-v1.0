@@ -32,7 +32,7 @@ For local testing only, use `-AllowUnsigned`.
 The output is:
 
 ```text
-dist\installer\CrystEngKit-ORCA-WebSetup-1.0.exe
+install\releases\CrystEngKit-ORCA-WebSetup-1.0.exe
 ```
 
 ## Linux Release Command
