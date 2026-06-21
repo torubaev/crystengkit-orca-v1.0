@@ -246,7 +246,7 @@
 <a class="nav-link level-3" href="#nci-plotter">NCI Plotter</a>
 <a class="nav-link level-3" href="#qtaim-critical-points-viewer">QTAIM Critical Points Viewer</a>
 <a class="nav-link level-3" href="#nci-qtaim-overlay">NCI + QTAIM Overlay</a></div></details>
-<details class="nav-group"><summary><a href="#main-workflows">Main Workflows</a></summary><div class="nav-children"><a class="nav-link level-3" href="#build-and-run-an-orca-job">Build and Run an ORCA Job</a>
+<details class="nav-group"><summary><a href="#how-to-use-the-tools">How to Use the Tools</a></summary><div class="nav-children"><a class="nav-link level-3" href="#build-and-run-an-orca-job">Build and Run an ORCA Job</a>
 <a class="nav-link level-3" href="#make-figures-after-a-calculation">Make Figures After a Calculation</a>
 <a class="nav-link level-3" href="#dimer-interaction-energy">Dimer Interaction Energy</a>
 <a class="nav-link level-3" href="#modeling-of-solvation-effects">Modeling of Solvation Effects</a></div></details>
@@ -264,7 +264,7 @@
 <a class="nav-link level-3" href="#nci-plot-does-not-work">NCI plot does not work</a>
 <a class="nav-link level-3" href="#qtaim-cp-does-not-work">QTAIM CP does not work</a>
 <a class="nav-link level-3" href="#structure-preview-does-not-open">Structure preview does not open</a>
-<a class="nav-link level-3" href="#interaction-workflow-finishes-partially">Interaction workflow finishes partially</a></div></details>
+<a class="nav-link level-3" href="#interaction-calculation-finishes-only-partly">Interaction calculation finishes only partly</a></div></details>
 <a class="nav-link level-2" href="#repository-contents">Repository contents</a>
         <a class="nav-link level-2" href="#references">References</a>
       </nav>
@@ -279,7 +279,7 @@
 <p>Typical input formats are <code>.xyz</code>, existing ORCA <code>.inp</code> files, and <code>.cif</code> files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)<sup><a href="#ref-csd">csd</a></sup>.</p>
 <p>The suite is built around widely used, freely available academic/freeware programs. ORCA<sup><a href="#ref-orca-site">orca-site</a></sup> is used for quantum-chemical calculations, and Multiwfn<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup> is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.</p>
 <p>CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.</p>
-<figure><img src="../images/wiki/orca-input_2.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
 <p>The main GUI is the <strong>ORCA Input Builder</strong><sup><a href="#ref-orca">orca</a></sup>. It can:</p>
 <ul>
 <li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, and ORCA <code>.inp</code> files</li>
@@ -288,6 +288,7 @@
 <li>generate manuscript-ready computation summaries for experimental sections and supporting information</li>
 <li>launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.</li>
 </ul>
+<figure><img src="../images/wiki/orca-input_2.png" alt=""></figure>
 <h2 id="installation-and-requirements">Installation and Requirements</h2>
 <p>For most users, start with the provided installer. It checks the software already present on your computer, can offer to install Python on Windows if Python 3.9+ is missing, can create a local <code>.venv</code> environment for CrystEngKit, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.</p>
 <p>The Windows <code>.exe</code> installer includes checkbox options for Python setup. If selected, it tries to install Python 3.12 with <code>winget</code> only when no Python 3.9+ interpreter is found, and it can create a project-local <code>.venv</code> for the Python packages. The manual Windows and Linux/macOS launchers still need Python first; if Python is not installed yet, they stop and show where to download or install Python. After Python 3.9 or newer is installed, run the checker again.</p>
@@ -311,7 +312,7 @@
 <p>The installer does not install ORCA or Multiwfn automatically, because these programs have their own licenses and official download routes. If you prefer manual Python setup, install the main Python packages with:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>pip install numpy pyvista matplotlib periodictable gemmi Pillow</code></pre></div>
 <p>The same package list is available in <code>requirements.txt</code>.</p>
-<p><code>numpy</code> and <code>pyvista</code> are needed for structure preview and 3D plotting. <code>matplotlib</code> is used by the HOMO-LUMO energy diagram tool. <code>periodictable</code> supports the 3D NCI molecular viewer. <code>gemmi</code> is recommended for CIF handling. <code>Pillow</code> is used by the HOMO-LUMO MO surface workflow for saved images, thumbnails, and contact sheets.</p>
+<p><code>numpy</code> and <code>pyvista</code> are needed for structure preview and 3D plotting. <code>matplotlib</code> is used by the HOMO-LUMO energy diagram tool. <code>periodictable</code> supports the 3D NCI molecular viewer. <code>gemmi</code> is recommended for CIF handling. <code>Pillow</code> is used by the HOMO-LUMO MO surface tools for saved images, thumbnails, and contact sheets.</p>
 <h2 id="starting-the-suite">Starting the Suite</h2>
 <p>Launch the main ORCA Builder with:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python tools/Orca_input/orca_input.py</code></pre></div>
@@ -340,7 +341,7 @@
 <h3 id="nci-qtaim-overlay">NCI + QTAIM Overlay</h3>
 <figure><img src="../images/wiki/orca_qtaim_nci_overlay.png" alt=""></figure>
 <p>Combines the molecular structure, NCI surface, QTAIM bond critical points, and bond paths in one PyVista view. Use it when the NCI and QTAIM output files have already been generated for the same structure.</p>
-<h2 id="main-workflows">Main Workflows</h2>
+<h2 id="how-to-use-the-tools">How to Use the Tools</h2>
 <h3 id="build-and-run-an-orca-job">Build and Run an ORCA Job</h3>
 <ol>
 <li>Load a <code>.cif</code>, <code>.xyz</code>, or ORCA <code>.inp</code> file in the Builder.</li>
@@ -371,7 +372,7 @@
 <li><code>NCI plot</code> for RDG / sign(lambda2)rho noncovalent-interaction surfaces</li>
 <li><code>QTAIM CP</code> for critical-point inspection</li>
 </ul>
-<p>ESP, NCI, and QTAIM workflows require real wavefunction files such as <code>.wfn</code> or <code>.wfx</code>. In CrystEngKit they are generated automatically by default after the ORCA job finishes.</p>
+<p>ESP, NCI, and QTAIM analyses require real wavefunction files such as <code>.wfn</code> or <code>.wfx</code>. In CrystEngKit they are generated automatically by default after the ORCA job finishes.</p>
 <p>MO surface rendering requires a finished ORCA <code>.out</code> file, its matching <code>.gbw</code> file, and <code>orca_plot</code> from the ORCA installation.</p>
 <p>For consistent MO surface figures, orient and zoom one saved contact-sheet tile, press <code>S</code> in the MO viewer to save it, then use <code>Use view for all</code> from that tile to regenerate the rest of the current contact sheet with the same view and scale.</p>
 <h3 id="dimer-interaction-energy">Dimer Interaction Energy</h3>
@@ -396,7 +397,7 @@
 <figure><img src="../images/wiki/orca-output_3.png" alt=""></figure>
 <figure><img src="../images/wiki/orca-output_4.png" alt=""></figure>
 </ol>
-<p>As a workflow sanity check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&amp;id=4&amp;state=show&amp;order=ASC&amp;by=name_m&amp;method=</p>
+<p>As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&amp;id=4&amp;state=show&amp;order=ASC&amp;by=name_m&amp;method=</p>
 <h3 id="modeling-of-solvation-effects">Modeling of Solvation Effects</h3>
 <p>The <code>Solvent</code> field adds an implicit-solvent model. For ORCA, the Builder uses the SMD model<sup><a href="#ref-smd">smd</a></sup> through the <code>%cpcm</code> block<sup><a href="#ref-pcm">pcm</a></sup>. Choose a solvent from the dropdown menu, or use <code>Other solvent...</code> for a custom ORCA-recognized solvent name.</p>
 <h2 id="glossary">Glossary</h2>
@@ -505,7 +506,7 @@
 <li><code>matplotlib</code></li>
 <li><code>periodictable</code></li>
 </ul>
-<h3 id="interaction-workflow-finishes-partially">Interaction workflow finishes partially</h3>
+<h3 id="interaction-calculation-finishes-only-partly">Interaction calculation finishes only partly</h3>
 <p>This can happen when:</p>
 <ul>
 <li>frozen interaction jobs succeed</li>

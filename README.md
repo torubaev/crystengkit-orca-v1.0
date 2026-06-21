@@ -10,7 +10,7 @@
 - [Installation and Requirements](README.md#installation-and-requirements)
 - [Starting the Suite](README.md#starting-the-suite)
 - [Tools](README.md#tools)
-- [Main Workflows](README.md#main-workflows)
+- [How to Use the Tools](README.md#how-to-use-the-tools)
 - [Glossary](README.md#glossary)
 - [Examples and Benchmark Data](README.md#examples-and-benchmark-data)
 - [Troubleshooting](README.md#troubleshooting)
@@ -27,7 +27,7 @@ The suite is built around widely used, freely available academic/freeware progra
 
 CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.
 
-![](images/wiki/orca-input_2.png)
+![](images/wiki/orca-input_1.png)
 
 The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
@@ -36,6 +36,8 @@ The main GUI is the **ORCA Input Builder**[^orca]. It can:
 - run ORCA and show live output
 - generate manuscript-ready computation summaries for experimental sections and supporting information
 - launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.
+
+![](images/wiki/orca-input_2.png)
 
 ## Installation and Requirements
 
@@ -83,7 +85,7 @@ pip install numpy pyvista matplotlib periodictable gemmi Pillow
 
 The same package list is available in `requirements.txt`.
 
-`numpy` and `pyvista` are needed for structure preview and 3D plotting. `matplotlib` is used by the HOMO-LUMO energy diagram tool. `periodictable` supports the 3D NCI molecular viewer. `gemmi` is recommended for CIF handling. `Pillow` is used by the HOMO-LUMO MO surface workflow for saved images, thumbnails, and contact sheets.
+`numpy` and `pyvista` are needed for structure preview and 3D plotting. `matplotlib` is used by the HOMO-LUMO energy diagram tool. `periodictable` supports the 3D NCI molecular viewer. `gemmi` is recommended for CIF handling. `Pillow` is used by the HOMO-LUMO MO surface tools for saved images, thumbnails, and contact sheets.
 
 ## Starting the Suite
 
@@ -137,7 +139,7 @@ Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` f
 
 Combines the molecular structure, NCI surface, QTAIM bond critical points, and bond paths in one PyVista view. Use it when the NCI and QTAIM output files have already been generated for the same structure.
 
-## Main Workflows
+## How to Use the Tools
 
 ### Build and Run an ORCA Job
 
@@ -168,7 +170,7 @@ Use the top-panel buttons after the ORCA job finishes:
 - `NCI plot` for RDG / sign(lambda2)rho noncovalent-interaction surfaces
 - `QTAIM CP` for critical-point inspection
 
-ESP, NCI, and QTAIM workflows require real wavefunction files such as `.wfn` or `.wfx`. In CrystEngKit they are generated automatically by default after the ORCA job finishes.
+ESP, NCI, and QTAIM analyses require real wavefunction files such as `.wfn` or `.wfx`. In CrystEngKit they are generated automatically by default after the ORCA job finishes.
 
 MO surface rendering requires a finished ORCA `.out` file, its matching `.gbw` file, and `orca_plot` from the ORCA installation.
 
@@ -192,7 +194,7 @@ For consistent MO surface figures, orient and zoom one saved contact-sheet tile,
    ![](images/wiki/orca-output_3.png)
    ![](images/wiki/orca-output_4.png)
 
-As a workflow sanity check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&id=4&state=show&order=ASC&by=name_m&method=
+As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&id=4&state=show&order=ASC&by=name_m&method=
 
 ### Modeling of Solvation Effects
 
@@ -409,7 +411,7 @@ Check:
 - `matplotlib`
 - `periodictable`
 
-### Interaction workflow finishes partially
+### Interaction calculation finishes only partly
 
 This can happen when:
 
