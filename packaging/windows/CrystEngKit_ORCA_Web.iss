@@ -38,7 +38,6 @@ SetupIconFile=..\..\tools\images\orca_builder.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-SetupArchitecture=x86
 ArchitecturesAllowed=x86compatible
 UseSetupLdr=x86
 PrivilegesRequired=lowest
