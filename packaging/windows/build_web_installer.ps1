@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $issPath = Join-Path $PSScriptRoot "CrystEngKit_ORCA_Web.iss"
-$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-WebSetup-1.0.exe"
+$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-WebSetup-1.0.1.exe"
 $isccCandidates = @(
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")

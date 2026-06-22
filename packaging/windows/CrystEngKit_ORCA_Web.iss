@@ -7,7 +7,7 @@
 ; archive SHA-256. Direct compilation without those definitions is rejected.
 
 #define MyAppName "CrystEngKit ORCA"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "CrystEngKit"
 #define MyAppURL "https://github.com/torubaev/crystengkit-orca-v1.0"
 
