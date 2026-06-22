@@ -1,47 +1,21 @@
-# Windows Web Installer
+# Windows Offline Installer
 
-CrystEngKit ORCA uses a small .NET Framework web installer. It downloads a ZIP
-for one exact Git commit, verifies the archive SHA-256, installs per-user, and
-then runs the Python/environment checker. The installer is compiled with the
-C# compiler included with Windows; it does not use an Inno Setup bootstrapper.
+CrystEngKit ORCA uses a full offline Inno Setup package. The EXE contains the
+repository files needed by the tools and does not contact GitHub during setup.
+ORCA, Multiwfn, Python, and optional Python packages retain their own separate
+installation and licensing requirements.
 
-The installer does not bundle or install ORCA or Multiwfn. Those programs keep
-their own licenses and official distribution routes.
-
-## Release Build
-
-1. Commit and push the release changes to `origin/main`.
-2. Run from the repository root:
+Build from the repository root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\build_web_installer.ps1 `
-  -CertificateThumbprint YOUR_CODE_SIGNING_CERTIFICATE_THUMBPRINT
+powershell -ExecutionPolicy Bypass -File packaging\windows\build_installer.ps1 -AllowUnsigned
 ```
 
-The build script:
+Public releases should be Authenticode-signed by passing
+`-CertificateThumbprint`.
 
-- refuses a dirty or unpushed working tree;
-- pins the download to the current Git commit;
-- downloads the same GitHub archive and embeds its SHA-256;
-- compiles `CrystEngKitInstaller.cs` as a Windows AnyCPU executable;
-- runs the executable with `/probe` to verify Windows can launch it;
-- signs the resulting executable;
-- rejects unsigned public builds.
-
-For local testing only, use `-AllowUnsigned`.
-
-The output is:
+Output:
 
 ```text
-install\releases\CrystEngKit-ORCA-WebSetup-1.0.2.exe
-```
-
-## Linux Release Command
-
-The same commit and archive SHA-256 printed by the Windows build script can be
-used for a verified Linux web installation:
-
-```bash
-REPO_REF=COMMIT_SHA REPO_SHA256=ARCHIVE_SHA256 \
-  sh packaging/linux/install_crystengkit_orca.sh
+install\releases\CrystEngKit-ORCA-Setup-1.0.2.exe
 ```
