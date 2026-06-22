@@ -17,5 +17,5 @@ Public releases should be Authenticode-signed by passing
 Output:
 
 ```text
-install\releases\CrystEngKit-ORCA-Setup-1.0.exe
+install\releases\CrystEngKit-ORCA-Setup-1.0.2.exe
 ```
