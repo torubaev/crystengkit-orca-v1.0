@@ -39,7 +39,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x86compatible
-UseSetupLdr=no
+UseSetupLdr=x86
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\tools\images\orca_builder.ico
 
