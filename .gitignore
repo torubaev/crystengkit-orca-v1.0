@@ -30,6 +30,7 @@ installation_report.html
 *-BFM-MachineSect.json
 install/releases/*.exe
 !install/releases/CrystEngKit-ORCA-Setup-v.10.exe
+!install/releases/CrystEngKit-ORCA-Setup-v.10_web.exe
 
 # Example datasets.
 # examples/ is intentionally empty and reserved for future examples.
