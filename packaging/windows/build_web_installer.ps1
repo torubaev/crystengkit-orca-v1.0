@@ -6,15 +6,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$issPath = Join-Path $PSScriptRoot "CrystEngKit_ORCA_Web.iss"
-$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-WebSetup-1.0.1.exe"
-$isccCandidates = @(
-    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-    (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
-)
-$iscc = $isccCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $iscc) {
-    throw "Inno Setup 6 compiler was not found."
+$sourcePath = Join-Path $PSScriptRoot "CrystEngKitInstaller.cs"
+$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-WebSetup-1.0.2.exe"
+$compiler = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+if (-not (Test-Path -LiteralPath $compiler)) {
+    throw "The Windows .NET Framework C# compiler was not found."
 }
 
 $status = git -C $repoRoot status --porcelain
@@ -41,13 +37,39 @@ if ($remoteMainCommit -ne $repoRef) {
 
 $zipUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/archive/$repoRef.zip"
 $tempZip = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKit-ORCA-$repoRef.zip"
+$tempSource = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKitInstaller-$repoRef.cs"
 try {
     Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip
     $sha256 = (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash
 
-    & $iscc "/DMyRepoRef=$repoRef" "/DMyRepoSha256=$sha256" $issPath
+    $source = Get-Content -LiteralPath $sourcePath -Raw
+    $source = $source.Replace("__REPO_URL__", $zipUrl)
+    $source = $source.Replace("__REPO_SHA256__", $sha256)
+    Set-Content -LiteralPath $tempSource -Value $source -Encoding UTF8
+
+    New-Item -ItemType Directory -Path (Split-Path $outputPath) -Force | Out-Null
+    & $compiler `
+        /nologo `
+        /target:winexe `
+        /platform:anycpu `
+        /optimize+ `
+        /out:$outputPath `
+        /win32icon:"$repoRoot\tools\images\orca_builder.ico" `
+        /reference:System.dll `
+        /reference:System.Core.dll `
+        /reference:System.Drawing.dll `
+        /reference:System.Windows.Forms.dll `
+        /reference:System.IO.Compression.dll `
+        /reference:System.IO.Compression.FileSystem.dll `
+        /reference:Microsoft.CSharp.dll `
+        $tempSource
     if ($LASTEXITCODE -ne 0) {
-        throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
+        throw "C# installer compilation failed with exit code $LASTEXITCODE."
+    }
+
+    $probe = Start-Process -FilePath $outputPath -ArgumentList "/probe" -Wait -PassThru
+    if ($probe.ExitCode -ne 0) {
+        throw "The built installer failed its Windows launch probe with exit code $($probe.ExitCode)."
     }
 
     if ($CertificateThumbprint) {
@@ -76,8 +98,10 @@ try {
     Write-Host "Built installer: $outputPath"
     Write-Host "Repository commit: $repoRef"
     Write-Host "Repository ZIP SHA-256: $sha256"
+    Write-Host "Installer SHA-256: $((Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash)"
     Write-Host "Signature status: $($finalSignature.Status)"
 }
 finally {
     Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tempSource -Force -ErrorAction SilentlyContinue
 }

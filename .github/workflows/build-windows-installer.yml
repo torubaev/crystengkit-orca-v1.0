@@ -23,26 +23,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Inno Setup 6.7.3
-        shell: powershell
-        run: |
-          $setup = Join-Path $env:RUNNER_TEMP "innosetup-6.7.3.exe"
-          Invoke-WebRequest `
-            -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe" `
-            -OutFile $setup
-          $process = Start-Process `
-            -FilePath $setup `
-            -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER" `
-            -Wait `
-            -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "Inno Setup installation failed with exit code $($process.ExitCode)."
-          }
-          $loader = Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\SetupLdr.e32"
-          if (-not (Test-Path -LiteralPath $loader)) {
-            throw "The x86 Inno Setup loader was not installed."
-          }
-
       - name: Build unsigned installer
         shell: powershell
         run: |
@@ -52,7 +32,7 @@ jobs:
         shell: powershell
         run: |
           $releaseDir = Resolve-Path "install\releases"
-          $installer = Join-Path $releaseDir "CrystEngKit-ORCA-WebSetup-1.0.1.exe"
+          $installer = Join-Path $releaseDir "CrystEngKit-ORCA-WebSetup-1.0.2.exe"
           $files = @(Get-ChildItem -LiteralPath $releaseDir -File)
           if ($files.Count -ne 1 -or $files[0].FullName -ne $installer) {
             throw "Expected exactly one installer EXE in install\releases."
@@ -61,7 +41,11 @@ jobs:
           $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
           $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
           if ($machine -ne 0x014c) {
-            throw ("Expected x86 PE machine 0x014C, found 0x{0:X4}." -f $machine)
+            throw ("Expected AnyCPU PE machine 0x014C, found 0x{0:X4}." -f $machine)
+          }
+          $probe = Start-Process -FilePath $installer -ArgumentList "/probe" -Wait -PassThru
+          if ($probe.ExitCode -ne 0) {
+            throw "Installer launch probe failed with exit code $($probe.ExitCode)."
           }
           Get-FileHash -LiteralPath $installer -Algorithm SHA256
 
@@ -70,7 +54,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add install/releases/CrystEngKit-ORCA-WebSetup-1.0.1.exe
+          git add install/releases/CrystEngKit-ORCA-WebSetup-1.0.2.exe
           git diff --cached --quiet
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Installer is already current."

@@ -29,7 +29,7 @@ installation_report.html
 *-BFM-MachineSect.py
 *-BFM-MachineSect.json
 install/releases/*.exe
-!install/releases/CrystEngKit-ORCA-WebSetup-1.0.1.exe
+!install/releases/CrystEngKit-ORCA-WebSetup-1.0.2.exe
 
 # Example datasets.
 # examples/ is intentionally empty and reserved for future examples.
