@@ -38,9 +38,9 @@ SetupIconFile=..\..\tools\images\orca_builder.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
-UseSetupLdr=x64
+SetupArchitecture=x86
+ArchitecturesAllowed=x86compatible
+UseSetupLdr=x86
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\tools\images\orca_builder.ico
 
