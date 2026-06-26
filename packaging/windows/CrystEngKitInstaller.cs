@@ -238,6 +238,8 @@ internal sealed class InstallerForm : Form
                 var relativeName = entryName.Substring(separator + 1);
                 if (relativeName.Length == 0)
                     continue;
+                if (ShouldSkipRepositoryEntry(relativeName))
+                    continue;
 
                 var output = Path.GetFullPath(Path.Combine(destination, relativeName));
                 if (!output.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
@@ -258,6 +260,12 @@ internal sealed class InstallerForm : Form
 
         if (String.IsNullOrEmpty(archiveRoot))
             throw new InvalidOperationException("The repository archive was empty.");
+    }
+
+    private static bool ShouldSkipRepositoryEntry(string relativeName)
+    {
+        var normalized = relativeName.Replace('\\', '/');
+        return normalized.StartsWith("install/releases/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void CreateDesktopShortcut(string installDirectory)
