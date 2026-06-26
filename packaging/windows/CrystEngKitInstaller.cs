@@ -196,6 +196,7 @@ internal sealed class InstallerForm : Form
 
             Directory.CreateDirectory(installDirectory);
             ExtractRepositoryToInstall(zipPath, installDirectory);
+            EnsureWindowsLaunchers(installDirectory);
         }
         finally
         {
@@ -274,10 +275,13 @@ internal sealed class InstallerForm : Form
 
     private static void CreateShortcut(string shortcutPath, string installDirectory)
     {
+        var launcher = Path.Combine(installDirectory, "launch_orca_builder.cmd");
+        if (!File.Exists(launcher))
+            throw new FileNotFoundException("The ORCA Input Builder launcher was not found.", launcher);
         var shellType = Type.GetTypeFromProgID("WScript.Shell");
         dynamic shell = Activator.CreateInstance(shellType);
         dynamic shortcut = shell.CreateShortcut(shortcutPath);
-        shortcut.TargetPath = Path.Combine(installDirectory, "launch_orca_builder.cmd");
+        shortcut.TargetPath = launcher;
         shortcut.WorkingDirectory = installDirectory;
         var icon = Path.Combine(installDirectory, "tools", "images", "orca_builder.ico");
         if (File.Exists(icon))
@@ -288,12 +292,34 @@ internal sealed class InstallerForm : Form
     private static void StartChecker(string installDirectory, bool setupEnvironment)
     {
         var checker = Path.Combine(installDirectory, "run_install_checker.cmd");
+        if (!File.Exists(checker))
+            throw new FileNotFoundException("The installation checker launcher was not found.", checker);
         var arguments = setupEnvironment ? "--setup-venv" : "";
         Process.Start(new ProcessStartInfo(checker, arguments)
         {
             WorkingDirectory = installDirectory,
             UseShellExecute = true
         });
+    }
+
+    private static void EnsureWindowsLaunchers(string installDirectory)
+    {
+        var sourceDirectory = Path.Combine(installDirectory, "packaging", "windows");
+        CopyLauncherIfNeeded(sourceDirectory, installDirectory, "launch_orca_builder.cmd");
+        CopyLauncherIfNeeded(sourceDirectory, installDirectory, "run_install_checker.cmd");
+    }
+
+    private static void CopyLauncherIfNeeded(string sourceDirectory, string installDirectory, string fileName)
+    {
+        var destination = Path.Combine(installDirectory, fileName);
+        if (File.Exists(destination))
+            return;
+
+        var source = Path.Combine(sourceDirectory, fileName);
+        if (!File.Exists(source))
+            throw new FileNotFoundException("The web installer could not find a required launcher script in the downloaded repository.", source);
+
+        File.Copy(source, destination, true);
     }
 }
 
