@@ -3639,6 +3639,14 @@ class App(tk.Tk):
         except Exception:
             return width, fallback_height
 
+    def _structure_preview_window_size(self) -> Tuple[int, int]:
+        try:
+            width = max(360, int(self.winfo_screenwidth() / 3))
+            height = max(1, int(self.winfo_screenheight() * 0.80))
+            return width, height
+        except Exception:
+            return 430, 800
+
     def open_launcher_settings(self):
         self._auto_locate_launcher_defaults()
 
@@ -4298,8 +4306,8 @@ class App(tk.Tk):
             bonds = infer_bonds(structure, scale=1.20)
             points = np.array([[x, y, z] for _, x, y, z in structure.atoms], dtype=float)
             extent = float(np.linalg.norm(points.max(axis=0) - points.min(axis=0))) if len(points) else 1.0
-            plotter = pv_module.Plotter(window_size=self._screen_fraction_window_size(1200), lighting="none")
-            configure_pyvista_defaults(pv_module, plotter, extent=extent)
+            plotter = pv_module.Plotter(window_size=self._structure_preview_window_size(), lighting="none")
+            configure_pyvista_defaults(pv_module, plotter, background="black", extent=extent)
             for i, j in bonds:
                 sym_i = structure.atoms[i][0]
                 sym_j = structure.atoms[j][0]

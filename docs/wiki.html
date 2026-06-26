@@ -276,13 +276,14 @@
 <p><em>ESP maps, NCI plots, BCP/bonding paths, and HOMO-LUMO shapes are not only illustrations of your work but also good ideas for journal cover art</em>.</p>
 <h2 id="overview">Overview</h2>
 <p>CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.</p>
-<p>Typical input formats are <code>.xyz</code>, existing ORCA <code>.inp</code> files, and <code>.cif</code> files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)<sup><a href="#ref-csd">csd</a></sup>.</p>
+<p>Typical input formats are <code>.xyz</code>, existing ORCA <code>.inp</code> files, and <code>.cif</code> files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)<sup><a href="#ref-csd">csd</a></sup>. The ORCA Input Builder also accepts <code>.mol</code>, <code>.sdf</code>, <code>.sd</code>, <code>.cml</code>, <code>.cdxml</code>, <code>.cdx</code>, <code>.ct</code>, and Gaussian <code>.gjf</code>, <code>.com</code>, <code>.gau</code>, <code>.gjc</code> files. Generic <code>.inp</code> files are treated as ORCA inputs, not Gaussian inputs.</p>
 <p>The suite is built around widely used, freely available academic/freeware programs. ORCA<sup><a href="#ref-orca-site">orca-site</a></sup> is used for quantum-chemical calculations, and Multiwfn<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup> is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.</p>
+<figure><img src="../crystengkit_v1.0_1.png" alt="alt text"></figure>
 <p>CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.</p>
 <figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
 <p>The main GUI is the <strong>ORCA Input Builder</strong><sup><a href="#ref-orca">orca</a></sup>. It can:</p>
 <ul>
-<li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, and ORCA <code>.inp</code> files</li>
+<li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, ORCA <code>.inp</code>, MDL/SDF/CML/ChemDraw files through Open Babel, and Gaussian input files</li>
 <li>prepare ORCA and Gaussian<sup><a href="#ref-gaussian">gaussian</a></sup> input files</li>
 <li>run ORCA and show live output</li>
 <li>generate manuscript-ready computation summaries for experimental sections and supporting information</li>
@@ -308,11 +309,14 @@
 <li><strong>ORCA</strong>, available free of charge for academic users through the official ORCA/FACCTs pages<sup><a href="#ref-orca-site">orca-site</a></sup></li>
 <li><strong>orca_2aim</strong>, for generating <code>.wfn</code> / <code>.wfx</code> files after ORCA runs</li>
 <li><strong>Multiwfn</strong>, for ESP, NCI, and QTAIM analysis<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup></li>
+<li><strong>Open Babel</strong> <code>obabel</code> / <code>obabel.exe</code>, optional but required for importing <code>.mol</code>, <code>.sdf</code>, <code>.sd</code>, <code>.cml</code>, <code>.cdxml</code>, <code>.cdx</code>, <code>.ct</code>, and Gaussian Z-matrix files</li>
 </ul>
 <p>The installer does not install ORCA or Multiwfn automatically, because these programs have their own licenses and official download routes. If you prefer manual Python setup, install the main Python packages with:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>pip install numpy pyvista matplotlib periodictable gemmi Pillow</code></pre></div>
 <p>The same package list is available in <code>requirements.txt</code>.</p>
 <p><code>numpy</code> and <code>pyvista</code> are needed for structure preview and 3D plotting. <code>matplotlib</code> is used by the HOMO-LUMO energy diagram tool. <code>periodictable</code> supports the 3D NCI molecular viewer. <code>gemmi</code> is recommended for CIF handling. <code>Pillow</code> is used by the HOMO-LUMO MO surface tools for saved images, thumbnails, and contact sheets.</p>
+<p>Open Babel is discovered from the saved Builder setting, common installation locations, and system <code>PATH</code>; if it is still missing, the Builder asks you to browse to <code>obabel.exe</code> on Windows or <code>obabel</code> on Linux/macOS and validates the executable before saving it. MOL/SDF/CML/ChemDraw/CT files are converted to Cartesian XYZ in a temporary folder, leaving the source file unchanged. Existing 3D coordinates are preserved. If a structure appears to contain only 2D coordinates, the Builder asks before using Open Babel to add hydrogens and generate an initial 3D geometry. Multi-record SDF files show a record selector and import only the selected record.</p>
+<p>Gaussian import reads Link 0 lines, the route, title, charge/multiplicity, and explicit molecular specification. Ordinary Cartesian coordinates are imported directly, including atomic-number labels, common atom labels, freeze-code syntax, scientific notation, and bohr/atomic-unit coordinates converted to angstrom. Gaussian Z-matrices are converted through Open Babel. <code>Geom=Check</code>/<code>Geom=AllCheck</code> inputs without explicit coordinates are rejected. Gaussian route keywords, connectivity, ModRedundant data, basis/ECP sections, ONIOM layers, fragment assignments, and other Gaussian-specific directives are not translated into ORCA settings; inspect the imported geometry and calculation settings before running.</p>
 <h2 id="starting-the-suite">Starting the Suite</h2>
 <p>Launch the main ORCA Builder with:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python tools/Orca_input/orca_input.py</code></pre></div>
@@ -321,7 +325,7 @@
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
 <figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
-<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs.</p>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls.</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt=""></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
@@ -344,11 +348,11 @@
 <h2 id="how-to-use-the-tools">How to Use the Tools</h2>
 <h3 id="build-and-run-an-orca-job">Build and Run an ORCA Job</h3>
 <ol>
-<li>Load a <code>.cif</code>, <code>.xyz</code>, or ORCA <code>.inp</code> file in the Builder.</li>
+<li>Load a supported structure file in the Builder. Native <code>.xyz</code>, <code>.cif</code>, and ORCA <code>.inp</code> files are read directly. <code>.mol</code>, <code>.sdf</code>, <code>.sd</code>, <code>.cml</code>, <code>.cdxml</code>, <code>.cdx</code>, <code>.ct</code>, and Gaussian Z-matrix inputs require Open Babel. Gaussian <code>.gjf</code>, <code>.com</code>, <code>.gau</code>, and <code>.gjc</code> files with ordinary Cartesian coordinates are read directly.</li>
 </ol>
 <figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
 <ol start="2">
-<li>Check the geometry with <code>Structure preview</code> if needed.</li>
+<li>Check the geometry with <code>Structure preview</code> if needed. The preview opens in a compact PyVista window with a black background. Open Babel conversions and any generated 3D structures should be inspected before calculation; a generated 3D structure is only a starting geometry, not an optimized or experimental structure.</li>
 </ol>
 <figure><img src="../images/wiki/orca-input_viewer_1.png" alt=""></figure>
 <ol start="3">
@@ -358,10 +362,10 @@
 <li>Choose the target calculation, such as single-point energy, optimization, frequencies, ESP package, TD-DFT, NMR, or dimer interaction energy.</li>
 </ol>
 <ol start="5">
-<li>Preview and save the <code>.inp</code> file.</li>
+<li>Use <code>Input preview</code> in the shared right panel to generate or refresh the current <code>.inp</code> text, then use <code>Save input file</code>.</li>
 </ol>
 <ol start="6">
-<li>Click <code>Run Orca</code> and follow the job in <code>JOB MONITOR</code>.</li>
+<li>Click <code>Run Orca</code>. The shared right panel switches automatically to <code>Job monitor</code>, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available.</li>
 </ol>
 <h3 id="make-figures-after-a-calculation">Make Figures After a Calculation</h3>
 <p>Use the top-panel buttons after the ORCA job finishes:</p>

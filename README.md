@@ -21,17 +21,16 @@
 
 CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.
 
-Typical input formats are `.xyz`, existing ORCA `.inp` files, and `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd].
+Typical input formats are `.xyz`, existing ORCA `.inp` files, and `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd]. The ORCA Input Builder also accepts `.mol`, `.sdf`, `.sd`, `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian `.gjf`, `.com`, `.gau`, `.gjc` files. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
 
 The suite is built around widely used, freely available academic/freeware programs. ORCA[^orca-site] is used for quantum-chemical calculations, and Multiwfn[^multiwfn-site] is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.
-
+![alt text](crystengkit_v1.0_1.png)
 CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.
-
 ![](images/wiki/orca-input_1.png)
 
 The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
-- read molecular structures from `.cif`, `.xyz`, and ORCA `.inp` files
+- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, MDL/SDF/CML/ChemDraw files through Open Babel, and Gaussian input files
 - prepare ORCA and Gaussian[^gaussian] input files
 - run ORCA and show live output
 - generate manuscript-ready computation summaries for experimental sections and supporting information
@@ -76,6 +75,7 @@ The full suite uses:
 - **ORCA**, available free of charge for academic users through the official ORCA/FACCTs pages[^orca-site]
 - **orca_2aim**, for generating `.wfn` / `.wfx` files after ORCA runs
 - **Multiwfn**, for ESP, NCI, and QTAIM analysis[^multiwfn-site]
+- **Open Babel** `obabel` / `obabel.exe`, optional but required for importing `.mol`, `.sdf`, `.sd`, `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian Z-matrix files
 
 The installer does not install ORCA or Multiwfn automatically, because these programs have their own licenses and official download routes. If you prefer manual Python setup, install the main Python packages with:
 
@@ -86,6 +86,10 @@ pip install numpy pyvista matplotlib periodictable gemmi Pillow
 The same package list is available in `requirements.txt`.
 
 `numpy` and `pyvista` are needed for structure preview and 3D plotting. `matplotlib` is used by the HOMO-LUMO energy diagram tool. `periodictable` supports the 3D NCI molecular viewer. `gemmi` is recommended for CIF handling. `Pillow` is used by the HOMO-LUMO MO surface tools for saved images, thumbnails, and contact sheets.
+
+Open Babel is discovered from the saved Builder setting, common installation locations, and system `PATH`; if it is still missing, the Builder asks you to browse to `obabel.exe` on Windows or `obabel` on Linux/macOS and validates the executable before saving it. MOL/SDF/CML/ChemDraw/CT files are converted to Cartesian XYZ in a temporary folder, leaving the source file unchanged. Existing 3D coordinates are preserved. If a structure appears to contain only 2D coordinates, the Builder asks before using Open Babel to add hydrogens and generate an initial 3D geometry. Multi-record SDF files show a record selector and import only the selected record.
+
+Gaussian import reads Link 0 lines, the route, title, charge/multiplicity, and explicit molecular specification. Ordinary Cartesian coordinates are imported directly, including atomic-number labels, common atom labels, freeze-code syntax, scientific notation, and bohr/atomic-unit coordinates converted to angstrom. Gaussian Z-matrices are converted through Open Babel. `Geom=Check`/`Geom=AllCheck` inputs without explicit coordinates are rejected. Gaussian route keywords, connectivity, ModRedundant data, basis/ECP sections, ONIOM layers, fragment assignments, and other Gaussian-specific directives are not translated into ORCA settings; inspect the imported geometry and calculation settings before running.
 
 ## Starting the Suite
 
@@ -103,7 +107,7 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ### ORCA Input Builder
 
-![](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs.
+![](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls.
 
 ### HOMO-LUMO Plotter
 
@@ -143,11 +147,11 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 ### Build and Run an ORCA Job
 
-1. Load a `.cif`, `.xyz`, or ORCA `.inp` file in the Builder.
+1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, and ORCA `.inp` files are read directly. `.mol`, `.sdf`, `.sd`, `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian Z-matrix inputs require Open Babel. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are read directly.
    
    ![](images/wiki/orca-input_1.png)
 
-2. Check the geometry with `Structure preview` if needed.
+2. Check the geometry with `Structure preview` if needed. The preview opens in a compact PyVista window with a black background. Open Babel conversions and any generated 3D structures should be inspected before calculation; a generated 3D structure is only a starting geometry, not an optimized or experimental structure.
    
    ![](images/wiki/orca-input_viewer_1.png)
 
@@ -155,9 +159,9 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 4. Choose the target calculation, such as single-point energy, optimization, frequencies, ESP package, TD-DFT, NMR, or dimer interaction energy.
 
-5. Preview and save the `.inp` file.
+5. Use `Input preview` in the shared right panel to generate or refresh the current `.inp` text, then use `Save input file`.
 
-6. Click `Run Orca` and follow the job in `JOB MONITOR`.
+6. Click `Run Orca`. The shared right panel switches automatically to `Job monitor`, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available.
 
 ### Make Figures After a Calculation
 
