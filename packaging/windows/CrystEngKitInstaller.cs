@@ -5,7 +5,6 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -27,12 +26,11 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox desktopShortcut = new CheckBox();
     private readonly CheckBox runChecker = new CheckBox();
     private readonly CheckBox setupEnvironment = new CheckBox();
-    private readonly PictureBox toolIcons = new PictureBox();
 
     internal InstallerForm()
     {
         Text = "CrystEngKit ORCA Setup " + InstallerConfig.Version;
-        ClientSize = new Size(590, 322);
+        ClientSize = new Size(590, 270);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -51,19 +49,14 @@ internal sealed class InstallerForm : Form
             AutoSize = true,
             Location = new Point(25, 57)
         };
-        toolIcons.Location = new Point(28, 80);
-        toolIcons.Size = new Size(172, 40);
-        toolIcons.SizeMode = PictureBoxSizeMode.AutoSize;
-        toolIcons.Image = LoadToolIcons();
-
         var destinationLabel = new Label
         {
             Text = "Install location:",
             AutoSize = true,
-            Location = new Point(25, 127)
+            Location = new Point(25, 91)
         };
 
-        destination.Location = new Point(28, 149);
+        destination.Location = new Point(28, 113);
         destination.Size = new Size(455, 25);
         destination.Text = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -71,55 +64,44 @@ internal sealed class InstallerForm : Form
             "CrystEngKit_ORCA");
 
         browse.Text = "Browse...";
-        browse.Location = new Point(492, 147);
+        browse.Location = new Point(492, 111);
         browse.Size = new Size(75, 28);
         browse.Click += BrowseClick;
 
         desktopShortcut.Text = "Create desktop shortcut";
         desktopShortcut.Checked = true;
         desktopShortcut.AutoSize = true;
-        desktopShortcut.Location = new Point(28, 186);
+        desktopShortcut.Location = new Point(28, 150);
 
         runChecker.Text = "Run installation checker when finished";
         runChecker.Checked = true;
         runChecker.AutoSize = true;
-        runChecker.Location = new Point(225, 186);
+        runChecker.Location = new Point(225, 150);
 
         setupEnvironment.Text = "Create Python environment and install required packages";
         setupEnvironment.Checked = true;
         setupEnvironment.AutoSize = true;
-        setupEnvironment.Location = new Point(28, 213);
+        setupEnvironment.Location = new Point(28, 177);
 
-        progress.Location = new Point(28, 243);
+        progress.Location = new Point(28, 207);
         progress.Size = new Size(455, 18);
         progress.Style = ProgressBarStyle.Marquee;
         progress.Visible = false;
 
         status.Text = "Ready.";
         status.AutoSize = true;
-        status.Location = new Point(28, 271);
+        status.Location = new Point(28, 235);
 
         install.Text = "Install";
-        install.Location = new Point(492, 241);
+        install.Location = new Point(492, 205);
         install.Size = new Size(75, 32);
         install.Click += InstallClick;
 
         Controls.AddRange(new Control[]
         {
-            heading, description, toolIcons, destinationLabel, destination, browse, desktopShortcut,
+            heading, description, destinationLabel, destination, browse, desktopShortcut,
             runChecker, setupEnvironment, progress, status, install
         });
-    }
-
-    private static Image LoadToolIcons()
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        using (var stream = assembly.GetManifestResourceStream("installer_tool_icons.bmp"))
-        {
-            if (stream == null)
-                return null;
-            return Image.FromStream(stream);
-        }
     }
 
     private void BrowseClick(object sender, EventArgs e)

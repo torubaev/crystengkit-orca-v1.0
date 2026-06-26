@@ -8,7 +8,6 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $sourcePath = Join-Path $PSScriptRoot "CrystEngKitInstaller.cs"
-$toolIconsPath = Join-Path $PSScriptRoot "installer_tool_icons.bmp"
 $outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-v.10_web.exe"
 $compiler = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) {
@@ -72,7 +71,6 @@ try {
         /reference:System.IO.Compression.dll `
         /reference:System.IO.Compression.FileSystem.dll `
         /reference:Microsoft.CSharp.dll `
-        /resource:"$toolIconsPath",installer_tool_icons.bmp `
         $tempSource
     if ($LASTEXITCODE -ne 0) {
         throw "C# installer compilation failed with exit code $LASTEXITCODE."
