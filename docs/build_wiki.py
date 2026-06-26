@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "README.md"
 OUTPUT = ROOT / "docs" / "wiki.html"
+WIKI_IMAGE_DIR = ROOT / "images" / "wiki"
 COPYRIGHT_NOTE = "(C) Yury Torubaev. 2026"
 
 
@@ -59,11 +60,14 @@ def image_src(src: str) -> str:
     normalized = src.strip().replace("\\", "/")
     root_posix = ROOT.as_posix()
     if normalized.startswith(root_posix + "/"):
-        return "../" + normalized[len(root_posix) + 1 :]
+        normalized = normalized[len(root_posix) + 1 :]
     if re.match(r"^[A-Za-z]:/", normalized):
         raise ValueError(f"Local absolute image paths are not allowed in wiki source: {src}")
     if re.match(r"^(?:https?:|mailto:|#|/)", normalized):
         return normalized
+    image_name = Path(normalized).name
+    if image_name and (WIKI_IMAGE_DIR / image_name).is_file():
+        normalized = f"images/wiki/{image_name}"
     return "../" + normalized
 
 
