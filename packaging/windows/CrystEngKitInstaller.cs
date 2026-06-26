@@ -259,10 +259,9 @@ internal sealed class InstallerForm : Form
 
     private static void CreateDesktopShortcut(string installDirectory)
     {
-        CreateShortcut(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                "CrystEngKit ORCA.lnk"),
-            installDirectory);
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        CreateShortcut(Path.Combine(desktop, "ORCA Input Builder.lnk"), installDirectory);
+        CreateShortcut(Path.Combine(desktop, "CrystEngKit ORCA.lnk"), installDirectory);
     }
 
     private static void CreateStartMenuShortcut(string installDirectory)
