@@ -198,6 +198,7 @@ internal sealed class InstallerForm : Form
             Directory.CreateDirectory(installDirectory);
             ExtractRepositoryToInstall(zipPath, installDirectory);
             EnsureWindowsLaunchers(installDirectory);
+            DeleteDirectoryBestEffort(Path.Combine(installDirectory, "packaging"));
             CreateUninstaller(installDirectory);
             RegisterUninstallEntry(installDirectory);
         }
@@ -265,7 +266,25 @@ internal sealed class InstallerForm : Form
     private static bool ShouldSkipRepositoryEntry(string relativeName)
     {
         var normalized = relativeName.Replace('\\', '/');
-        return normalized.StartsWith("install/releases/", StringComparison.OrdinalIgnoreCase);
+        if (normalized.StartsWith("install/releases/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.StartsWith("tests/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.StartsWith(".github/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.StartsWith(".agents/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.StartsWith("tmp/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (normalized.StartsWith("packaging/", StringComparison.OrdinalIgnoreCase))
+            return !IsRequiredLauncherEntry(normalized);
+        return false;
+    }
+
+    private static bool IsRequiredLauncherEntry(string normalized)
+    {
+        return normalized.Equals("packaging/windows/launch_orca_builder.cmd", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("packaging/windows/run_install_checker.cmd", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void CreateDesktopShortcut(string installDirectory)
@@ -334,6 +353,18 @@ internal sealed class InstallerForm : Form
             throw new FileNotFoundException("The web installer could not find a required launcher script in the downloaded repository.", source);
 
         File.Copy(source, destination, true);
+    }
+
+    private static void DeleteDirectoryBestEffort(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, true);
+        }
+        catch
+        {
+        }
     }
 
     private static void CreateUninstaller(string installDirectory)
