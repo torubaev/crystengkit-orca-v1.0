@@ -179,12 +179,10 @@ internal sealed class InstallerForm : Form
         ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
         var tempRoot = Path.Combine(Path.GetTempPath(), "CrystEngKit_ORCA_" + Guid.NewGuid().ToString("N"));
         var zipPath = Path.Combine(tempRoot, "repository.zip");
-        var extractDirectory = Path.Combine(tempRoot, "extract");
 
         try
         {
             Directory.CreateDirectory(tempRoot);
-            Directory.CreateDirectory(extractDirectory);
             using (var client = new WebClient())
                 client.DownloadFile(InstallerConfig.RepoUrl, zipPath);
 
@@ -193,13 +191,8 @@ internal sealed class InstallerForm : Form
                 throw new InvalidOperationException(
                     "The downloaded repository checksum did not match. Installation was stopped.");
 
-            ExtractSafely(zipPath, extractDirectory);
-            var roots = Directory.GetDirectories(extractDirectory);
-            if (roots.Length != 1)
-                throw new InvalidOperationException("The repository archive had an unexpected structure.");
-
             Directory.CreateDirectory(installDirectory);
-            CopyDirectory(roots[0], installDirectory);
+            ExtractRepositoryToInstall(zipPath, installDirectory);
         }
         finally
         {
@@ -215,19 +208,35 @@ internal sealed class InstallerForm : Form
             return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
     }
 
-    private static void ExtractSafely(string archivePath, string destination)
+    private static void ExtractRepositoryToInstall(string archivePath, string destination)
     {
         var destinationRoot = Path.GetFullPath(destination + Path.DirectorySeparatorChar);
+        string archiveRoot = null;
+
         using (var archive = ZipFile.OpenRead(archivePath))
         {
             foreach (var entry in archive.Entries)
             {
-                var output = Path.GetFullPath(Path.Combine(destination, entry.FullName));
+                var entryName = entry.FullName.Replace('\\', '/');
+                var separator = entryName.IndexOf('/');
+                if (separator < 0)
+                    throw new InvalidOperationException("The repository archive had an unexpected structure.");
+
+                var currentRoot = entryName.Substring(0, separator);
+                if (String.IsNullOrEmpty(archiveRoot))
+                    archiveRoot = currentRoot;
+                else if (!archiveRoot.Equals(currentRoot, StringComparison.Ordinal))
+                    throw new InvalidOperationException("The repository archive had an unexpected structure.");
+
+                var relativeName = entryName.Substring(separator + 1);
+                if (relativeName.Length == 0)
+                    continue;
+
+                var output = Path.GetFullPath(Path.Combine(destination, relativeName));
                 if (!output.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("Unsafe path found in repository archive.");
 
-                if (entry.FullName.EndsWith("/", StringComparison.Ordinal) ||
-                    entry.FullName.EndsWith("\\", StringComparison.Ordinal))
+                if (entryName.EndsWith("/", StringComparison.Ordinal))
                 {
                     Directory.CreateDirectory(output);
                     continue;
@@ -239,16 +248,9 @@ internal sealed class InstallerForm : Form
                 entry.ExtractToFile(output, true);
             }
         }
-    }
 
-    private static void CopyDirectory(string source, string destination)
-    {
-        foreach (var directory in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
-            Directory.CreateDirectory(directory.Replace(source, destination));
-        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
-            File.Copy(file, file.Replace(source, destination), true);
-        foreach (var file in Directory.GetFiles(source, "*", SearchOption.TopDirectoryOnly))
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+        if (String.IsNullOrEmpty(archiveRoot))
+            throw new InvalidOperationException("The repository archive was empty.");
     }
 
     private static void CreateDesktopShortcut(string installDirectory)
