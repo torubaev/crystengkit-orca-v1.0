@@ -1,3 +1,4 @@
+from __future__ import annotations
 
 import math
 import os
@@ -7,11 +8,13 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
 import json
 import webbrowser
+from dataclasses import dataclass
 
 try:
     import numpy as np
@@ -22,7 +25,7 @@ pv = None
 _pyvista_import_error = None
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 try:
     import gemmi  # optional, preferred CIF parser
@@ -654,6 +657,12 @@ ELEMENT_SYMBOLS = (
 )
 PERIODIC_TABLE = set(ELEMENT_SYMBOLS)
 ATOMIC_NUMBERS = {sym: idx + 1 for idx, sym in enumerate(ELEMENT_SYMBOLS)}
+ELEMENT_BY_ATOMIC_NUMBER = {idx + 1: sym for idx, sym in enumerate(ELEMENT_SYMBOLS)}
+BOHR_TO_ANGSTROM = 0.529177210903
+OPEN_BABEL_TIMEOUT = 45.0
+OPEN_BABEL_EXTENSIONS = {".mol", ".sdf", ".sd", ".cml", ".cdxml", ".cdx", ".ct"}
+GAUSSIAN_INPUT_EXTENSIONS = {".gjf", ".com", ".gau", ".gjc"}
+STRUCTURE_INPUT_EXTENSIONS = {".xyz", ".cif", ".inp"} | OPEN_BABEL_EXTENSIONS | GAUSSIAN_INPUT_EXTENSIONS
 
 ORCA_FUNCTIONALS = sorted({
     "HF","BP86","BLYP","PBE","PBE0","B3LYP","B3LYP/G","TPSSh","TPSS0","TPSS","M06L","M06","M062X",
@@ -1002,6 +1011,359 @@ def clean_symbol(raw: str) -> str:
     if sym not in PERIODIC_TABLE:
         raise ValueError(f"Unknown element symbol: {raw}")
     return sym
+
+
+def clean_gaussian_atom_label(raw: str) -> str:
+    token = raw.strip().strip(",")
+    if not token:
+        raise ValueError("Empty Gaussian atom label.")
+    if token.lstrip("+-").isdigit():
+        number = int(token)
+        if number not in ELEMENT_BY_ATOMIC_NUMBER:
+            raise ValueError(f"Unknown atomic number: {token}")
+        return ELEMENT_BY_ATOMIC_NUMBER[number]
+    token = re.split(r"[-_(]", token, maxsplit=1)[0]
+    return clean_symbol(token)
+
+
+def xyz_text_from_atoms(atoms: List[Tuple[str, float, float, float]], title: str = "Converted structure") -> str:
+    return "\n".join([str(len(atoms)), title, xyz_block_from_atoms(atoms)]) + "\n"
+
+
+def validate_xyz_text(text: str, source: str = "XYZ") -> Structure:
+    if not text or not text.strip():
+        raise ValueError(f"{source}: normalized XYZ output is empty.")
+    raw_lines = text.splitlines()
+    if not raw_lines:
+        raise ValueError(f"{source}: normalized XYZ output is empty.")
+    try:
+        atom_count = int(raw_lines[0].strip())
+    except Exception as exc:
+        raise ValueError(f"{source}: first XYZ line must be a positive atom count.") from exc
+    if atom_count <= 0:
+        raise ValueError(f"{source}: XYZ atom count must be positive.")
+    if len(raw_lines) < atom_count + 2:
+        raise ValueError(f"{source}: XYZ has fewer coordinate lines than declared.")
+    coord_lines = raw_lines[2:2 + atom_count]
+    atoms: List[Tuple[str, float, float, float]] = []
+    for line_number, line in enumerate(coord_lines, start=3):
+        parts = line.split()
+        if len(parts) < 4:
+            raise ValueError(f"{source}: invalid XYZ atom line {line_number}: {line}")
+        try:
+            sym = clean_symbol(parts[0])
+            x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+        except Exception as exc:
+            raise ValueError(f"{source}: invalid XYZ atom line {line_number}: {line}") from exc
+        if not all(math.isfinite(v) for v in (x, y, z)):
+            raise ValueError(f"{source}: non-finite coordinate on line {line_number}.")
+        atoms.append((sym, x, y, z))
+    if len(atoms) != atom_count:
+        raise ValueError(f"{source}: XYZ header says {atom_count}, parsed {len(atoms)} atoms.")
+    return Structure(atoms, title=raw_lines[1].strip() if len(raw_lines) > 1 else source)
+
+
+@dataclass
+class ImportResult:
+    structure: Structure
+    normalized_xyz: str
+    source_path: str
+    source_format: str
+    title: str
+    charge: Optional[int] = None
+    multiplicity: Optional[int] = None
+    warnings: Optional[List[str]] = None
+    log_lines: Optional[List[str]] = None
+
+
+@dataclass
+class GaussianSection:
+    index: int
+    route: str
+    title: str
+    charge: Optional[int]
+    multiplicity: Optional[int]
+    atoms: List[Tuple[str, float, float, float]]
+    coordinate_type: str
+    units: str
+    warnings: List[str]
+    requires_openbabel: bool = False
+    checkpoint_dependent: bool = False
+    text: str = ""
+
+
+def structure_input_format(path: str) -> str:
+    ext = Path(path).suffix.lower()
+    if ext == ".xyz":
+        return "XYZ"
+    if ext == ".cif":
+        return "CIF"
+    if ext == ".inp":
+        return "ORCA input"
+    if ext in OPEN_BABEL_EXTENSIONS:
+        return ext[1:].upper()
+    if ext in GAUSSIAN_INPUT_EXTENSIONS:
+        return "Gaussian input"
+    raise ValueError(
+        "Supported structure files: .xyz, .cif, ORCA .inp, .mol, .sdf/.sd, .cml, .cdxml, .cdx, .ct, and Gaussian .gjf/.com/.gau/.gjc."
+    )
+
+
+def looks_like_2d_structure(structure: Structure, tolerance: float = 1e-6) -> bool:
+    if len(structure.atoms) < 2:
+        return False
+    return all(abs(z) <= tolerance for _sym, _x, _y, z in structure.atoms)
+
+
+def sanitize_subprocess_error(text: str, limit: int = 1200) -> str:
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:limit] + ("..." if len(cleaned) > limit else "")
+
+
+def validate_openbabel_executable(path: str, timeout: float = 5.0) -> Tuple[bool, str]:
+    candidate = Path(str(path).strip().strip('"')).expanduser()
+    if not candidate.is_file():
+        return False, "file does not exist"
+    expected = "obabel.exe" if os.name == "nt" else "obabel"
+    if candidate.name.lower() != expected:
+        return False, f"executable name is not {expected}"
+    try:
+        result = subprocess.run(
+            [str(candidate), "-V"],
+            cwd=str(candidate.parent),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            errors="replace",
+        )
+    except Exception as exc:
+        return False, f"could not run Open Babel: {exc}"
+    output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+    if result.returncode != 0:
+        return False, f"Open Babel version check failed with exit code {result.returncode}: {sanitize_subprocess_error(output)}"
+    if "Open Babel" not in output and "OpenBabel" not in output:
+        return False, "version output does not look like Open Babel"
+    return True, output.splitlines()[0] if output else "Open Babel"
+
+
+def find_openbabel_on_path() -> str:
+    exe_name = "obabel.exe" if os.name == "nt" else "obabel"
+    found = shutil.which(exe_name)
+    return found or ""
+
+
+def run_openbabel_to_xyz(
+    obabel_path: str,
+    source_path: str,
+    input_format: Optional[str] = None,
+    generate_3d: bool = False,
+    record_index: Optional[int] = None,
+    timeout: float = OPEN_BABEL_TIMEOUT,
+) -> Tuple[str, List[str]]:
+    fmt_args: List[str] = []
+    if input_format:
+        fmt_args = [f"-i{input_format.lower()}", source_path]
+    else:
+        fmt_args = [source_path]
+    command = [obabel_path] + fmt_args
+    if record_index is not None:
+        command += ["-f", str(record_index), "-l", str(record_index)]
+    if generate_3d:
+        command += ["-h", "--gen3d"]
+    command += ["-oxyz"]
+    start = time.time()
+    proc = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        shell=False,
+        errors="replace",
+    )
+    elapsed = time.time() - start
+    logs = [
+        "Open Babel command: " + repr(command),
+        f"Open Babel return code: {proc.returncode}; duration: {elapsed:.2f} s",
+    ]
+    if proc.returncode != 0:
+        raise RuntimeError(f"Open Babel conversion failed: {sanitize_subprocess_error(proc.stderr or proc.stdout)}")
+    xyz_text = proc.stdout or ""
+    validate_xyz_text(xyz_text, "Open Babel XYZ")
+    return xyz_text, logs
+
+
+def count_sdf_records(path: str) -> List[Dict[str, object]]:
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    chunks = re.split(r"^\$\$\$\$\s*$", text, flags=re.MULTILINE)
+    records: List[Dict[str, object]] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        if not chunk.strip():
+            continue
+        lines = chunk.splitlines()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        title = next((line.strip() for line in lines if line.strip()), f"Record {idx}")
+        atom_count: Optional[int] = None
+        if len(lines) >= 4:
+            m = re.match(r"\s*(\d+)\s+(\d+)", lines[3])
+            if m:
+                atom_count = int(m.group(1))
+        records.append({"index": len(records) + 1, "title": title, "atom_count": atom_count})
+    return records
+
+
+def split_gaussian_link1_sections(text: str) -> List[str]:
+    return [part for part in re.split(r"^\s*--Link1--\s*$", text, flags=re.IGNORECASE | re.MULTILINE) if part.strip()]
+
+
+def _next_nonempty(lines: List[str], start: int) -> int:
+    idx = start
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+    return idx
+
+
+def _gaussian_route_has_bohr(route: str) -> bool:
+    route_lower = route.lower()
+    return bool(re.search(r"\b(bohr|au|units\s*=\s*(bohr|au|atomic))\b", route_lower))
+
+
+def _gaussian_route_checkpoint_geometry(route: str) -> bool:
+    return bool(re.search(r"\bgeom\s*=\s*\(?\s*(check|allcheck)", route, flags=re.IGNORECASE))
+
+
+def _parse_gaussian_cartesian_line(line: str) -> Tuple[str, float, float, float, List[str]]:
+    parts = line.replace(",", " ").split()
+    if len(parts) < 4:
+        raise ValueError("not enough fields")
+    symbol = clean_gaussian_atom_label(parts[0])
+    warnings: List[str] = []
+    coord_start = 1
+    if len(parts) >= 5:
+        try:
+            int(parts[1])
+            float(parts[2])
+            float(parts[3])
+            float(parts[4])
+            coord_start = 2
+            warnings.append("Gaussian freeze-code fields were discarded.")
+        except Exception:
+            coord_start = 1
+    x, y, z = float(parts[coord_start]), float(parts[coord_start + 1]), float(parts[coord_start + 2])
+    extras = parts[coord_start + 3:]
+    if extras:
+        warnings.append("Gaussian atom-line annotations were discarded.")
+    if not all(math.isfinite(v) for v in (x, y, z)):
+        raise ValueError("non-finite coordinate")
+    return symbol, x, y, z, warnings
+
+
+def parse_gaussian_input_text(text: str, source_name: str = "Gaussian input") -> List[GaussianSection]:
+    sections: List[GaussianSection] = []
+    for section_index, section_text in enumerate(split_gaussian_link1_sections(text), start=1):
+        lines = [line.rstrip("\n") for line in section_text.splitlines()]
+        idx = 0
+        while idx < len(lines) and lines[idx].lstrip().startswith("%"):
+            idx += 1
+        idx = _next_nonempty(lines, idx)
+        route_lines: List[str] = []
+        while idx < len(lines):
+            stripped = lines[idx].strip()
+            if not stripped:
+                if route_lines:
+                    idx += 1
+                    break
+                idx += 1
+                continue
+            if not stripped.startswith("#") and route_lines:
+                break
+            route_lines.append(stripped)
+            idx += 1
+        route = " ".join(route_lines)
+        idx = _next_nonempty(lines, idx)
+        title_lines: List[str] = []
+        while idx < len(lines) and lines[idx].strip():
+            title_lines.append(lines[idx].strip())
+            idx += 1
+        title = " ".join(title_lines).strip() or f"{source_name} section {section_index}"
+        idx = _next_nonempty(lines, idx)
+
+        charge: Optional[int] = None
+        multiplicity: Optional[int] = None
+        if idx < len(lines):
+            cm = re.match(r"^\s*([+-]?\d+)\s+(\d+)\b", lines[idx])
+            if cm:
+                charge = int(cm.group(1))
+                multiplicity = int(cm.group(2))
+                idx += 1
+
+        atoms: List[Tuple[str, float, float, float]] = []
+        warnings: List[str] = []
+        requires_openbabel = False
+        checkpoint_dependent = _gaussian_route_checkpoint_geometry(route)
+        coordinate_type = "none"
+        units = "bohr" if _gaussian_route_has_bohr(route) else "angstrom"
+        saw_noncartesian = False
+        while idx < len(lines):
+            raw = lines[idx]
+            stripped = raw.strip()
+            if not stripped:
+                break
+            if stripped.startswith("!"):
+                idx += 1
+                continue
+            try:
+                atom = _parse_gaussian_cartesian_line(stripped)
+            except Exception:
+                first = stripped.split()[0] if stripped.split() else ""
+                try:
+                    clean_gaussian_atom_label(first)
+                    looks_like_atom_start = True
+                except Exception:
+                    looks_like_atom_start = False
+                if looks_like_atom_start:
+                    saw_noncartesian = True
+                break
+            else:
+                sym, x, y, z, line_warnings = atom
+                atoms.append((sym, x, y, z))
+                warnings.extend(line_warnings)
+                idx += 1
+
+        if atoms:
+            coordinate_type = "Cartesian"
+            if units == "bohr":
+                atoms = [(sym, x * BOHR_TO_ANGSTROM, y * BOHR_TO_ANGSTROM, z * BOHR_TO_ANGSTROM) for sym, x, y, z in atoms]
+                warnings.append("Gaussian coordinates declared in bohr/atomic units were converted to angstrom.")
+        elif saw_noncartesian:
+            coordinate_type = "Z-matrix"
+            requires_openbabel = True
+        elif checkpoint_dependent:
+            coordinate_type = "checkpoint"
+
+        sections.append(
+            GaussianSection(
+                index=section_index,
+                route=route,
+                title=title,
+                charge=charge,
+                multiplicity=multiplicity,
+                atoms=atoms,
+                coordinate_type=coordinate_type,
+                units=units,
+                warnings=sorted(set(warnings)),
+                requires_openbabel=requires_openbabel,
+                checkpoint_dependent=checkpoint_dependent,
+                text=section_text,
+            )
+        )
+    return sections
+
+
+def gaussian_sections_with_geometry(sections: List[GaussianSection]) -> List[GaussianSection]:
+    return [section for section in sections if section.atoms or section.requires_openbabel]
 
 
 def cif_unquote(value: str) -> str:
@@ -1993,6 +2355,61 @@ class InfoIcon(tk.Canvas):
         ToolTip(self, tooltip_text)
 
 
+class ModeTextProxy:
+    def __init__(self, app: "App", mode: str):
+        self.app = app
+        self.mode = mode
+
+    def _widget(self):
+        return self.app.output_text
+
+    def _is_active(self) -> bool:
+        return self.app.output_mode == self.mode
+
+    def _set_buffer_from_widget(self) -> None:
+        self.app.output_buffers[self.mode] = self._widget().get("1.0", "end-1c")
+
+    def delete(self, start, end=None):
+        if self._is_active():
+            self._widget().delete(start, end)
+            self._set_buffer_from_widget()
+        else:
+            self.app.output_buffers[self.mode] = ""
+
+    def insert(self, index, chars, *args):
+        if self._is_active():
+            self._widget().insert(index, chars, *args)
+            self._set_buffer_from_widget()
+            return
+        current = self.app.output_buffers.get(self.mode, "")
+        if str(index) == "1.0":
+            self.app.output_buffers[self.mode] = str(chars) + current
+        else:
+            self.app.output_buffers[self.mode] = current + str(chars)
+
+    def get(self, start, end=None):
+        if self._is_active():
+            return self._widget().get(start, end)
+        return self.app.output_buffers.get(self.mode, "")
+
+    def configure(self, **kwargs):
+        if "wrap" in kwargs:
+            self.app.output_wraps[self.mode] = kwargs["wrap"]
+        if self._is_active():
+            self._widget().configure(**kwargs)
+
+    config = configure
+
+    def cget(self, key):
+        if key == "wrap":
+            return self.app.output_wraps.get(self.mode, "none")
+        return self._widget().cget(key)
+
+    def see(self, index):
+        if self._is_active():
+            self._widget().see(index)
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -2006,6 +2423,7 @@ class App(tk.Tk):
         self._configure_styles()
 
         self.structure: Optional[Structure] = None
+        self.structure_source_path: str = ""
         self.current_input_path: Optional[str] = None
         self.last_output_path: Optional[str] = None
         self.run_thread: Optional[threading.Thread] = None
@@ -2071,6 +2489,7 @@ class App(tk.Tk):
         self.print_mos_var = tk.BooleanVar(value=True)
 
         self.orca_path_var = tk.StringVar(value="")
+        self.openbabel_path_var = tk.StringVar(value="")
         self.auto_open_output_var = tk.BooleanVar(value=True)
         self.homo_lumo_script_var = tk.StringVar(value=str(DEFAULT_HOMO_LUMO_SCRIPT))
         self.esp_script_var = tk.StringVar(value=str(DEFAULT_ESP_SCRIPT))
@@ -2083,6 +2502,9 @@ class App(tk.Tk):
         self.recent_input_files: List[str] = []
         self.header_images = []
         self.window_icon_image = None
+        self.output_mode = "preview"
+        self.output_buffers = {"preview": "", "monitor": ""}
+        self.output_wraps = {"preview": "none", "monitor": "none"}
 
         self.auto_open_output_var.set(True)
         self._apply_app_icon()
@@ -2256,8 +2678,7 @@ class App(tk.Tk):
         right = ttk.Frame(body, style="Panel.TFrame")
         right.grid(row=0, column=1, sticky="nsew")
         right.columnconfigure(0, weight=1)
-        right.rowconfigure(0, weight=2)
-        right.rowconfigure(1, weight=5)
+        right.rowconfigure(0, weight=1)
 
         fbox = ttk.LabelFrame(left, text="FILE INPUT", padding=8)
         fbox.grid(row=0, column=0, sticky="ew", pady=(0, 7))
@@ -2403,30 +2824,44 @@ class App(tk.Tk):
         ttk.Button(self.interaction_box, text="Generate interaction job folders", command=self.generate_interaction_jobs).grid(row=9, column=0, columnspan=4, sticky="ew", pady=(7, 0))
         ttk.Label(self.interaction_box, textvariable=self.fragment_status_var, wraplength=380, justify="left").grid(row=10, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
-        preview_box = ttk.LabelFrame(right, text="INPUT FILE PREVIEW", padding=8)
-        preview_box.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
-        preview_box.columnconfigure(0, weight=1)
-        preview_box.rowconfigure(1, weight=1)
-        preview_actions = ttk.Frame(preview_box)
+        output_box = ttk.LabelFrame(right, text="INPUT PREVIEW / JOB MONITOR", padding=8)
+        output_box.grid(row=0, column=0, sticky="nsew")
+        output_box.columnconfigure(0, weight=1)
+        output_box.rowconfigure(1, weight=1)
+
+        preview_actions = ttk.Frame(output_box)
         preview_actions.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         preview_actions.columnconfigure(0, weight=1)
-        ttk.Button(preview_actions, text="Preview input file", command=self.preview).grid(row=0, column=1, sticky="e")
+        switch_box = ttk.Frame(preview_actions)
+        switch_box.grid(row=0, column=0, sticky="w")
+        self.preview_mode_button = tk.Button(
+            switch_box,
+            text="Input preview",
+            command=self.activate_input_preview,
+            relief="solid",
+            borderwidth=1,
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.preview_mode_button.grid(row=0, column=0, sticky="w")
+        self.monitor_mode_button = tk.Button(
+            switch_box,
+            text="Job monitor",
+            command=lambda: self._show_output_mode("monitor"),
+            relief="solid",
+            borderwidth=1,
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.monitor_mode_button.grid(row=0, column=1, sticky="w", padx=(3, 0))
         ttk.Button(preview_actions, text="Save input file", command=self.save_input).grid(row=0, column=2, sticky="e", padx=(6, 0))
-        self.preview_text = tk.Text(preview_box, wrap="none", height=10, font=("Consolas", 10), relief="solid", bd=1)
-        self.preview_text.grid(row=1, column=0, sticky="nsew")
-        ys = ttk.Scrollbar(preview_box, orient="vertical", command=self.preview_text.yview)
-        xs = ttk.Scrollbar(preview_box, orient="horizontal", command=self.preview_text.xview)
-        self.preview_text.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
-        ys.grid(row=1, column=1, sticky="ns")
-        xs.grid(row=2, column=0, sticky="ew")
 
-        monbox = ttk.LabelFrame(right, text="JOB MONITOR", padding=8)
-        monbox.grid(row=1, column=0, sticky="nsew")
-        monbox.columnconfigure(0, weight=1)
-        monbox.rowconfigure(2, weight=1)
-
-        monhdr = ttk.Frame(monbox)
-        monhdr.grid(row=0, column=0, sticky="ew")
+        monhdr = ttk.Frame(output_box)
+        monhdr.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         monhdr.columnconfigure(1, weight=1)
         self.monitor_stage_label = ttk.Label(monhdr, text="Status: Idle")
         self.monitor_stage_label.grid(row=0, column=0, sticky="w")
@@ -2439,8 +2874,16 @@ class App(tk.Tk):
         self.monitor_elapsed_label = ttk.Label(monhdr, text="Elapsed: 00:00:00")
         self.monitor_elapsed_label.grid(row=0, column=2, sticky="e")
 
-        monbtn = ttk.Frame(monbox)
-        monbtn.grid(row=1, column=0, sticky="ew", pady=(6, 6))
+        self.output_text = tk.Text(output_box, wrap="none", font=("Consolas", 10), relief="solid", bd=1)
+        self.output_text.grid(row=1, column=0, sticky="nsew")
+        ys = ttk.Scrollbar(output_box, orient="vertical", command=self.output_text.yview)
+        xs = ttk.Scrollbar(output_box, orient="horizontal", command=self.output_text.xview)
+        self.output_text.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
+        ys.grid(row=1, column=1, sticky="ns")
+        xs.grid(row=2, column=0, sticky="ew")
+
+        monbtn = ttk.Frame(output_box)
+        monbtn.grid(row=4, column=0, sticky="ew", pady=(6, 0))
         for i in range(5):
             monbtn.columnconfigure(i, weight=1)
         ttk.Button(monbtn, text="Stop job", command=self.stop_orca).grid(row=0, column=0, sticky="ew")
@@ -2448,14 +2891,9 @@ class App(tk.Tk):
         ttk.Button(monbtn, text="Open folder", command=self.open_last_output_folder).grid(row=0, column=2, sticky="ew", padx=(6, 0))
         ttk.Button(monbtn, text="Show summary", command=self.show_project_summary).grid(row=0, column=3, sticky="ew", padx=(6, 0))
         ttk.Button(monbtn, text="Clear monitor", command=self.clear_monitor).grid(row=0, column=4, sticky="ew", padx=(6, 0))
-
-        self.monitor_text = tk.Text(monbox, wrap="none", height=24, font=("Consolas", 10), relief="solid", bd=1)
-        self.monitor_text.grid(row=2, column=0, sticky="nsew")
-        monys = ttk.Scrollbar(monbox, orient="vertical", command=self.monitor_text.yview)
-        monxs = ttk.Scrollbar(monbox, orient="horizontal", command=self.monitor_text.xview)
-        self.monitor_text.configure(yscrollcommand=monys.set, xscrollcommand=monxs.set)
-        monys.grid(row=2, column=1, sticky="ns")
-        monxs.grid(row=3, column=0, sticky="ew")
+        self.preview_text = ModeTextProxy(self, "preview")
+        self.monitor_text = ModeTextProxy(self, "monitor")
+        self._refresh_output_mode_buttons()
 
         footer = ttk.Frame(self, style="Panel.TFrame", padding=(12, 6))
         footer.grid(row=2, column=0, sticky="ew")
@@ -2463,6 +2901,49 @@ class App(tk.Tk):
         ttk.Label(footer, text=COPYRIGHT_NOTE, style="Muted.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
         self.status = ttk.Label(footer, text="", style="Muted.TLabel")
         self._update_interaction_section()
+
+    def _sync_active_output_buffer(self):
+        if hasattr(self, "output_text"):
+            self.output_buffers[self.output_mode] = self.output_text.get("1.0", "end-1c")
+
+    def _show_output_mode(self, mode: str):
+        if mode not in self.output_buffers or mode == self.output_mode:
+            return
+        self._sync_active_output_buffer()
+        self.output_mode = mode
+        self.output_text.configure(wrap=self.output_wraps.get(mode, "none"))
+        self.output_text.delete("1.0", "end")
+        self.output_text.insert("1.0", self.output_buffers.get(mode, ""))
+        if mode == "monitor":
+            self.output_text.see("end")
+        else:
+            self.output_text.see("1.0")
+        self._refresh_output_mode_buttons()
+
+    def _refresh_output_mode_buttons(self):
+        if not hasattr(self, "preview_mode_button"):
+            return
+        colors = {
+            "active_bg": "#1d4ed8",
+            "active_fg": "#ffffff",
+            "inactive_bg": "#f8fafc",
+            "inactive_fg": "#1d4ed8",
+        }
+        for mode, button in (
+            ("preview", self.preview_mode_button),
+            ("monitor", self.monitor_mode_button),
+        ):
+            is_active = mode == self.output_mode
+            button.configure(
+                bg=colors["active_bg"] if is_active else colors["inactive_bg"],
+                fg=colors["active_fg"] if is_active else colors["inactive_fg"],
+                activebackground=colors["active_bg"] if is_active else "#e8f0ff",
+                activeforeground=colors["active_fg"] if is_active else colors["inactive_fg"],
+            )
+
+    def activate_input_preview(self):
+        self._show_output_mode("preview")
+        self.preview()
 
     def _toggle_interaction_target(self):
         self.job_interaction_var.set(not self.job_interaction_var.get())
@@ -2555,21 +3036,259 @@ class App(tk.Tk):
             if self.functional_var.get() not in GAUSSIAN_FUNCTIONALS:
                 self.functional_var.set("B3LYP")
 
+    def _parse_xyz_through_existing_loader(self, xyz_text: str, title: str) -> Structure:
+        validate_xyz_text(xyz_text, title)
+        with tempfile.TemporaryDirectory(prefix="crystengkit_import_") as tmpdir:
+            xyz_path = Path(tmpdir) / "normalized.xyz"
+            xyz_path.write_text(xyz_text, encoding="utf-8")
+            structure = StructureParser.parse_xyz(str(xyz_path))
+        structure.title = title
+        return structure
+
+    def _select_sdf_record(self, records: List[Dict[str, object]]) -> Optional[int]:
+        choices = []
+        for record in records:
+            count = record.get("atom_count")
+            count_text = f", atoms: {count}" if count is not None else ""
+            choices.append(f"{record['index']}: {record['title']}{count_text}")
+        value = simpledialog.askstring(
+            "Select SDF record",
+            "Multiple SDF records were found. Enter the record number to import:\n\n" + "\n".join(choices[:30]),
+            parent=self,
+        )
+        if value is None:
+            return None
+        try:
+            selected = int(value.strip())
+        except Exception as exc:
+            raise ValueError("SDF record selection must be a number.") from exc
+        valid = {int(record["index"]) for record in records}
+        if selected not in valid:
+            raise ValueError(f"SDF record {selected} is not available.")
+        return selected
+
+    def _select_gaussian_section(self, sections: List[GaussianSection]) -> Optional[GaussianSection]:
+        choices = []
+        for section in sections:
+            route = section.route[:70] + ("..." if len(section.route) > 70 else "")
+            choices.append(
+                f"{section.index}: {section.title} | {section.coordinate_type} | "
+                f"charge {section.charge}, mult {section.multiplicity} | atoms {len(section.atoms) or 'via Open Babel'} | {route}"
+            )
+        value = simpledialog.askstring(
+            "Select Gaussian section",
+            "Several Gaussian Link1 sections contain geometry. Enter the section number to import:\n\n" + "\n".join(choices[:20]),
+            parent=self,
+        )
+        if value is None:
+            return None
+        try:
+            selected = int(value.strip())
+        except Exception as exc:
+            raise ValueError("Gaussian section selection must be a number.") from exc
+        for section in sections:
+            if section.index == selected:
+                return section
+        raise ValueError(f"Gaussian section {selected} is not available.")
+
+    def _apply_gaussian_charge_multiplicity(self, result: ImportResult) -> bool:
+        if result.charge is None or result.multiplicity is None:
+            return True
+        current_charge = int(self.charge_var.get())
+        current_mult = int(self.mult_var.get())
+        if current_charge == result.charge and current_mult == result.multiplicity:
+            return True
+        if current_charge == 0 and current_mult == 1:
+            self.charge_var.set(result.charge)
+            self.mult_var.set(result.multiplicity)
+            return True
+        choice = messagebox.askyesnocancel(
+            "Gaussian charge/multiplicity",
+            "The Gaussian file declares charge/multiplicity "
+            f"{result.charge}/{result.multiplicity}, while the builder currently has "
+            f"{current_charge}/{current_mult}.\n\n"
+            "Yes: use Gaussian values\nNo: keep current values\nCancel: cancel import",
+        )
+        if choice is None:
+            return False
+        if choice:
+            self.charge_var.set(result.charge)
+            self.mult_var.set(result.multiplicity)
+        return True
+
+    def _import_openbabel_structure(self, path: str, ext: str) -> ImportResult:
+        obabel = self.require_openbabel_path()
+        source_format = ext[1:].upper()
+        record_index: Optional[int] = None
+        log_lines = [f"Source format: {source_format}"]
+        if ext in {".sdf", ".sd"}:
+            records = count_sdf_records(path)
+            log_lines.append(f"SDF records detected: {len(records)}")
+            if len(records) > 1:
+                selected = self._select_sdf_record(records)
+                if selected is None:
+                    raise ValueError("SDF import cancelled.")
+                record_index = selected
+                log_lines.append(f"Selected SDF record: {selected}")
+
+        direct_xyz, logs = run_openbabel_to_xyz(obabel, path, record_index=record_index)
+        log_lines.extend(logs)
+        direct_structure = validate_xyz_text(direct_xyz, source_format)
+        generated_3d = False
+        if looks_like_2d_structure(direct_structure):
+            proceed = messagebox.askyesno(
+                "2D structure detected",
+                "The imported structure appears to contain only 2D coordinates. Generate an initial 3D geometry with Open Babel and added hydrogens?\n\n"
+                "The result is only an automatically generated starting geometry and is not optimized or experimental.",
+            )
+            if not proceed:
+                raise ValueError("2D-to-3D generation cancelled; current structure was not changed.")
+            direct_xyz, logs = run_openbabel_to_xyz(obabel, path, generate_3d=True, record_index=record_index)
+            log_lines.extend(logs)
+            generated_3d = True
+            log_lines.append("Conversion mode: 2D-to-3D generation with hydrogen addition.")
+        else:
+            log_lines.append("Conversion mode: direct conversion preserving existing coordinates.")
+        title = Path(path).name
+        if generated_3d:
+            title += " (Open Babel generated starting geometry; inspect before calculation)"
+        structure = self._parse_xyz_through_existing_loader(direct_xyz, title)
+        log_lines.append(f"Atom count: {len(structure.atoms)}")
+        return ImportResult(structure, direct_xyz, path, source_format, title, warnings=[], log_lines=log_lines)
+
+    def _import_gaussian_structure(self, path: str) -> ImportResult:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        sections = parse_gaussian_input_text(text, Path(path).name)
+        geometry_sections = gaussian_sections_with_geometry(sections)
+        if not geometry_sections:
+            if any(section.checkpoint_dependent for section in sections):
+                raise ValueError("Gaussian input uses checkpoint-dependent geometry (Geom=Check/AllCheck) and contains no explicit coordinates.")
+            raise ValueError("No explicit Gaussian Cartesian coordinates or Z-matrix geometry was found.")
+        section = geometry_sections[0]
+        if len(geometry_sections) > 1:
+            selected = self._select_gaussian_section(geometry_sections)
+            if selected is None:
+                raise ValueError("Gaussian section selection cancelled.")
+            section = selected
+
+        log_lines = [
+            "Source format: Gaussian input",
+            f"Selected Gaussian Link1 section: {section.index}",
+            f"Gaussian coordinate type: {section.coordinate_type}",
+        ]
+        warnings = list(section.warnings)
+        if section.requires_openbabel:
+            obabel = self.require_openbabel_path()
+            with tempfile.TemporaryDirectory(prefix="crystengkit_gaussian_") as tmpdir:
+                section_path = Path(tmpdir) / (Path(path).stem + "_section.gjf")
+                section_path.write_text(section.text, encoding="utf-8")
+                xyz_text, logs = run_openbabel_to_xyz(obabel, str(section_path), input_format="g09")
+            log_lines.extend(logs)
+            warnings.append("Gaussian Z-matrix was converted through Open Babel; inspect the generated geometry before calculation.")
+        else:
+            if not section.atoms:
+                raise ValueError("Selected Gaussian section contains no explicit Cartesian coordinates.")
+            xyz_text = xyz_text_from_atoms(section.atoms, section.title)
+        if warnings:
+            proceed = messagebox.askokcancel(
+                "Gaussian import warnings",
+                "Some Gaussian-specific information will not be transferred to the ORCA builder:\n\n"
+                + "\n".join(sorted(set(warnings)))
+                + "\n\nOnly Cartesian coordinates, charge, and multiplicity are imported.",
+            )
+            if not proceed:
+                raise ValueError("Gaussian import cancelled.")
+        if section.units == "bohr":
+            log_lines.append("Unit conversion: bohr to angstrom.")
+        structure = self._parse_xyz_through_existing_loader(xyz_text, section.title)
+        log_lines.append(f"Atom count: {len(structure.atoms)}")
+        return ImportResult(
+            structure,
+            xyz_text,
+            path,
+            "Gaussian input",
+            section.title,
+            charge=section.charge,
+            multiplicity=section.multiplicity,
+            warnings=sorted(set(warnings)),
+            log_lines=log_lines,
+        )
+
+    def import_structure_file(self, path: str) -> ImportResult:
+        ext = Path(path).suffix.lower()
+        source_format = structure_input_format(path)
+        if ext in {".xyz", ".cif", ".inp"}:
+            structure = StructureParser.parse(path)
+            xyz_text = xyz_text_from_atoms(structure.atoms, structure.title)
+            validate_xyz_text(xyz_text, source_format)
+            return ImportResult(
+                structure,
+                xyz_text,
+                path,
+                source_format,
+                structure.title,
+                warnings=[],
+                log_lines=[f"Source format: {source_format}", f"Direct parser: {source_format}", f"Atom count: {len(structure.atoms)}"],
+            )
+        if ext in OPEN_BABEL_EXTENSIONS:
+            return self._import_openbabel_structure(path, ext)
+        if ext in GAUSSIAN_INPUT_EXTENSIONS:
+            return self._import_gaussian_structure(path)
+        raise ValueError(f"Unsupported input format: {Path(path).suffix}")
+
     def browse(self):
-        p = filedialog.askopenfilename(filetypes=[("Input files", "*.xyz *.cif *.inp"), ("Structure files", "*.xyz *.cif"), ("ORCA input", "*.inp"), ("All files", "*.*")])
-        if p:
+        patterns = " ".join("*" + ext for ext in sorted(STRUCTURE_INPUT_EXTENSIONS))
+        p = filedialog.askopenfilename(filetypes=[
+            ("Supported structure files", patterns),
+            ("XYZ/CIF/ORCA input", "*.xyz *.cif *.inp"),
+            ("Open Babel formats", "*.mol *.sdf *.sd *.cml *.cdxml *.cdx *.ct"),
+            ("Gaussian input", "*.gjf *.com *.gau *.gjc"),
+            ("All files", "*.*"),
+        ])
+        if not p:
+            return
+        try:
+            result = self.import_structure_file(p)
+            if not self._apply_gaussian_charge_multiplicity(result):
+                return
             self.path_var.set(p)
+            self.structure = result.structure
+            self.structure_source_path = str(Path(p).resolve())
+            self.current_input_path = p if self._is_existing_orca_input_path(p) else None
+            self.preview_text.delete("1.0", "end")
+            if self.current_input_path:
+                self.preview_text.insert("1.0", Path(p).read_text(encoding="utf-8", errors="replace"))
             self._remember_input_file(p)
-            self._load_existing_orca_input_if_selected()
+            for line in result.log_lines or []:
+                self.append_monitor(line)
+            self.status.configure(text=f"Imported {result.source_format}: {os.path.basename(p)} | atoms: {len(result.structure.atoms)}")
+        except Exception as exc:
+            messagebox.showerror("Import error", str(exc))
 
     def _is_existing_orca_input_path(self, path: str) -> bool:
         return bool(path) and path.lower().endswith(".inp") and os.path.isfile(path)
 
     def _on_input_path_entered(self, _event=None):
         path = self.path_var.get().strip().strip('"')
-        if path and os.path.isfile(path):
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            result = self.import_structure_file(path)
+            if not self._apply_gaussian_charge_multiplicity(result):
+                return
+            self.structure = result.structure
+            self.structure_source_path = str(Path(path).resolve())
+            self.current_input_path = path if self._is_existing_orca_input_path(path) else None
+            if self.current_input_path:
+                self._load_existing_orca_input_if_selected()
+            else:
+                self.preview_text.delete("1.0", "end")
             self._remember_input_file(path)
-        self._load_existing_orca_input_if_selected()
+            for line in result.log_lines or []:
+                self.append_monitor(line)
+            self.status.configure(text=f"Imported {result.source_format}: {os.path.basename(path)} | atoms: {len(result.structure.atoms)}")
+        except Exception as exc:
+            messagebox.showerror("Import error", str(exc))
 
     def _remember_input_file(self, path: str):
         clean = str(path or "").strip().strip('"')
@@ -2601,6 +3320,7 @@ class App(tk.Tk):
             text = f.read()
         self.preview_text.delete("1.0", "end")
         self.preview_text.insert("1.0", text)
+        self._show_output_mode("preview")
         self.current_input_path = path
         self.status.configure(text=f"Loaded existing ORCA input: {path}")
         return True
@@ -2743,6 +3463,7 @@ class App(tk.Tk):
     def _auto_locate_launcher_defaults(self):
         self.auto_locate_orca(silent=True)
         self.auto_locate_qtaim(silent=True)
+        self.auto_locate_openbabel(silent=True)
         self._use_latest_python_for_tools()
 
     def _load_launcher_settings(self):
@@ -2760,6 +3481,11 @@ class App(tk.Tk):
                 nci_script = DEFAULT_NCI_SCRIPT
             self.nci_script_var.set(str(nci_script))
             self.qtaim_script_var.set(str(resolve_app_path(data.get("qtaim_script"), DEFAULT_QTAIM_SCRIPT)))
+            openbabel_path = str(data.get("openbabel_executable") or "").strip()
+            if openbabel_path:
+                ok, _reason = validate_openbabel_executable(openbabel_path)
+                if ok:
+                    self.openbabel_path_var.set(openbabel_path)
             active_python = active_python_command()
             self.launch_python_var.set(active_python)
             self.esp_python_var.set(active_python)
@@ -2781,6 +3507,7 @@ class App(tk.Tk):
             "esp_script": app_relative_path(self.esp_script_var.get().strip()),
             "nci_script": app_relative_path(self.nci_script_var.get().strip()),
             "qtaim_script": app_relative_path(self.qtaim_script_var.get().strip()),
+            "openbabel_executable": self.openbabel_path_var.get().strip(),
             "python_executable": active_python_command(),
             "esp_python_command": active_python_command(),
             "nci_python_command": active_python_command(),
@@ -2804,6 +3531,79 @@ class App(tk.Tk):
         )
         if path:
             var.set(path)
+
+    def browse_openbabel(self):
+        expected = "obabel.exe" if os.name == "nt" else "obabel"
+        filetypes = [("Open Babel executable", expected)] + executable_filetypes()
+        path = filedialog.askopenfilename(title="Select Open Babel executable", filetypes=filetypes)
+        if not path:
+            return
+        ok, reason = validate_openbabel_executable(path)
+        if not ok:
+            messagebox.showerror("Open Babel executable rejected", f"{path}\n\n{reason}")
+            return
+        self.openbabel_path_var.set(path)
+        self._save_launcher_settings()
+        self.append_monitor(f"Open Babel executable saved: {path}\n{reason}\n")
+
+    def auto_locate_openbabel(self, silent: bool = False) -> str:
+        candidates: List[str] = []
+        saved = self.openbabel_path_var.get().strip().strip('"')
+        if saved:
+            candidates.append(saved)
+        exe_name = "obabel.exe" if os.name == "nt" else "obabel"
+        common_roots = [
+            Path(os.environ.get("ProgramFiles", "")) / "OpenBabel-3.1.1" / exe_name,
+            Path(os.environ.get("ProgramFiles", "")) / "Open Babel-3.1.1" / exe_name,
+            Path(os.environ.get("ProgramFiles(x86)", "")) / "OpenBabel-3.1.1" / exe_name,
+            Path("/usr/bin") / exe_name,
+            Path("/usr/local/bin") / exe_name,
+            Path.home() / ".local" / "bin" / exe_name,
+        ]
+        candidates.extend(str(path) for path in common_roots if str(path).strip())
+        path_candidate = find_openbabel_on_path()
+        if path_candidate:
+            candidates.append(path_candidate)
+
+        seen = set()
+        rejected: List[Tuple[str, str]] = []
+        for candidate in candidates:
+            norm = os.path.normcase(candidate)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            ok, reason = validate_openbabel_executable(candidate)
+            if ok:
+                self.openbabel_path_var.set(candidate)
+                if not silent:
+                    messagebox.showinfo("Open Babel located", f"{candidate}\n\n{reason}")
+                return candidate
+            rejected.append((candidate, reason))
+        if not silent:
+            detail = "\n".join(f"Rejected {path}: {reason}" for path, reason in rejected[:5])
+            messagebox.showwarning("Open Babel not found", "No valid Open Babel executable was found automatically." + ("\n\n" + detail if detail else ""))
+        return ""
+
+    def require_openbabel_path(self) -> str:
+        path = self.auto_locate_openbabel(silent=True)
+        if path:
+            ok, reason = validate_openbabel_executable(path)
+            if ok:
+                self.append_monitor(f"Open Babel: {path}\nVersion: {reason}\n")
+                return path
+        retry = messagebox.askyesno(
+            "Open Babel required",
+            "This file format requires Open Babel (`obabel`). Browse for the executable now?",
+        )
+        if not retry:
+            raise ValueError("Open Babel is required for this import and was not selected.")
+        self.browse_openbabel()
+        path = self.openbabel_path_var.get().strip().strip('"')
+        ok, reason = validate_openbabel_executable(path)
+        if not ok:
+            raise ValueError(f"Selected Open Babel executable is not valid:\n{path}\n\n{reason}")
+        self.append_monitor(f"Open Babel: {path}\nVersion: {reason}\n")
+        return path
 
     def _prepare_dialog_window(self, win: tk.Toplevel, width: int, height: int, min_width: int, min_height: int):
         win.update_idletasks()
@@ -2850,6 +3650,7 @@ class App(tk.Tk):
 
         fields = [
             ("ORCA executable:", self.orca_path_var, self.browse_orca),
+            ("Open Babel executable:", self.openbabel_path_var, self.browse_openbabel),
             ("HOMO-LUMO script:", self.homo_lumo_script_var, self._browse_script_into),
             ("ESP script:", self.esp_script_var, self._browse_script_into),
             ("NCI plotter script:", self.nci_script_var, self._browse_script_into),
@@ -2867,7 +3668,7 @@ class App(tk.Tk):
             if browse_func is None:
                 ttk.Label(win, text="").grid(row=row, column=2, padx=(0, 10), pady=(10 if row == 0 else 6, 0))
             else:
-                if var is self.orca_path_var:
+                if var is self.orca_path_var or var is self.openbabel_path_var:
                     command = browse_func
                 else:
                     command = lambda v=var, fn=browse_func: fn(v)
@@ -3319,14 +4120,21 @@ class App(tk.Tk):
     def parse_current_structure(self) -> Structure:
         path = self.path_var.get().strip()
         if not path:
-            raise ValueError("Please choose an XYZ, CIF, or ORCA input file.")
-        structure = StructureParser.parse(path)
-        if path.lower().endswith(".cif") and gemmi is not None:
-            backend = "gemmi"
-        elif path.lower().endswith(".inp"):
-            backend = "ORCA input"
+            raise ValueError("Please choose a supported structure file.")
+        try:
+            resolved_path = str(Path(path).resolve())
+        except Exception:
+            resolved_path = path
+        if self.structure is not None and os.path.normcase(self.structure_source_path) == os.path.normcase(resolved_path):
+            structure = self.structure
+            backend = "cached import"
         else:
-            backend = "internal"
+            result = self.import_structure_file(path)
+            structure = result.structure
+            self.structure_source_path = resolved_path
+            backend = result.source_format
+            for line in result.log_lines or []:
+                self.append_monitor(line)
         self.structure = structure
         self.status.configure(text=f"Structure ready: {os.path.basename(path)} | atoms: {len(structure.atoms)} | parser: {backend}")
         return structure
@@ -4439,7 +5247,14 @@ class App(tk.Tk):
 
     def _build_input_worker(self, path: str, data: Dict):
         try:
-            structure = StructureParser.parse(path)
+            try:
+                resolved_path = str(Path(path).resolve())
+            except Exception:
+                resolved_path = path
+            if self.structure is not None and os.path.normcase(self.structure_source_path) == os.path.normcase(resolved_path):
+                structure = self.structure
+            else:
+                structure = StructureParser.parse(path)
             errors, warnings, solvent = validate_engine_choices(data["program"], data["functional"], data["basis"], data["solvent_text"])
             if data.get("job_wfn_wfx") and data["program"] != "ORCA":
                 warnings.append("WFN/WFX generation is available only for ORCA runs via orca_2aim.")
@@ -4460,6 +5275,7 @@ class App(tk.Tk):
         self.structure = structure
         self.preview_text.delete("1.0", "end")
         self.preview_text.insert("1.0", text)
+        self._show_output_mode("preview")
         self.report_validation([], warnings, solvent)
         status = "Input preview generated."
         if warnings:
@@ -4480,7 +5296,7 @@ class App(tk.Tk):
         try:
             path = self.path_var.get().strip()
             if not path:
-                raise ValueError("Please choose an XYZ, CIF, or ORCA input file.")
+                raise ValueError("Please choose a supported structure file.")
             data = self.collect()
             self.status.configure(text="Generating input preview...")
             self.preview_thread = threading.Thread(target=self._build_input_worker, args=(path, data), daemon=True)
@@ -4628,6 +5444,7 @@ class App(tk.Tk):
             interaction_warnings = self._preflight_interaction_context(self.active_run_context)
 
             self.clear_monitor(reset_status=False)
+            self._show_output_mode("monitor")
             for warning in interaction_warnings:
                 self.append_monitor(f"Interaction warning: {warning}")
             self.monitor_started_at = time.time()
