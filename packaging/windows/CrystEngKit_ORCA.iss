@@ -53,6 +53,7 @@ Source: "..\..\benchmark_sets\*"; DestDir: "{app}\benchmark_sets"; Flags: ignore
 Source: "..\..\S22_NCI_benchmark_set\*"; DestDir: "{app}\S22_NCI_benchmark_set"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "launch_orca_builder.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "run_install_checker.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "installer_tool_icons.bmp"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\ORCA Input Builder"; Filename: "{app}\launch_orca_builder.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\tools\images\orca_builder.ico"
@@ -65,6 +66,9 @@ Name: "{autodesktop}\ORCA Input Builder"; Filename: "{app}\launch_orca_builder.c
 Filename: "{app}\run_install_checker.cmd"; Parameters: "{code:GetCheckerParams}"; Description: "Run installation checker"; Flags: postinstall skipifsilent nowait; Tasks: runchecker
 
 [Code]
+var
+  ToolIconStrip: TBitmapImage;
+
 function GetCheckerParams(Param: String): String;
 begin
   Result := '';
@@ -72,4 +76,16 @@ begin
     Result := Result + ' --install-python-if-missing';
   if WizardIsTaskSelected('setupvenv') then
     Result := Result + ' --setup-venv';
+end;
+
+procedure InitializeWizard;
+begin
+  ExtractTemporaryFile('installer_tool_icons.bmp');
+  ToolIconStrip := TBitmapImage.Create(WizardForm);
+  ToolIconStrip.Parent := WizardForm.WelcomePage;
+  ToolIconStrip.Bitmap.LoadFromFile(ExpandConstant('{tmp}\installer_tool_icons.bmp'));
+  ToolIconStrip.Left := WizardForm.WelcomeLabel1.Left;
+  ToolIconStrip.Top := WizardForm.WelcomeLabel2.Top + WizardForm.WelcomeLabel2.Height + ScaleY(12);
+  ToolIconStrip.Width := ScaleX(172);
+  ToolIconStrip.Height := ScaleY(40);
 end;
