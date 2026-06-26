@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -26,11 +27,13 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox desktopShortcut = new CheckBox();
     private readonly CheckBox runChecker = new CheckBox();
     private readonly CheckBox setupEnvironment = new CheckBox();
+    private readonly Button viewLicense = new Button();
+    private readonly CheckBox acceptLicense = new CheckBox();
 
     internal InstallerForm()
     {
         Text = "CrystEngKit ORCA Setup " + InstallerConfig.Version;
-        ClientSize = new Size(590, 270);
+        ClientSize = new Size(590, 305);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -83,25 +86,82 @@ internal sealed class InstallerForm : Form
         setupEnvironment.AutoSize = true;
         setupEnvironment.Location = new Point(28, 177);
 
-        progress.Location = new Point(28, 207);
+        viewLicense.Text = "License...";
+        viewLicense.Location = new Point(28, 204);
+        viewLicense.Size = new Size(86, 28);
+        viewLicense.Click += delegate { ShowLicenseDialog(); };
+
+        acceptLicense.Text = "I accept the license agreement";
+        acceptLicense.AutoSize = true;
+        acceptLicense.Location = new Point(130, 210);
+        acceptLicense.CheckedChanged += delegate { install.Enabled = acceptLicense.Checked; };
+
+        progress.Location = new Point(28, 242);
         progress.Size = new Size(455, 18);
         progress.Style = ProgressBarStyle.Marquee;
         progress.Visible = false;
 
         status.Text = "Ready.";
         status.AutoSize = true;
-        status.Location = new Point(28, 235);
+        status.Location = new Point(28, 270);
 
         install.Text = "Install";
-        install.Location = new Point(492, 205);
+        install.Location = new Point(492, 240);
         install.Size = new Size(75, 32);
+        install.Enabled = false;
         install.Click += InstallClick;
 
         Controls.AddRange(new Control[]
         {
             heading, description, destinationLabel, destination, browse, desktopShortcut,
-            runChecker, setupEnvironment, progress, status, install
+            runChecker, setupEnvironment, viewLicense, acceptLicense, progress, status, install
         });
+    }
+
+    private void ShowLicenseDialog()
+    {
+        using (var dialog = new Form())
+        using (var text = new TextBox())
+        using (var ok = new Button())
+        {
+            dialog.Text = "CrystEngKit ORCA License Agreement";
+            dialog.ClientSize = new Size(700, 500);
+            dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+            dialog.MaximizeBox = false;
+            dialog.MinimizeBox = false;
+            dialog.StartPosition = FormStartPosition.CenterParent;
+            dialog.Font = Font;
+
+            text.Multiline = true;
+            text.ReadOnly = true;
+            text.ScrollBars = ScrollBars.Vertical;
+            text.WordWrap = false;
+            text.Location = new Point(12, 12);
+            text.Size = new Size(676, 430);
+            text.Text = LoadLicenseText();
+
+            ok.Text = "OK";
+            ok.DialogResult = DialogResult.OK;
+            ok.Location = new Point(613, 455);
+            ok.Size = new Size(75, 32);
+
+            dialog.Controls.Add(text);
+            dialog.Controls.Add(ok);
+            dialog.AcceptButton = ok;
+            dialog.ShowDialog(this);
+        }
+    }
+
+    private static string LoadLicenseText()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        using (var stream = assembly.GetManifestResourceStream("LICENSE"))
+        {
+            if (stream == null)
+                return "Mozilla Public License Version 2.0\r\n\r\nSee LICENSE in the installed CrystEngKit ORCA folder.";
+            using (var reader = new StreamReader(stream))
+                return reader.ReadToEnd();
+        }
     }
 
     private void BrowseClick(object sender, EventArgs e)
@@ -117,6 +177,13 @@ internal sealed class InstallerForm : Form
 
     private void InstallClick(object sender, EventArgs e)
     {
+        if (!acceptLicense.Checked)
+        {
+            MessageBox.Show(this, "Accept the license agreement before installing.", Text,
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
         var installDirectory = destination.Text.Trim();
         if (installDirectory.Length == 0)
         {
@@ -168,6 +235,10 @@ internal sealed class InstallerForm : Form
         destination.Enabled = !busy;
         browse.Enabled = !busy;
         install.Enabled = !busy;
+        viewLicense.Enabled = !busy;
+        acceptLicense.Enabled = !busy;
+        if (!busy)
+            install.Enabled = acceptLicense.Checked;
         desktopShortcut.Enabled = !busy;
         runChecker.Enabled = !busy;
         setupEnvironment.Enabled = !busy;
