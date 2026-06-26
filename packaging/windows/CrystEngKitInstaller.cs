@@ -60,7 +60,7 @@ internal sealed class InstallerForm : Form
         destination.Text = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Programs",
-            "CrystEngKit ORCA");
+            "CrystEngKit_ORCA");
 
         browse.Text = "Browse...";
         browse.Location = new Point(492, 111);
