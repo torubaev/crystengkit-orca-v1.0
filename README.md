@@ -21,7 +21,7 @@
 
 CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.
 
-Typical input formats are `.xyz`, existing ORCA `.inp` files, and `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd]. The ORCA Input Builder also accepts `.mol`, `.sdf`, `.sd`, `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian `.gjf`, `.com`, `.gau`, `.gjc` files. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
+Typical input formats are `.xyz`, existing ORCA `.inp` files, `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd], and 3D `.mol`, `.sdf`, or `.sd` files. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
 
 The suite is built around widely used, freely available academic/freeware programs. ORCA[^orca-site] is used for quantum-chemical calculations, and Multiwfn[^multiwfn-site] is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.
 ![alt text](crystengkit_v1.0_1.png)
