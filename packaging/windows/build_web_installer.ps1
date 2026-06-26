@@ -1,5 +1,6 @@
 param(
     [string]$CertificateThumbprint = $env:CRYSTENGKIT_SIGN_CERT_SHA1,
+    [switch]$PinCurrentCommit,
     [switch]$AllowUnsigned
 )
 
@@ -13,34 +14,42 @@ if (-not (Test-Path -LiteralPath $compiler)) {
     throw "The Windows .NET Framework C# compiler was not found."
 }
 
-$status = git -C $repoRoot status --porcelain
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not read Git status."
-}
-if ($status) {
-    throw "Commit or stash all changes before building. The web installer must target an exact public commit."
+$repoRef = "origin/main"
+$zipUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/archive/refs/heads/main.zip"
+$sha256 = ""
+if ($PinCurrentCommit) {
+    $status = git -C $repoRoot status --porcelain
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read Git status."
+    }
+    if ($status) {
+        throw "Commit or stash all changes before building a pinned installer."
+    }
+
+    $repoRef = (git -C $repoRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $repoRef) {
+        throw "Could not determine the current Git commit."
+    }
+
+    $remoteMain = git -C $repoRoot ls-remote origin refs/heads/main
+    if ($LASTEXITCODE -ne 0 -or -not $remoteMain) {
+        throw "Could not read origin/main."
+    }
+    $remoteMainCommit = ($remoteMain -split "\s+")[0]
+    if ($remoteMainCommit -ne $repoRef) {
+        throw "Current commit $repoRef is not origin/main. Push it before building a pinned installer."
+    }
+
+    $zipUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/archive/$repoRef.zip"
 }
 
-$repoRef = (git -C $repoRoot rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or -not $repoRef) {
-    throw "Could not determine the current Git commit."
-}
-
-$remoteMain = git -C $repoRoot ls-remote origin refs/heads/main
-if ($LASTEXITCODE -ne 0 -or -not $remoteMain) {
-    throw "Could not read origin/main."
-}
-$remoteMainCommit = ($remoteMain -split "\s+")[0]
-if ($remoteMainCommit -ne $repoRef) {
-    throw "Current commit $repoRef is not origin/main. Push it before building the public installer."
-}
-
-$zipUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/archive/$repoRef.zip"
-$tempZip = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKit-ORCA-$repoRef.zip"
-$tempSource = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKitInstaller-$repoRef.cs"
+$tempZip = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKit-ORCA-web.zip"
+$tempSource = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKitInstaller-web.cs"
 try {
     Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip
-    $sha256 = (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash
+    if ($PinCurrentCommit) {
+        $sha256 = (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash
+    }
 
     $source = Get-Content -LiteralPath $sourcePath -Raw
     $source = $source.Replace("__REPO_URL__", $zipUrl)
@@ -96,8 +105,8 @@ try {
     }
 
     Write-Host "Built installer: $outputPath"
-    Write-Host "Repository commit: $repoRef"
-    Write-Host "Repository ZIP SHA-256: $sha256"
+    Write-Host "Repository source: $repoRef"
+    Write-Host "Repository ZIP SHA-256: $(if ($sha256) { $sha256 } else { 'not pinned; latest main is downloaded at install time' })"
     Write-Host "Installer SHA-256: $((Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash)"
     Write-Host "Signature status: $($finalSignature.Status)"
 }

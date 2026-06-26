@@ -44,7 +44,7 @@ internal sealed class InstallerForm : Form
         };
         var description = new Label
         {
-            Text = "Downloads and verifies the selected repository release, then installs it for this user.",
+            Text = "Downloads the latest repository version, then installs it for this user.",
             AutoSize = true,
             Location = new Point(25, 57)
         };
@@ -124,7 +124,7 @@ internal sealed class InstallerForm : Form
             return;
         }
 
-        SetBusy(true, "Downloading verified release...");
+        SetBusy(true, "Downloading latest release...");
         var worker = new BackgroundWorker();
         worker.DoWork += delegate { InstallFiles(installDirectory); };
         worker.RunWorkerCompleted += delegate(object completedSender, RunWorkerCompletedEventArgs completed)
@@ -186,10 +186,13 @@ internal sealed class InstallerForm : Form
             using (var client = new WebClient())
                 client.DownloadFile(InstallerConfig.RepoUrl, zipPath);
 
-            var actualHash = GetSha256(zipPath);
-            if (!actualHash.Equals(InstallerConfig.RepoSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException(
-                    "The downloaded repository checksum did not match. Installation was stopped.");
+            if (!String.IsNullOrWhiteSpace(InstallerConfig.RepoSha256))
+            {
+                var actualHash = GetSha256(zipPath);
+                if (!actualHash.Equals(InstallerConfig.RepoSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "The downloaded repository checksum did not match. Installation was stopped.");
+            }
 
             Directory.CreateDirectory(installDirectory);
             ExtractRepositoryToInstall(zipPath, installDirectory);
