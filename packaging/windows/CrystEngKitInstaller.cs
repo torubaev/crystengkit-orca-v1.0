@@ -7,6 +7,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 internal static class InstallerConfig
 {
@@ -197,6 +198,8 @@ internal sealed class InstallerForm : Form
             Directory.CreateDirectory(installDirectory);
             ExtractRepositoryToInstall(zipPath, installDirectory);
             EnsureWindowsLaunchers(installDirectory);
+            CreateUninstaller(installDirectory);
+            RegisterUninstallEntry(installDirectory);
         }
         finally
         {
@@ -270,13 +273,17 @@ internal sealed class InstallerForm : Form
             Environment.GetFolderPath(Environment.SpecialFolder.Programs), "CrystEngKit ORCA");
         Directory.CreateDirectory(menu);
         CreateShortcut(Path.Combine(menu, "ORCA Input Builder.lnk"), installDirectory);
+        CreateShortcut(
+            Path.Combine(menu, "Uninstall CrystEngKit ORCA.lnk"),
+            installDirectory,
+            "uninstall.cmd");
     }
 
-    private static void CreateShortcut(string shortcutPath, string installDirectory)
+    private static void CreateShortcut(string shortcutPath, string installDirectory, string targetFile = "launch_orca_builder.cmd")
     {
-        var launcher = Path.Combine(installDirectory, "launch_orca_builder.cmd");
+        var launcher = Path.Combine(installDirectory, targetFile);
         if (!File.Exists(launcher))
-            throw new FileNotFoundException("The ORCA Input Builder launcher was not found.", launcher);
+            throw new FileNotFoundException("The shortcut target was not found.", launcher);
         var shellType = Type.GetTypeFromProgID("WScript.Shell");
         dynamic shell = Activator.CreateInstance(shellType);
         dynamic shortcut = shell.CreateShortcut(shortcutPath);
@@ -319,6 +326,59 @@ internal sealed class InstallerForm : Form
             throw new FileNotFoundException("The web installer could not find a required launcher script in the downloaded repository.", source);
 
         File.Copy(source, destination, true);
+    }
+
+    private static void CreateUninstaller(string installDirectory)
+    {
+        var uninstallPath = Path.Combine(installDirectory, "uninstall.cmd");
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        var menu = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Programs), "CrystEngKit ORCA");
+
+        var lines = new[]
+        {
+            "@echo off",
+            "setlocal",
+            "echo This will remove CrystEngKit ORCA from:",
+            "echo " + installDirectory,
+            "echo.",
+            "choice /C YN /M \"Uninstall CrystEngKit ORCA\"",
+            "if errorlevel 2 exit /b 0",
+            "del /f /q \"" + Path.Combine(desktop, "ORCA Input Builder.lnk") + "\" >nul 2>nul",
+            "del /f /q \"" + Path.Combine(desktop, "CrystEngKit ORCA.lnk") + "\" >nul 2>nul",
+            "rmdir /s /q \"" + menu + "\" >nul 2>nul",
+            "reg delete HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\CrystEngKit_ORCA /f >nul 2>nul",
+            "echo Removing files...",
+            "cd /d \"%TEMP%\"",
+            "set \"REMOVE_DIR=" + installDirectory + "\"",
+            "set \"CLEANUP=%TEMP%\\crystengkit_orca_uninstall_%RANDOM%%RANDOM%.cmd\"",
+            "> \"%CLEANUP%\" echo @echo off",
+            ">> \"%CLEANUP%\" echo timeout /t 2 /nobreak ^>nul",
+            ">> \"%CLEANUP%\" echo rmdir /s /q \"%REMOVE_DIR%\"",
+            "start \"\" \"%CLEANUP%\"",
+            "exit /b 0",
+        };
+        File.WriteAllLines(uninstallPath, lines);
+    }
+
+    private static void RegisterUninstallEntry(string installDirectory)
+    {
+        var uninstallPath = Path.Combine(installDirectory, "uninstall.cmd");
+        using (var key = Registry.CurrentUser.CreateSubKey(
+            @"Software\Microsoft\Windows\CurrentVersion\Uninstall\CrystEngKit_ORCA"))
+        {
+            if (key == null)
+                return;
+            key.SetValue("DisplayName", "CrystEngKit ORCA");
+            key.SetValue("DisplayVersion", InstallerConfig.Version);
+            key.SetValue("Publisher", "Yury Torubaev");
+            key.SetValue("InstallLocation", installDirectory);
+            key.SetValue("DisplayIcon", Path.Combine(installDirectory, "tools", "images", "orca_builder.ico"));
+            key.SetValue("UninstallString", "\"" + uninstallPath + "\"");
+            key.SetValue("QuietUninstallString", "\"" + uninstallPath + "\"");
+            key.SetValue("NoModify", 1, RegistryValueKind.DWord);
+            key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+        }
     }
 }
 
