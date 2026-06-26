@@ -119,6 +119,50 @@ H 1 0.96 2 104.5
             records = orca_input.count_sdf_records(str(sdf))
         self.assertEqual([record["atom_count"] for record in records], [2, 3])
 
+    def test_native_mol_to_xyz(self):
+        mol = """Water 3D
+  CrystEngKit
+
+  3  2  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    0.7586    0.0000    0.5043 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.7586    0.0000    0.5043 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0  0  0  0
+  1  3  1  0  0  0  0
+M  END
+"""
+        atoms, title = orca_input.parse_mol_v2000_atoms(mol, "MOL")
+        self.assertEqual(title, "Water 3D")
+        self.assertEqual([atom[0] for atom in atoms], ["O", "H", "H"])
+        self.assertAlmostEqual(atoms[1][3], 0.5043)
+
+    def test_native_sdf_selects_record_to_xyz(self):
+        sdf = """First
+  CrystEngKit
+
+  1  0  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+M  END
+$$$$
+Second
+  CrystEngKit
+
+  2  1  0  0  0  0            999 V2000
+    0.0000    0.0000    0.1000 N   0  0  0  0  0  0  0  0  0  0  0  0
+    1.0000    0.0000    0.2000 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0  0  0  0
+M  END
+$$$$
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "multi.sdf"
+            path.write_text(sdf, encoding="utf-8")
+            xyz, title, logs = orca_input.mol_sdf_to_xyz_text(str(path), record_index=2)
+        structure = orca_input.validate_xyz_text(xyz, "SDF")
+        self.assertEqual(title, "Second")
+        self.assertEqual([atom[0] for atom in structure.atoms], ["N", "H"])
+        self.assertTrue(any("Selected SDF record: 2" in line for line in logs))
+
     def test_openbabel_validation_failure(self):
         ok, reason = orca_input.validate_openbabel_executable(str(ROOT / "missing_obabel"))
         self.assertFalse(ok)

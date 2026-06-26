@@ -30,7 +30,7 @@ CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or n
 
 The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
-- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, MDL/SDF/CML/ChemDraw files through Open Babel, and Gaussian input files
+- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, 3D MOL/SDF files, selected Open Babel formats, and Gaussian input files
 - prepare ORCA and Gaussian[^gaussian] input files
 - run ORCA and show live output
 - generate manuscript-ready computation summaries for experimental sections and supporting information
@@ -75,7 +75,7 @@ The full suite uses:
 - **ORCA**, available free of charge for academic users through the official ORCA/FACCTs pages[^orca-site]
 - **orca_2aim**, for generating `.wfn` / `.wfx` files after ORCA runs
 - **Multiwfn**, for ESP, NCI, and QTAIM analysis[^multiwfn-site]
-- **Open Babel** `obabel` / `obabel.exe`, optional but required for importing `.mol`, `.sdf`, `.sd`, `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian Z-matrix files
+- **Open Babel** `obabel` / `obabel.exe`, optional but required for importing `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian Z-matrix files. 3D `.mol`, `.sdf`, and `.sd` files are imported directly without Open Babel.
 
 The installer does not install ORCA or Multiwfn automatically, because these programs have their own licenses and official download routes. If you prefer manual Python setup, install the main Python packages with:
 
@@ -87,7 +87,7 @@ The same package list is available in `requirements.txt`.
 
 `numpy` and `pyvista` are needed for structure preview and 3D plotting. `matplotlib` is used by the HOMO-LUMO energy diagram tool. `periodictable` supports the 3D NCI molecular viewer. `gemmi` is recommended for CIF handling. `Pillow` is used by the HOMO-LUMO MO surface tools for saved images, thumbnails, and contact sheets.
 
-Open Babel is discovered from the saved Builder setting, common installation locations, and system `PATH`; if it is still missing, the Builder asks you to browse to `obabel.exe` on Windows or `obabel` on Linux/macOS and validates the executable before saving it. MOL/SDF/CML/ChemDraw/CT files are converted to Cartesian XYZ in a temporary folder, leaving the source file unchanged. Existing 3D coordinates are preserved. If a structure appears to contain only 2D coordinates, the Builder asks before using Open Babel to add hydrogens and generate an initial 3D geometry. Multi-record SDF files show a record selector and import only the selected record.
+Open Babel is discovered from the saved Builder setting, common installation locations, and system `PATH`; if it is still missing, the Builder asks you to browse to `obabel.exe` on Windows or `obabel` on Linux/macOS and validates the executable before saving it. 3D MOL/SDF files are read directly by the Builder and converted to Cartesian XYZ without Open Babel. CML/ChemDraw/CT files are converted through Open Babel in a temporary folder, leaving the source file unchanged. Existing 3D coordinates are preserved. If an Open Babel import appears to contain only 2D coordinates, the Builder asks before using Open Babel to add hydrogens and generate an initial 3D geometry. Multi-record SDF files show a record selector and import only the selected record.
 
 Gaussian import reads Link 0 lines, the route, title, charge/multiplicity, and explicit molecular specification. Ordinary Cartesian coordinates are imported directly, including atomic-number labels, common atom labels, freeze-code syntax, scientific notation, and bohr/atomic-unit coordinates converted to angstrom. Gaussian Z-matrices are converted through Open Babel. `Geom=Check`/`Geom=AllCheck` inputs without explicit coordinates are rejected. Gaussian route keywords, connectivity, ModRedundant data, basis/ECP sections, ONIOM layers, fragment assignments, and other Gaussian-specific directives are not translated into ORCA settings; inspect the imported geometry and calculation settings before running.
 
@@ -147,7 +147,7 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 ### Build and Run an ORCA Job
 
-1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, and ORCA `.inp` files are read directly. `.mol`, `.sdf`, `.sd`, `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian Z-matrix inputs require Open Babel. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are read directly.
+1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, and 3D `.mol`/`.sdf`/`.sd` files are read directly. `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian Z-matrix inputs require Open Babel. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are read directly.
    
    ![](images/wiki/orca-input_1.png)
 

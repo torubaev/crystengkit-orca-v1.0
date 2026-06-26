@@ -1194,13 +1194,100 @@ def run_openbabel_to_xyz(
     return xyz_text, logs
 
 
+def sdf_record_chunks(text: str) -> List[str]:
+    chunks = re.split(r"^\$\$\$\$\s*$", text, flags=re.MULTILINE)
+    return [chunk for chunk in chunks if chunk.strip()]
+
+
+def mol_counts_line_index(lines: List[str]) -> int:
+    for idx, line in enumerate(lines[:12]):
+        if "V2000" in line.upper() or "V3000" in line.upper():
+            return idx
+    if len(lines) >= 4:
+        return 3
+    raise ValueError("MOL/SDF file is too short to contain a counts line.")
+
+
+def parse_mol_v2000_atoms(text: str, source: str = "MOL/SDF") -> Tuple[List[Tuple[str, float, float, float]], str]:
+    lines = text.splitlines()
+    counts_idx = mol_counts_line_index(lines)
+    counts_line = lines[counts_idx]
+    if "V3000" in counts_line.upper():
+        raise ValueError(f"{source}: V3000 MOL/SDF files still require Open Babel.")
+
+    try:
+        atom_count = int(counts_line[0:3])
+    except Exception:
+        parts = counts_line.split()
+        if not parts:
+            raise ValueError(f"{source}: missing atom count in MOL/SDF counts line.")
+        try:
+            atom_count = int(parts[0])
+        except Exception as exc:
+            raise ValueError(f"{source}: invalid atom count in MOL/SDF counts line.") from exc
+
+    if atom_count <= 0:
+        raise ValueError(f"{source}: MOL/SDF atom count must be positive.")
+
+    start = counts_idx + 1
+    atom_lines = lines[start:start + atom_count]
+    if len(atom_lines) < atom_count:
+        raise ValueError(f"{source}: MOL/SDF has fewer atom lines than declared.")
+
+    atoms: List[Tuple[str, float, float, float]] = []
+    for line_number, line in enumerate(atom_lines, start=start + 1):
+        try:
+            x = float(line[0:10])
+            y = float(line[10:20])
+            z = float(line[20:30])
+            sym = clean_symbol(line[31:34].strip())
+        except Exception:
+            parts = line.split()
+            if len(parts) < 4:
+                raise ValueError(f"{source}: invalid MOL/SDF atom line {line_number}: {line}")
+            try:
+                x, y, z = float(parts[0]), float(parts[1]), float(parts[2])
+                sym = clean_symbol(parts[3])
+            except Exception as exc:
+                raise ValueError(f"{source}: invalid MOL/SDF atom line {line_number}: {line}") from exc
+        if not all(math.isfinite(v) for v in (x, y, z)):
+            raise ValueError(f"{source}: non-finite coordinate on atom line {line_number}.")
+        atoms.append((sym, x, y, z))
+
+    title = next((line.strip() for line in lines[:counts_idx] if line.strip()), source)
+    return atoms, title
+
+
+def mol_sdf_to_xyz_text(path: str, record_index: Optional[int] = None) -> Tuple[str, str, List[str]]:
+    source_path = Path(path)
+    ext = source_path.suffix.lower()
+    source_format = ext[1:].upper()
+    text = source_path.read_text(encoding="utf-8", errors="replace")
+    log_lines = [f"Source format: {source_format}", "Direct parser: native MOL/SDF"]
+
+    if ext in {".sdf", ".sd"}:
+        records = sdf_record_chunks(text)
+        log_lines.append(f"SDF records detected: {len(records)}")
+        if not records:
+            raise ValueError("SDF file did not contain any records.")
+        selected_index = record_index or 1
+        if selected_index < 1 or selected_index > len(records):
+            raise ValueError(f"SDF record {selected_index} is not available.")
+        text = records[selected_index - 1]
+        log_lines.append(f"Selected SDF record: {selected_index}")
+
+    atoms, title = parse_mol_v2000_atoms(text, source_format)
+    xyz_text = xyz_text_from_atoms(atoms, title or source_path.name)
+    validate_xyz_text(xyz_text, source_format)
+    log_lines.append(f"Atom count: {len(atoms)}")
+    return xyz_text, title or source_path.name, log_lines
+
+
 def count_sdf_records(path: str) -> List[Dict[str, object]]:
     text = Path(path).read_text(encoding="utf-8", errors="replace")
-    chunks = re.split(r"^\$\$\$\$\s*$", text, flags=re.MULTILINE)
+    chunks = sdf_record_chunks(text)
     records: List[Dict[str, object]] = []
     for idx, chunk in enumerate(chunks, start=1):
-        if not chunk.strip():
-            continue
         lines = chunk.splitlines()
         while lines and not lines[0].strip():
             lines.pop(0)
@@ -3156,6 +3243,25 @@ class App(tk.Tk):
         log_lines.append(f"Atom count: {len(structure.atoms)}")
         return ImportResult(structure, direct_xyz, path, source_format, title, warnings=[], log_lines=log_lines)
 
+    def _import_mol_sdf_structure(self, path: str, ext: str) -> ImportResult:
+        source_format = ext[1:].upper()
+        record_index: Optional[int] = None
+        if ext in {".sdf", ".sd"}:
+            records = count_sdf_records(path)
+            if len(records) > 1:
+                selected = self._select_sdf_record(records)
+                if selected is None:
+                    raise ValueError("SDF import cancelled.")
+                record_index = selected
+
+        xyz_text, title, log_lines = mol_sdf_to_xyz_text(path, record_index=record_index)
+        structure = self._parse_xyz_through_existing_loader(xyz_text, title)
+        warnings: List[str] = []
+        if looks_like_2d_structure(structure):
+            warnings.append("MOL/SDF coordinates appear to be flat; imported as-is without 3D generation.")
+            log_lines.append("Coordinate note: all Z values are near zero; no 3D generation was attempted.")
+        return ImportResult(structure, xyz_text, path, source_format, title, warnings=warnings, log_lines=log_lines)
+
     def _import_gaussian_structure(self, path: str) -> ImportResult:
         text = Path(path).read_text(encoding="utf-8", errors="replace")
         sections = parse_gaussian_input_text(text, Path(path).name)
@@ -3230,6 +3336,8 @@ class App(tk.Tk):
                 warnings=[],
                 log_lines=[f"Source format: {source_format}", f"Direct parser: {source_format}", f"Atom count: {len(structure.atoms)}"],
             )
+        if ext in {".mol", ".sdf", ".sd"}:
+            return self._import_mol_sdf_structure(path, ext)
         if ext in OPEN_BABEL_EXTENSIONS:
             return self._import_openbabel_structure(path, ext)
         if ext in GAUSSIAN_INPUT_EXTENSIONS:
@@ -3241,7 +3349,7 @@ class App(tk.Tk):
         p = filedialog.askopenfilename(filetypes=[
             ("Supported structure files", patterns),
             ("XYZ/CIF/ORCA input", "*.xyz *.cif *.inp"),
-            ("Open Babel formats", "*.mol *.sdf *.sd *.cml *.cdxml *.cdx *.ct"),
+            ("MOL/SDF and Open Babel formats", "*.mol *.sdf *.sd *.cml *.cdxml *.cdx *.ct"),
             ("Gaussian input", "*.gjf *.com *.gau *.gjc"),
             ("All files", "*.*"),
         ])
