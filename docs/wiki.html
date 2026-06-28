@@ -272,15 +272,15 @@
     <main>
       <article>
         <h1 id="crystengkit-from-cif-files-to-esp-nci-and-qtaim-plots-in-a-few-clicks-a-practical-suite-for-supramolecular-chemistry-and-crystal-engineering-computations">CrystEngKit: From CIF files to ESP, NCI, and QTAIM plots in a few clicks — a practical suite for supramolecular chemistry and crystal engineering computations.</h1>
-<figure class="image-row"><img src="../images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="" title="" width="207"> <img src="../images/wiki/ZfK_C2H2I2_COVER.png" alt="" title="" width="203"> <img src="../images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="" title="" width="204"></figure>
+<figure class="image-row"><img src="../images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="Journal cover art example with molecular visualization" title="" width="207"> <img src="../images/wiki/ZfK_C2H2I2_COVER.png" alt="Journal cover art example for crystal engineering" title="" width="203"> <img src="../images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="Journal issue cover with computational chemistry artwork" title="" width="204"></figure>
 <p><em>ESP maps, NCI plots, BCP/bonding paths, and HOMO-LUMO shapes are not only illustrations of your work but also good ideas for journal cover art</em>.</p>
 <h2 id="overview">Overview</h2>
 <p>CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.</p>
 <p>Typical input formats are <code>.xyz</code>, existing ORCA <code>.inp</code> files, <code>.cif</code> files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)<sup><a href="#ref-csd">csd</a></sup>, and 3D <code>.mol</code>, <code>.sdf</code>, or <code>.sd</code> files. Generic <code>.inp</code> files are treated as ORCA inputs, not Gaussian inputs.</p>
 <p>The suite is built around widely used, freely available academic/freeware programs. ORCA<sup><a href="#ref-orca-site">orca-site</a></sup> is used for quantum-chemical calculations, and Multiwfn<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup> is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.</p>
-<figure><img src="../images/wiki/crystengkit_v1.0_1.png" alt="alt text"></figure>
+<figure><img src="../images/wiki/crystengkit_v1.0_1.png" alt="CrystEngKit-ORCA"></figure>
 <p>CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.</p>
-<figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-input_1.png" alt="Orca Input builder"></figure>
 <p>The main GUI is the <strong>ORCA Input Builder</strong><sup><a href="#ref-orca">orca</a></sup>. It can:</p>
 <ul>
 <li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, ORCA <code>.inp</code>, 3D MOL/SDF files, selected Open Babel formats, and Gaussian input files</li>
@@ -289,7 +289,7 @@
 <li>generate manuscript-ready computation summaries for experimental sections and supporting information</li>
 <li>launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.</li>
 </ul>
-<figure><img src="../images/wiki/orca-input_2.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-input_2.png" alt="Orca Input builder. Intermolecular computation section"></figure>
 <h2 id="installation-and-requirements">Installation and Requirements</h2>
 <p>For most users, start with the provided installer. It checks the software already present on your computer, can offer to install Python on Windows if Python 3.9+ is missing, can create a local <code>.venv</code> environment for CrystEngKit, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.</p>
 <p>The Windows <code>.exe</code> installer includes checkbox options for Python setup. If selected, it tries to install Python 3.12 with <code>winget</code> only when no Python 3.9+ interpreter is found, and it can create a project-local <code>.venv</code> for the Python packages. The manual Windows and Linux/macOS launchers still need Python first; if Python is not installed yet, they stop and show where to download or install Python. After Python 3.9 or newer is installed, run the checker again.</p>
@@ -324,37 +324,37 @@
 <h2 id="tools">Tools</h2>
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
-<figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder main working window"></figure>
 <p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls.</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
-<figure><img src="../images/wiki/orca_homo-lumo_2.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_homo-lumo_2.png" alt="HOMO-LUMO energy diagram tool"></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
-<figure><img src="../images/wiki/orca_homo-lumo_3.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_homo-lumo_3.png" alt="HOMO-LUMO molecular orbital surface table"></figure>
 <p>Recent MO-surface tools include capped-sticks molecule rendering by default, optional colored wireframe or ball-and-stick molecule overlays. In the table, each saved MO tile can be reopened with its saved camera, style, and scale. The <code>Use view for all</code> button applies the selected tile&#x27;s saved orientation and zoom/scale to every MO surface in the current table.</p>
 <h3 id="esp-vismap">ESP / VisMap</h3>
 <p>Creates electrostatic-potential maps on electron-density surfaces<sup><a href="#ref-esp">esp</a></sup>.</p>
-<figure><img src="../images/wiki/orca_vismap_output_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_vismap_output_1.png" alt="ESP map visualization in VisMap"></figure>
 <p>This version is based on the original VisMap code by aaan1s (&lt;https://github.com/aaan1s/VisMap&gt;) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as <code>.wfn</code>, <code>.wfx</code>, or <code>.fchk</code>.</p>
 <h3 id="nci-plotter">NCI Plotter</h3>
-<figure><img src="../images/wiki/orca_nci_output_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_nci_output_1.png" alt="NCI plotter visualization of noncovalent interaction surfaces"></figure>
 <p>Creates noncovalent-interaction surfaces<sup><a href="#ref-nci">nci</a></sup> from <code>.wfn</code> or <code>.wfx</code> files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.</p>
 <h3 id="qtaim-critical-points-viewer">QTAIM Critical Points Viewer</h3>
-<figure><img src="../images/wiki/orca_qtaim_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_qtaim_1.png" alt="QTAIM critical points viewer"></figure>
 <p>Shows QTAIM bond, ring, and cage critical points<sup><a href="#ref-qtaim">qtaim</a></sup> from <code>.wfn</code> or <code>.wfx</code> files and Multiwfn QTAIM output. The visualization settings include separate <code>Strong interaction CPs</code> and <code>Weak interaction CPs</code> checkboxes for BCP filtering, plus <code>CP energy</code> with <code>kJ/mol</code> or <code>kcal/mol</code> labels when <code>CPprop.txt</code> provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.</p>
-<figure><img src="../images/wiki/orca_qtaim_2.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_qtaim_2.png" alt="QTAIM critical point visualization settings"></figure>
 <h3 id="nci-qtaim-overlay">NCI + QTAIM Overlay</h3>
-<figure><img src="../images/wiki/orca_qtaim_nci_overlay.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_qtaim_nci_overlay.png" alt="NCI and QTAIM overlay visualization"></figure>
 <p>Combines the molecular structure, NCI surface, QTAIM bond critical points, and bond paths in one PyVista view. Use it when the NCI and QTAIM output files have already been generated for the same structure.</p>
 <h2 id="how-to-use-the-tools">How to Use the Tools</h2>
 <h3 id="build-and-run-an-orca-job">Build and Run an ORCA Job</h3>
 <ol>
 <li>Load a supported structure file in the Builder. Native <code>.xyz</code>, <code>.cif</code>, ORCA <code>.inp</code>, and 3D <code>.mol</code>/<code>.sdf</code>/<code>.sd</code> files are read directly. <code>.cml</code>, <code>.cdxml</code>, <code>.cdx</code>, <code>.ct</code>, and Gaussian Z-matrix inputs require Open Babel. Gaussian <code>.gjf</code>, <code>.com</code>, <code>.gau</code>, and <code>.gjc</code> files with ordinary Cartesian coordinates are read directly.</li>
 </ol>
-<figure><img src="../images/wiki/orca-input_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder job setup window"></figure>
 <ol start="2">
 <li>Check the geometry with <code>Structure preview</code> if needed. The preview opens in a compact PyVista window with a black background. Open Babel conversions and any generated 3D structures should be inspected before calculation; a generated 3D structure is only a starting geometry, not an optimized or experimental structure.</li>
 </ol>
-<figure><img src="../images/wiki/orca-input_viewer_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-input_viewer_1.png" alt="Structure preview window for checking imported geometry"></figure>
 <ol start="3">
 <li>Choose the calculation setup: functional, basis set, dispersion correction, solvent (or gas phase if no solvent is chosen or entered), charge, and multiplicity.</li>
 </ol>
@@ -369,7 +369,7 @@
 </ol>
 <h3 id="make-figures-after-a-calculation">Make Figures After a Calculation</h3>
 <p>Use the top-panel buttons after the ORCA job finishes:</p>
-<figure><img src="../images/wiki/orca_top_panel_1.png" alt=""></figure>
+<figure><img src="../images/wiki/orca_top_panel_1.png" alt="ORCA Input Builder top panel analysis buttons"></figure>
 <ul>
 <li><code>HOMO LUMO</code> for orbital energy diagrams and, from ORCA <code>.out</code> / <code>.gbw</code> pairs, MO surface images and contact sheets</li>
 <li><code>ESP map</code> for electrostatic-potential surfaces</li>
@@ -392,14 +392,14 @@
 <ol start="4">
 <li>Use the viewer to check the fragment assignment.</li>
 </ol>
-<figure><img src="../images/wiki/orca-input_viewer_2.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-input_viewer_2.png" alt="Dimer fragment assignment in the structure viewer"></figure>
 <ol start="5">
 <li>Choose whether to include relaxed binding analysis and thermodynamic terms.</li>
 </ol>
 <ol start="6">
 <li>Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.</li>
-<figure><img src="../images/wiki/orca-output_3.png" alt=""></figure>
-<figure><img src="../images/wiki/orca-output_4.png" alt=""></figure>
+<figure><img src="../images/wiki/orca-output_3.png" alt="ORCA dimer interaction energy output summary"></figure>
+<figure><img src="../images/wiki/orca-output_4.png" alt="ORCA calculation summary text for experimental section"></figure>
 </ol>
 <p>As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&amp;id=4&amp;state=show&amp;order=ASC&amp;by=name_m&amp;method=</p>
 <h3 id="modeling-of-solvation-effects">Modeling of Solvation Effects</h3>

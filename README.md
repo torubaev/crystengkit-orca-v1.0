@@ -1,6 +1,6 @@
 # CrystEngKit: From CIF files to ESP, NCI, and QTAIM plots in a few clicks — a practical suite for supramolecular chemistry and crystal engineering computations.
 
-<img title="" src="images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="" width="207"> <img title="" src="images/wiki/ZfK_C2H2I2_COVER.png" alt="" width="203"> <img title="" src="images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="" width="204">
+<img title="" src="images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="Journal cover art example with molecular visualization" width="207"> <img title="" src="images/wiki/ZfK_C2H2I2_COVER.png" alt="Journal cover art example for crystal engineering" width="203"> <img title="" src="images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="Journal issue cover with computational chemistry artwork" width="204">
 
 *ESP maps, NCI plots, BCP/bonding paths, and HOMO-LUMO shapes are not only illustrations of your work but also good ideas for journal cover art*.
 
@@ -24,9 +24,9 @@ CrystEngKit is a practical GUI suite for basic quantum-chemical computations and
 Typical input formats are `.xyz`, existing ORCA `.inp` files, `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd], and 3D `.mol`, `.sdf`, or `.sd` files. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
 
 The suite is built around widely used, freely available academic/freeware programs. ORCA[^orca-site] is used for quantum-chemical calculations, and Multiwfn[^multiwfn-site] is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.
-![alt text](crystengkit_v1.0_1.png)
+![CrystEngKit-ORCA](images/wiki/crystengkit_v1.0_1.png)
 CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.
-![](images/wiki/orca-input_1.png)
+![Orca Input builder](images/wiki/orca-input_1.png)
 
 The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
@@ -36,7 +36,7 @@ The main GUI is the **ORCA Input Builder**[^orca]. It can:
 - generate manuscript-ready computation summaries for experimental sections and supporting information
 - launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.
 
-![](images/wiki/orca-input_2.png)
+![Orca Input builder. Intermolecular computation section](images/wiki/orca-input_2.png)
 
 ## Installation and Requirements
 
@@ -107,39 +107,39 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ### ORCA Input Builder
 
-![](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls.
+![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls.
 
 ### HOMO-LUMO Plotter
 
-![](images/wiki/orca_homo-lumo_2.png)Creates frontier-orbital energy diagrams[^frontier-orbitals] from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with `orca_plot`, render HOMO/LUMO surface images, and collect saved orbital views into a table.
+![HOMO-LUMO energy diagram tool](images/wiki/orca_homo-lumo_2.png)Creates frontier-orbital energy diagrams[^frontier-orbitals] from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with `orca_plot`, render HOMO/LUMO surface images, and collect saved orbital views into a table.
 
-![](images/wiki/orca_homo-lumo_3.png)
+![HOMO-LUMO molecular orbital surface table](images/wiki/orca_homo-lumo_3.png)
 
 Recent MO-surface tools include capped-sticks molecule rendering by default, optional colored wireframe or ball-and-stick molecule overlays. In the table, each saved MO tile can be reopened with its saved camera, style, and scale. The `Use view for all` button applies the selected tile's saved orientation and zoom/scale to every MO surface in the current table.
 
 ### ESP / VisMap
 
 Creates electrostatic-potential maps on electron-density surfaces[^esp]. 
-![](images/wiki/orca_vismap_output_1.png)
+![ESP map visualization in VisMap](images/wiki/orca_vismap_output_1.png)
 This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as `.wfn`, `.wfx`, or `.fchk`.
 
 ### NCI Plotter
 
-![](images/wiki/orca_nci_output_1.png)
+![NCI plotter visualization of noncovalent interaction surfaces](images/wiki/orca_nci_output_1.png)
 
 Creates noncovalent-interaction surfaces[^nci] from `.wfn` or `.wfx` files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.
 
 ### QTAIM Critical Points Viewer
 
-![](images/wiki/orca_qtaim_1.png)
+![QTAIM critical points viewer](images/wiki/orca_qtaim_1.png)
 
 Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output. The visualization settings include separate `Strong interaction CPs` and `Weak interaction CPs` checkboxes for BCP filtering, plus `CP energy` with `kJ/mol` or `kcal/mol` labels when `CPprop.txt` provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
 
-![](images/wiki/orca_qtaim_2.png)
+![QTAIM critical point visualization settings](images/wiki/orca_qtaim_2.png)
 
 ### NCI + QTAIM Overlay
 
-![](images/wiki/orca_qtaim_nci_overlay.png)
+![NCI and QTAIM overlay visualization](images/wiki/orca_qtaim_nci_overlay.png)
 
 Combines the molecular structure, NCI surface, QTAIM bond critical points, and bond paths in one PyVista view. Use it when the NCI and QTAIM output files have already been generated for the same structure.
 
@@ -149,11 +149,11 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, and 3D `.mol`/`.sdf`/`.sd` files are read directly. `.cml`, `.cdxml`, `.cdx`, `.ct`, and Gaussian Z-matrix inputs require Open Babel. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are read directly.
    
-   ![](images/wiki/orca-input_1.png)
+   ![ORCA Input Builder job setup window](images/wiki/orca-input_1.png)
 
 2. Check the geometry with `Structure preview` if needed. The preview opens in a compact PyVista window with a black background. Open Babel conversions and any generated 3D structures should be inspected before calculation; a generated 3D structure is only a starting geometry, not an optimized or experimental structure.
    
-   ![](images/wiki/orca-input_viewer_1.png)
+   ![Structure preview window for checking imported geometry](images/wiki/orca-input_viewer_1.png)
 
 3. Choose the calculation setup: functional, basis set, dispersion correction, solvent (or gas phase if no solvent is chosen or entered), charge, and multiplicity.
 
@@ -167,7 +167,7 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 Use the top-panel buttons after the ORCA job finishes:
 
-![](images/wiki/orca_top_panel_1.png)
+![ORCA Input Builder top panel analysis buttons](images/wiki/orca_top_panel_1.png)
 
 - `HOMO LUMO` for orbital energy diagrams and, from ORCA `.out` / `.gbw` pairs, MO surface images and contact sheets
 - `ESP map` for electrostatic-potential surfaces
@@ -190,13 +190,13 @@ For consistent MO surface figures, orient and zoom one saved contact-sheet tile,
 
 4. Use the viewer to check the fragment assignment.
    
-   ![](images/wiki/orca-input_viewer_2.png)
+   ![Dimer fragment assignment in the structure viewer](images/wiki/orca-input_viewer_2.png)
 
 5. Choose whether to include relaxed binding analysis and thermodynamic terms.
 
 6. Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.
-   ![](images/wiki/orca-output_3.png)
-   ![](images/wiki/orca-output_4.png)
+   ![ORCA dimer interaction energy output summary](images/wiki/orca-output_3.png)
+   ![ORCA calculation summary text for experimental section](images/wiki/orca-output_4.png)
 
 As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&id=4&state=show&order=ASC&by=name_m&method=
 
