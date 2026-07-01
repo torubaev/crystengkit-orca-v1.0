@@ -891,16 +891,25 @@ def get_top_missing_items(
         top_missing_items.append("Tkinter is missing. It is required for the graphical interface.")
 
     for row in external_info:
-        if row["required"] and not row["detected"] and not row["found_local_not_path"]:
-            if row["name"] == "ORCA" and row.get("rejected_paths"):
-                rejected = row["rejected_paths"][0]
-                top_missing_items.append(
-                    f"ORCA QM: not found. Rejected {rejected['path']}: {rejected['reason']}."
-                )
-                continue
+        if not row["required"] or row["detected"]:
+            continue
+        if row["found_local_not_path"]:
+            local_paths = row.get("local_paths", [])
+            local_path = str(local_paths[0] if local_paths else "")
             top_missing_items.append(
-                f"{row['name']} was not detected in PATH and was not found locally by this checker."
+                f"{row['name']} was found locally but is not available from PATH. "
+                f"Use this path in Settings or add its folder to PATH: {local_path}"
             )
+            continue
+        if row["name"] == "ORCA" and row.get("rejected_paths"):
+            rejected = row["rejected_paths"][0]
+            top_missing_items.append(
+                f"ORCA QM: not found. Rejected {rejected['path']}: {rejected['reason']}."
+            )
+            continue
+        top_missing_items.append(
+            f"{row['name']} was not detected in PATH and was not found locally by this checker."
+        )
 
     return top_missing_items
 
@@ -1041,11 +1050,9 @@ def render_short_report(
 
     top_missing_items = get_top_missing_items(package_info, external_info)
 
-    # The first visible status ignores "found locally but not PATH" because it shows
-    # only components that are not found locally.
     if top_missing_items:
         main_status = "Missing components found"
-        main_message = "These components were not found locally by this checker."
+        main_message = "These components need attention before the full workflow is ready."
         status_class = "bad"
     else:
         main_status = "No missing components"
