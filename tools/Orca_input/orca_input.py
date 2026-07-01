@@ -53,6 +53,17 @@ def wiki_url() -> str:
 
 def open_readme_or_wiki():
     webbrowser.open(wiki_url(), new=2)
+
+
+ENDNOTE_CITATION_RE = re.compile(r"\s*\[[^\[\]\r\n]{1,180}#[0-9]+[^\[\]\r\n]*\]")
+
+
+def remove_endnote_citation_tokens(text: str) -> str:
+    """Remove temporary EndNote citation placeholders from generated prose."""
+    cleaned = ENDNOTE_CITATION_RE.sub("", text)
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    cleaned = re.sub(r" {2,}", " ", cleaned)
+    return cleaned
 ICON_DIR = TOOLS_ROOT / "images"
 ORCA_ICON_PATH = ICON_DIR / "tr_orca_icon.png"
 HOMO_LUMO_ICON_PATH = ICON_DIR / "tr_homo_lumo_icon.png"
@@ -4470,9 +4481,11 @@ class App(tk.Tk):
                     color = "lightgray"
                 add_ball_and_stick_atom(pv_module, plotter, sym, points[idx], color=color, name=f"fragment_view_atom_{idx}")
 
+            a_formula = formula_for_indices(structure, self.fragment_a_indices)
+            b_formula = formula_for_indices(structure, self.fragment_b_indices)
             plotter.add_text(
-                "Blue = fragment A\n"
-                "Red = fragment B",
+                f"Blue = fragment A ({a_formula})\n"
+                f"Red = fragment B ({b_formula})",
                 position="upper_left",
                 font_size=10,
                 name="color_code_text",
@@ -4965,7 +4978,7 @@ class App(tk.Tk):
             lines.extend(["", ""] + self._interaction_summary_lines(interaction_summary))
         elif interaction_error:
             lines.extend(["", "", "Intermolecular interaction results", "", f"Interaction workflow failed: {interaction_error}"])
-        text = "\n".join(lines) + "\n"
+        text = remove_endnote_citation_tokens("\n".join(lines) + "\n")
         txt_path.write_text(text, encoding="utf-8")
         return txt_path, text
 

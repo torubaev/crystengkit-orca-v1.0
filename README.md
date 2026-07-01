@@ -40,51 +40,61 @@ The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
 ## Installation and Requirements
 
-For most users, start with the provided installer. It checks the software already present on your computer, can offer to install Python on Windows if Python 3.9+ is missing, can create a local `.venv` environment for CrystEngKit, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.
+### Recommended: Windows web installer
 
-The Windows `.exe` installer includes checkbox options for Python setup. If selected, it tries to install Python 3.12 with `winget` only when no Python 3.9+ interpreter is found, and it can create a project-local `.venv` for the Python packages. The manual Windows and Linux/macOS launchers still need Python first; if Python is not installed yet, they stop and show where to download or install Python. After Python 3.9 or newer is installed, run the checker again.
+For most Windows users, use the web `.exe` installer from the latest GitHub release:
 
-The Windows web installer downloads one exact Git commit and verifies the repository archive checksum before installing it. Public installer builds are expected to be code-signed; unsigned builds are intended only for local testing.
+<https://github.com/torubaev/crystengkit-orca-v1.0/releases>
 
-On Windows, run:
+Download the newest `CrystEngKit-ORCA-Setup-*_web.exe`, run it, and follow the setup window. The installer prepares CrystEngKit, checks for Python and required Python packages, and looks for ORCA and Multiwfn on your computer.
+
+If Windows warns about running a downloaded app, check that the file came from the official release page above before continuing. If your institution blocks downloaded installers, ask your local IT support to approve the file from the GitHub release page.
+
+CrystEngKit uses external chemistry programs that must be installed separately:
+
+- **[ORCA](https://www.faccts.de/orca/)**, for quantum-chemical calculations
+- **[orca_2aim](https://www.faccts.de/orca/)**, from the ORCA package, for creating wavefunction files
+- **[Multiwfn](http://sobereva.com/multiwfn/)**, for ESP, NCI, and QTAIM analysis
+
+The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again.
+
+### Manual installation
+
+Use manual installation only if the web installer is not suitable for your computer, or if you are installing on Linux or macOS.
+
+You need:
+
+- **Python 3.9 or newer**
+- the Python packages listed in `requirements.txt`
+- **[ORCA](https://www.faccts.de/orca/)**, **[orca_2aim](https://www.faccts.de/orca/)**, and **[Multiwfn](http://sobereva.com/multiwfn/)** for the full ESP, NCI, and QTAIM workflow
+
+After downloading or cloning the repository, run the checker.
+
+On Windows:
 
 ```bash
 install\install.bat
 ```
 
-If you already downloaded or cloned the repository on macOS or Linux, run:
+On macOS or Linux:
 
 ```bash
 sh install/run_checker.sh
 ```
 
-For a verified Linux web install from GitHub, use the commit and SHA-256 values published with the release:
+If you prefer to install the Python packages yourself:
 
 ```bash
-REPO_REF=COMMIT_SHA REPO_SHA256=ARCHIVE_SHA256 \
-  sh packaging/linux/install_crystengkit_orca.sh
+pip install -r requirements.txt
 ```
 
-This installs into `~/.local/share/CrystEngKit-ORCA`, creates a `.venv`, runs the checker, and creates a `crystengkit-orca` launcher in `~/.local/bin`.
-
-If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the installer again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The installer looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.
-
-The full suite uses:
-
-- **Python 3.9+**
-- **ORCA**, available free of charge for academic users through the official ORCA/FACCTs pages[^orca-site]
-- **orca_2aim**, for generating `.wfn` / `.wfx` files after ORCA runs
-- **Multiwfn**, for ESP, NCI, and QTAIM analysis[^multiwfn-site]
-
-The installer does not install ORCA or Multiwfn automatically, because these programs have their own licenses and official download routes. If you prefer manual Python setup, install the main Python packages with:
+or:
 
 ```bash
 pip install numpy pyvista matplotlib periodictable gemmi Pillow
 ```
 
-The same package list is available in `requirements.txt`.
-
-`numpy` and `pyvista` are needed for structure preview and 3D plotting. `matplotlib` is used by the HOMO-LUMO energy diagram tool. `periodictable` supports the 3D NCI molecular viewer. `gemmi` is recommended for CIF handling. `Pillow` is used by the HOMO-LUMO MO surface tools for saved images, thumbnails, and contact sheets.
+When the checker finishes, start the main program as described below.
 
 ## Starting the Suite
 
