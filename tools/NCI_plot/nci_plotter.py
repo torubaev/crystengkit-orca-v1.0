@@ -279,6 +279,15 @@ def configure_builder_ui_style(widget: tk.Misc) -> None:
     style.configure("TCheckbutton", background="#f8fafc", padding=(1, 2), font=("Segoe UI", 9))
     style.configure("TLabel", background="#f8fafc", foreground="#263348", padding=(1, 1), font=("Segoe UI", 9))
     style.configure("Muted.TLabel", background="#f4f6f9", foreground="#53627a", font=("Segoe UI", 9))
+    style.configure(
+        "Blue.Horizontal.TProgressbar",
+        troughcolor="#dbeafe",
+        background="#2563eb",
+        lightcolor="#3b82f6",
+        darkcolor="#1d4ed8",
+        bordercolor="#93c5fd",
+        thickness=14,
+    )
 
 
 def keep_entry_end_visible(entry: tk.Entry, variable: Optional[tk.Variable] = None) -> tk.Entry:
@@ -1154,6 +1163,7 @@ class NCIPlotterApp:
             variable=self.progress_value,
             maximum=100.0,
             mode="determinate",
+            style="Blue.Horizontal.TProgressbar",
         )
         self.progress_bar.pack(fill="x", pady=(4, 0))
 
