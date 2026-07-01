@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -93,6 +94,29 @@ DEFAULT_IMAGE_PRESET = "Paper 300 dpi: 3000 x 2250 px"
 
 SUPPORTED_WAVEFUNCTION_EXTS = {".wfn", ".wfx"}
 REJECTED_EXTS = {".out", ".log"}
+ELEMENT_SYMBOLS = {
+    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
+    "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr",
+    "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe",
+    "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu",
+    "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac",
+    "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh",
+    "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og",
+}
+
+
+def element_symbol_from_wfn_label(label: str) -> Optional[str]:
+    match = re.match(r"^([A-Za-z]{1,3})\d*$", label.strip())
+    if not match:
+        return None
+    letters = match.group(1)
+    candidates = [letters[:1].upper() + letters[1:].lower()]
+    if len(letters) >= 2:
+        candidates.append(letters[:1].upper() + letters[1:2].lower())
+    for candidate in candidates:
+        if candidate in ELEMENT_SYMBOLS:
+            return candidate
+    return None
 
 
 def find_multiwfn() -> Optional[str]:
@@ -937,6 +961,9 @@ class NCIPlotterApp:
         )
 
         self.log_queue: queue.Queue[str] = queue.Queue()
+        self.progress_status = tk.StringVar(value="Status: Idle")
+        self.progress_value = tk.DoubleVar(value=0.0)
+        self.progress_percent_value = 0.0
 
         self.rdg_cube: Optional[CubeData] = None
         self.signrho_cube: Optional[CubeData] = None
@@ -945,6 +972,7 @@ class NCIPlotterApp:
         self.auto_start_requested = bool(initial_wavefunction_path)
         self.generation_lock = threading.Lock()
         self.generate_button: Optional[ttk.Button] = None
+        self.progress_bar: Optional[ttk.Progressbar] = None
 
         self.plotter = None
         self.header_icon: Optional[tk.PhotoImage] = None
@@ -1101,8 +1129,11 @@ class NCIPlotterApp:
         gen_frame = ttk.LabelFrame(main, text="NCI data generation", padding=8)
         gen_frame.pack(fill="x", pady=(0, 8))
 
+        gen_buttons = ttk.Frame(gen_frame)
+        gen_buttons.pack(fill="x")
+
         self.generate_button = ttk.Button(
-            gen_frame,
+            gen_buttons,
             text="Generate NCI data",
             command=self.start_generate_nci,
             style="Primary.TButton",
@@ -1110,10 +1141,21 @@ class NCIPlotterApp:
         self.generate_button.pack(side="left", padx=(0, 6))
 
         ttk.Button(
-            gen_frame,
+            gen_buttons,
             text="Edit Multiwfn command template",
             command=self.edit_template_dialog,
         ).pack(side="left", padx=6)
+
+        progress_row = ttk.Frame(gen_frame)
+        progress_row.pack(fill="x", pady=(8, 0))
+        ttk.Label(progress_row, textvariable=self.progress_status).pack(side="left")
+        self.progress_bar = ttk.Progressbar(
+            gen_frame,
+            variable=self.progress_value,
+            maximum=100.0,
+            mode="determinate",
+        )
+        self.progress_bar.pack(fill="x", pady=(4, 0))
 
         control_frame = ttk.LabelFrame(main, text="Visualization controls", padding=8)
         control_frame.pack(fill="x", pady=(0, 8))
@@ -1248,6 +1290,30 @@ class NCIPlotterApp:
             self.log_text.see("end")
         self.root.after(150, self.process_log_queue)
 
+    def set_progress(self, percent: float, status: Optional[str] = None, allow_decrease: bool = False) -> None:
+        def apply() -> None:
+            value = max(0.0, min(100.0, float(percent)))
+            if not allow_decrease:
+                value = max(self.progress_percent_value, value)
+            self.progress_percent_value = value
+            self.progress_value.set(value)
+            if status is not None:
+                self.progress_status.set(f"Status: {status} ({value:5.1f} %)")
+
+        self.root.after(0, apply)
+
+    @staticmethod
+    def format_elapsed(seconds: float) -> str:
+        elapsed = max(0, int(seconds))
+        hh = elapsed // 3600
+        mm = (elapsed % 3600) // 60
+        ss = elapsed % 60
+        return f"{hh:02d}:{mm:02d}:{ss:02d}"
+
+    @staticmethod
+    def estimated_cube_generation_progress(elapsed_seconds: float) -> float:
+        return min(88.0, 25.0 + max(0.0, elapsed_seconds) * 0.7)
+
     def browse_wavefunction(self) -> None:
         path = filedialog.askopenfilename(
             title="Select wavefunction file",
@@ -1373,6 +1439,7 @@ class NCIPlotterApp:
         self.signrho_cube = None
         self.rdg_cube_path = None
         self.signrho_cube_path = None
+        self.set_progress(0.0, "Starting NCI generation", allow_decrease=True)
         if self.generate_button is not None:
             self.generate_button.configure(state="disabled")
         thread = threading.Thread(
@@ -1403,25 +1470,63 @@ class NCIPlotterApp:
         batch_text = "\n" + "\n".join(commands) + "\n"
         return batch_text, commands
 
+    def prepare_wavefunction_for_multiwfn(self, wf: Path, outdir: Path) -> Path:
+        if wf.suffix.lower() != ".wfn":
+            return wf
+
+        lines = wf.read_text(encoding="utf-8", errors="replace").splitlines()
+        changed = 0
+        prepared_lines: list[str] = []
+        centre_line_re = re.compile(r"^(\s*)(\S+)(\s+\(CENTRE\s+\d+\).*)$", re.IGNORECASE)
+
+        for line in lines:
+            match = centre_line_re.match(line)
+            if not match or "CHARGE" not in line.upper():
+                prepared_lines.append(line)
+                continue
+
+            leading, label, rest = match.groups()
+            symbol = element_symbol_from_wfn_label(label)
+            if symbol and symbol != label:
+                prepared_lines.append(f"{leading}{symbol:<{len(label)}}{rest}")
+                changed += 1
+            else:
+                prepared_lines.append(line)
+
+        if not changed:
+            return wf
+
+        prepared = outdir / f"{wf.stem}_multiwfn_labels.wfn"
+        prepared.write_text("\n".join(prepared_lines) + "\n", encoding="utf-8")
+        self.log(
+            f"Prepared Multiwfn-compatible WFN copy with simplified atom labels: {prepared} "
+            f"({changed} label(s) adjusted; original file unchanged)."
+        )
+        return prepared
+
     def generate_nci_worker(self, wf: Path, mwfn: Path, outdir: Path, auto_open: bool = False) -> None:
         try:
+            self.set_progress(5.0, "Preparing output folder")
             outdir.mkdir(parents=True, exist_ok=True)
             self.output_dir.set(str(outdir))
 
             self.log(f"Output folder: {outdir}")
 
+            self.set_progress(8.0, "Checking for existing cube files")
             existing_rdg, existing_signrho = self.detect_nci_cubes(outdir)
             if not (existing_rdg and existing_signrho) and wf.parent != outdir:
                 existing_rdg, existing_signrho = self.detect_nci_cubes(wf.parent)
                 if existing_rdg and existing_signrho:
                     self.output_dir.set(str(wf.parent))
             if existing_rdg and existing_signrho:
+                self.set_progress(80.0, "Reusing existing cube files")
                 self.log("Existing NCI cube files were found in the output folder.")
                 self.log(f"Reusing RDG cube: {existing_rdg}")
                 self.log(f"Reusing sign(lambda2)rho cube: {existing_signrho}")
                 self.root.after(0, self.load_cubes_and_plot)
                 return
 
+            self.set_progress(12.0, "Preparing Multiwfn batch input")
             self.log("No existing NCI cube pair was found. Running Multiwfn to generate them.")
 
             template_text = self.command_template.get()
@@ -1444,34 +1549,50 @@ class NCIPlotterApp:
 
             script_path = outdir / "multiwfn_nci_input.txt"
             script_path.write_text(batch_text, encoding="utf-8")
+            stdout_path = outdir / "multiwfn_stdout.txt"
+            stderr_path = outdir / "multiwfn_stderr.txt"
 
+            self.set_progress(16.0, "Preparing wavefunction for Multiwfn")
+            multiwfn_wf = self.prepare_wavefunction_for_multiwfn(wf, outdir)
+
+            self.set_progress(20.0, "Starting Multiwfn cube generation")
             self.log("Running Multiwfn in batch mode...")
             self.log(f"Command script: {script_path}")
             self.log("Effective command sequence: " + " -> ".join(commands))
 
-            cmd = [str(mwfn), str(wf)]
+            cmd = [str(mwfn), str(multiwfn_wf)]
 
             with script_path.open("r", encoding="utf-8") as stdin:
-                proc = subprocess.run(
-                    cmd,
-                    stdin=stdin,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=str(outdir),
-                    text=True,
-                    errors="replace",
-                    shell=False,
-                )
+                with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_file, stderr_path.open(
+                    "w", encoding="utf-8", errors="replace"
+                ) as stderr_file:
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdin=stdin,
+                        stdout=stdout_file,
+                        stderr=stderr_file,
+                        cwd=str(outdir),
+                        text=True,
+                        shell=False,
+                    )
+                    started = time.monotonic()
+                    while True:
+                        code = proc.poll()
+                        elapsed = time.monotonic() - started
+                        self.set_progress(
+                            self.estimated_cube_generation_progress(elapsed),
+                            f"Generating NCI cubes with Multiwfn, elapsed {self.format_elapsed(elapsed)}",
+                        )
+                        if code is not None:
+                            break
+                        time.sleep(1.0)
 
-            stdout_path = outdir / "multiwfn_stdout.txt"
-            stderr_path = outdir / "multiwfn_stderr.txt"
-            stdout_path.write_text(proc.stdout or "", encoding="utf-8", errors="replace")
-            stderr_path.write_text(proc.stderr or "", encoding="utf-8", errors="replace")
-
+            self.set_progress(88.0, "Multiwfn finished")
             self.log("Multiwfn finished.")
             self.log(f"Multiwfn stdout saved to: {stdout_path}")
             self.log(f"Multiwfn stderr saved to: {stderr_path}")
 
+            self.set_progress(90.0, "Detecting generated cube files")
             rdg, signrho = self.detect_nci_cubes(outdir)
 
             if proc.returncode != 0:
@@ -1500,6 +1621,7 @@ class NCIPlotterApp:
             self.root.after(0, self.load_cubes_and_plot)
 
         except Exception as exc:
+            self.set_progress(0.0, "Generation failed", allow_decrease=True)
             self.log(f"ERROR: {exc}")
             self.root.after(0, lambda e=exc: messagebox.showerror("NCI generation failed", str(e)))
         finally:
@@ -1553,6 +1675,7 @@ class NCIPlotterApp:
 
     def load_cubes_and_plot(self) -> None:
         try:
+            self.set_progress(92.0, "Loading cube files")
             rdg_path, signrho_path = self.detect_nci_cubes(Path(self.output_dir.get().strip()))
             if rdg_path is None or signrho_path is None:
                 raise FileNotFoundError(
@@ -1579,9 +1702,12 @@ class NCIPlotterApp:
 
             self.log(f"Loaded RDG cube: {rdg_path}")
             self.log(f"Loaded sign(lambda2)rho cube: {signrho_path}")
+            self.set_progress(96.0, "Rendering NCI plot")
             self.update_plot()
+            self.set_progress(100.0, "Ready")
 
         except Exception as exc:
+            self.set_progress(0.0, "Cube loading failed", allow_decrease=True)
             self.log(f"ERROR: {exc}")
             messagebox.showerror("Cube loading failed", str(exc))
 
