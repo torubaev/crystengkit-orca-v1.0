@@ -78,6 +78,9 @@ MONITOR_POLL_DELAY_MS = 1000
 MONITOR_CATCHUP_DELAY_MS = 50
 MONITOR_BUFFER_MAX_CHARS = 750000
 MONITOR_BUFFER_TRIM_TO_CHARS = 600000
+FILE_SEARCH_MAX_SECONDS = 1.5
+FILE_SEARCH_MAX_MATCHES = 80
+FILE_SEARCH_MAX_DEPTH = 4
 GNOME_ORCA_REJECTION_MARKERS = (
     "EVENT MANAGER",
     "PYATSPI",
@@ -2239,6 +2242,46 @@ def split_cli_args(arg_string: str) -> List[str]:
         return text.split()
 
 
+def bounded_find_files(
+    root: Path,
+    names: Optional[Tuple[str, ...]] = None,
+    pattern_suffix: str = "",
+    max_depth: int = FILE_SEARCH_MAX_DEPTH,
+    max_matches: int = FILE_SEARCH_MAX_MATCHES,
+    max_seconds: float = FILE_SEARCH_MAX_SECONDS,
+) -> List[Path]:
+    root = Path(root)
+    if not root.is_dir():
+        return []
+    expected = {name.lower() for name in (names or ())}
+    suffix = pattern_suffix.lower()
+    start = time.monotonic()
+    matches: List[Path] = []
+    root_depth = len(root.parts)
+    for current, dirs, files in os.walk(root, followlinks=False):
+        if time.monotonic() - start > max_seconds or len(matches) >= max_matches:
+            break
+        current_path = Path(current)
+        depth = max(0, len(current_path.parts) - root_depth)
+        if depth >= max_depth:
+            dirs[:] = []
+        else:
+            dirs[:] = [
+                item for item in dirs
+                if item not in {"$Recycle.Bin", "System Volume Information", "__pycache__", ".git"}
+            ]
+        for filename in files:
+            lower = filename.lower()
+            if expected and lower not in expected:
+                continue
+            if suffix and not lower.endswith(suffix):
+                continue
+            matches.append(current_path / filename)
+            if len(matches) >= max_matches:
+                break
+    return matches
+
+
 def find_orca_candidates() -> List[str]:
     candidates: List[str] = []
     seen = set()
@@ -2303,10 +2346,8 @@ def find_orca_candidates() -> List[str]:
         if direct2.exists():
             add(str(direct2))
         try:
-            for executable_name in ("orca.exe", "orca"):
-                for p in root.rglob(executable_name):
-                    add(str(p))
-                    break
+            for p in bounded_find_files(root, names=("orca.exe", "orca")):
+                add(str(p))
         except Exception:
             pass
 
@@ -2373,10 +2414,8 @@ def find_orca_candidates_with_rejections() -> Tuple[List[str], List[Tuple[str, s
             if direct.exists():
                 add(str(direct))
         try:
-            for executable_name in ("orca.exe", "orca"):
-                for p in root.rglob(executable_name):
-                    add(str(p))
-                    break
+            for p in bounded_find_files(root, names=("orca.exe", "orca")):
+                add(str(p))
         except Exception:
             pass
 
@@ -3909,12 +3948,18 @@ class App(tk.Tk):
             if same_stem.is_file():
                 candidates.append((1, same_stem))
             try:
-                candidates.extend((2, path) for path in source_dir.rglob(f"{source.stem}.out") if path.is_file())
+                candidates.extend(
+                    (2, path) for path in bounded_find_files(source_dir, names=(f"{source.stem}.out",))
+                    if path.is_file()
+                )
             except Exception:
                 pass
 
         try:
-            candidates.extend((3, path) for path in source_dir.rglob("*.out") if path.is_file())
+            candidates.extend(
+                (3, path) for path in bounded_find_files(source_dir, pattern_suffix=".out")
+                if path.is_file()
+            )
         except Exception:
             pass
         return candidates
@@ -5017,12 +5062,18 @@ class App(tk.Tk):
             if same_stem.is_file():
                 candidates.append((1, same_stem))
             try:
-                candidates.extend((2, path) for path in source_dir.rglob(f"{source.stem}_summary.txt") if path.is_file())
+                candidates.extend(
+                    (2, path) for path in bounded_find_files(source_dir, names=(f"{source.stem}_summary.txt",))
+                    if path.is_file()
+                )
             except Exception:
                 pass
 
         try:
-            candidates.extend((3, path) for path in source_dir.rglob("*_summary.txt") if path.is_file())
+            candidates.extend(
+                (3, path) for path in bounded_find_files(source_dir, pattern_suffix="_summary.txt")
+                if path.is_file()
+            )
         except Exception:
             pass
         return candidates
