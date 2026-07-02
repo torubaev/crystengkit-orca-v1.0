@@ -112,7 +112,7 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ### ORCA Input Builder
 
-![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls.
+![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls. The `Show summary` button displays the calculation summary in the `Job monitor` view, including summaries found for loaded existing `.inp` files.
 
 ### HOMO-LUMO Plotter
 
@@ -166,7 +166,7 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 5. Use `Input preview` in the shared right panel to generate or refresh the current `.inp` text, then use `Save input file`.
 
-6. Click `Run Orca`. The shared right panel switches automatically to `Job monitor`, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available.
+6. Click `Run Orca`. The shared right panel switches automatically to `Job monitor`, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available. To view an existing or generated summary, click `Show summary`; the text is shown in the `Job monitor` view.
 
 ### Make Figures After a Calculation
 

@@ -238,7 +238,8 @@
       <h1>CrystEngKit Documentation</h1>
       <nav>
         <a class="nav-link level-2" href="#overview">Overview</a>
-<a class="nav-link level-2" href="#installation-and-requirements">Installation and Requirements</a>
+<details class="nav-group"><summary><a href="#installation-and-requirements">Installation and Requirements</a></summary><div class="nav-children"><a class="nav-link level-3" href="#recommended-windows-web-installer">Recommended: Windows web installer</a>
+<a class="nav-link level-3" href="#manual-installation">Manual installation</a></div></details>
 <a class="nav-link level-2" href="#starting-the-suite">Starting the Suite</a>
 <details class="nav-group" open><summary><a href="#tools">Tools</a></summary><div class="nav-children"><a class="nav-link level-3" href="#orca-input-builder">ORCA Input Builder</a>
 <a class="nav-link level-3" href="#homo-lumo-plotter">HOMO-LUMO Plotter</a>
@@ -291,29 +292,36 @@
 </ul>
 <figure><img src="../images/wiki/orca-input_2.png" alt="Orca Input builder. Intermolecular computation section"></figure>
 <h2 id="installation-and-requirements">Installation and Requirements</h2>
-<p>For most users, start with the provided installer. It checks the software already present on your computer, can offer to install Python on Windows if Python 3.9+ is missing, can create a local <code>.venv</code> environment for CrystEngKit, offers to add missing Python packages, searches for ORCA and Multiwfn executables, and creates a short installation report.</p>
-<p>The Windows <code>.exe</code> installer includes checkbox options for Python setup. If selected, it tries to install Python 3.12 with <code>winget</code> only when no Python 3.9+ interpreter is found, and it can create a project-local <code>.venv</code> for the Python packages. The manual Windows and Linux/macOS launchers still need Python first; if Python is not installed yet, they stop and show where to download or install Python. After Python 3.9 or newer is installed, run the checker again.</p>
-<p>The Windows web installer downloads one exact Git commit and verifies the repository archive checksum before installing it. Public installer builds are expected to be code-signed; unsigned builds are intended only for local testing.</p>
-<p>On Windows, run:</p>
-<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>install\install.bat</code></pre></div>
-<p>If you already downloaded or cloned the repository on macOS or Linux, run:</p>
-<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>sh install/run_checker.sh</code></pre></div>
-<p>For a verified Linux web install from GitHub, use the commit and SHA-256 values published with the release:</p>
-<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>REPO_REF=COMMIT_SHA REPO_SHA256=ARCHIVE_SHA256 \
-  sh packaging/linux/install_crystengkit_orca.sh</code></pre></div>
-<p>This installs into <code>~/.local/share/CrystEngKit-ORCA</code>, creates a <code>.venv</code>, runs the checker, and creates a <code>crystengkit-orca</code> launcher in <code>~/.local/bin</code>.</p>
-<p>If the installer reports that ORCA, orca_2aim, or Multiwfn is missing, install the missing program from its official source and then run the installer again. These external chemistry programs may need separate download, license acceptance, or PATH setup. The installer looks in PATH, common installation folders, user folders, and the system disk root using a bounded search; if it finds ORCA or Multiwfn outside PATH, it reports the location so you can use it in Settings.</p>
-<p>The full suite uses:</p>
+<h3 id="recommended-windows-web-installer">Recommended: Windows web installer</h3>
+<p>For most Windows users, use the web <code>.exe</code> installer from the latest GitHub release:</p>
+<p>&lt;https://github.com/torubaev/crystengkit-orca-v1.0/releases&gt;</p>
+<p>Download the newest <code>CrystEngKit-ORCA-Setup-*_web.exe</code>, run it, and follow the setup window. The installer prepares CrystEngKit, checks for Python and required Python packages, and looks for ORCA and Multiwfn on your computer.</p>
+<p>If Windows warns about running a downloaded app, check that the file came from the official release page above before continuing. If your institution blocks downloaded installers, ask your local IT support to approve the file from the GitHub release page.</p>
+<p>CrystEngKit uses external chemistry programs that must be installed separately:</p>
 <ul>
-<li><strong>Python 3.9+</strong></li>
-<li><strong>ORCA</strong>, available free of charge for academic users through the official ORCA/FACCTs pages<sup><a href="#ref-orca-site">orca-site</a></sup></li>
-<li><strong>orca_2aim</strong>, for generating <code>.wfn</code> / <code>.wfx</code> files after ORCA runs</li>
-<li><strong>Multiwfn</strong>, for ESP, NCI, and QTAIM analysis<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup></li>
+<li><strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">ORCA</a></strong>, for quantum-chemical calculations</li>
+<li><strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">orca_2aim</a></strong>, from the ORCA package, for creating wavefunction files</li>
+<li><strong><a href="http://sobereva.com/multiwfn/" target="_blank" rel="noopener noreferrer">Multiwfn</a></strong>, for ESP, NCI, and QTAIM analysis</li>
 </ul>
-<p>The installer does not install ORCA or Multiwfn automatically, because these programs have their own licenses and official download routes. If you prefer manual Python setup, install the main Python packages with:</p>
+<p>The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again.</p>
+<h3 id="manual-installation">Manual installation</h3>
+<p>Use manual installation only if the web installer is not suitable for your computer, or if you are installing on Linux or macOS.</p>
+<p>You need:</p>
+<ul>
+<li><strong>Python 3.9 or newer</strong></li>
+<li>the Python packages listed in <code>requirements.txt</code></li>
+<li><strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">ORCA</a></strong>, <strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">orca_2aim</a></strong>, and <strong><a href="http://sobereva.com/multiwfn/" target="_blank" rel="noopener noreferrer">Multiwfn</a></strong> for the full ESP, NCI, and QTAIM workflow</li>
+</ul>
+<p>After downloading or cloning the repository, run the checker.</p>
+<p>On Windows:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>install\install.bat</code></pre></div>
+<p>On macOS or Linux:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>sh install/run_checker.sh</code></pre></div>
+<p>If you prefer to install the Python packages yourself:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>pip install -r requirements.txt</code></pre></div>
+<p>or:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>pip install numpy pyvista matplotlib periodictable gemmi Pillow</code></pre></div>
-<p>The same package list is available in <code>requirements.txt</code>.</p>
-<p><code>numpy</code> and <code>pyvista</code> are needed for structure preview and 3D plotting. <code>matplotlib</code> is used by the HOMO-LUMO energy diagram tool. <code>periodictable</code> supports the 3D NCI molecular viewer. <code>gemmi</code> is recommended for CIF handling. <code>Pillow</code> is used by the HOMO-LUMO MO surface tools for saved images, thumbnails, and contact sheets.</p>
+<p>When the checker finishes, start the main program as described below.</p>
 <h2 id="starting-the-suite">Starting the Suite</h2>
 <p>Launch the main ORCA Builder with:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python tools/Orca_input/orca_input.py</code></pre></div>
@@ -322,7 +330,7 @@
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
 <figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder main working window"></figure>
-<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls.</p>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls. The <code>Show summary</code> button displays the calculation summary in the <code>Job monitor</code> view, including summaries found for loaded existing <code>.inp</code> files.</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt="HOMO-LUMO energy diagram tool"></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
@@ -362,7 +370,7 @@
 <li>Use <code>Input preview</code> in the shared right panel to generate or refresh the current <code>.inp</code> text, then use <code>Save input file</code>.</li>
 </ol>
 <ol start="6">
-<li>Click <code>Run Orca</code>. The shared right panel switches automatically to <code>Job monitor</code>, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available.</li>
+<li>Click <code>Run Orca</code>. The shared right panel switches automatically to <code>Job monitor</code>, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available. To view an existing or generated summary, click <code>Show summary</code>; the text is shown in the <code>Job monitor</code> view.</li>
 </ol>
 <h3 id="make-figures-after-a-calculation">Make Figures After a Calculation</h3>
 <p>Use the top-panel buttons after the ORCA job finishes:</p>

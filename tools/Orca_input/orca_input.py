@@ -73,6 +73,11 @@ QTAIM_ICON_PATH = ICON_DIR / "qtaim.png"
 BUILDER_ICON_ICO_PATH = ICON_DIR / "orca_builder.ico"
 HARTREE_TO_KCAL_MOL = 627.509474
 HARTREE_TO_KJ_MOL = 2625.49962
+MONITOR_READ_CHARS_PER_POLL = 65536
+MONITOR_POLL_DELAY_MS = 1000
+MONITOR_CATCHUP_DELAY_MS = 50
+MONITOR_BUFFER_MAX_CHARS = 750000
+MONITOR_BUFFER_TRIM_TO_CHARS = 600000
 GNOME_ORCA_REJECTION_MARKERS = (
     "EVENT MANAGER",
     "PYATSPI",
@@ -2467,6 +2472,19 @@ class ModeTextProxy:
     def _set_buffer_from_widget(self) -> None:
         self.app.output_buffers[self.mode] = self._widget().get("1.0", "end-1c")
 
+    def _set_buffer(self, text: str) -> None:
+        if self.mode == "monitor" and len(text) > MONITOR_BUFFER_MAX_CHARS:
+            trim_start = max(0, len(text) - MONITOR_BUFFER_TRIM_TO_CHARS)
+            newline = text.find("\n", trim_start)
+            if newline != -1:
+                trim_start = newline + 1
+            text = "[Monitor truncated older output to keep the GUI responsive. Full ORCA output remains in the .out file.]\n" + text[trim_start:]
+            if self._is_active():
+                self._widget().delete("1.0", "end")
+                self._widget().insert("1.0", text)
+                self._widget().see("end")
+        self.app.output_buffers[self.mode] = text
+
     def delete(self, start, end=None):
         if self._is_active():
             self._widget().delete(start, end)
@@ -2475,15 +2493,14 @@ class ModeTextProxy:
             self.app.output_buffers[self.mode] = ""
 
     def insert(self, index, chars, *args):
+        chars = str(chars)
         if self._is_active():
             self._widget().insert(index, chars, *args)
-            self._set_buffer_from_widget()
-            return
         current = self.app.output_buffers.get(self.mode, "")
         if str(index) == "1.0":
-            self.app.output_buffers[self.mode] = str(chars) + current
+            self._set_buffer(chars + current)
         else:
-            self.app.output_buffers[self.mode] = current + str(chars)
+            self._set_buffer(current + chars)
 
     def get(self, start, end=None):
         if self._is_active():
@@ -4986,6 +5003,68 @@ class App(tk.Tk):
         out_file = Path(out_path)
         return out_file.parent / f"{out_file.stem}_summary.txt"
 
+    def _summary_candidates_for_source(self, source: Path) -> List[Tuple[int, Path]]:
+        candidates: List[Tuple[int, Path]] = []
+        if not source:
+            return candidates
+
+        source_dir = source if source.is_dir() else source.parent
+        if not source_dir.is_dir():
+            return candidates
+
+        if source.name and not source.is_dir():
+            same_stem = source_dir / f"{source.stem}_summary.txt"
+            if same_stem.is_file():
+                candidates.append((1, same_stem))
+            try:
+                candidates.extend((2, path) for path in source_dir.rglob(f"{source.stem}_summary.txt") if path.is_file())
+            except Exception:
+                pass
+
+        try:
+            candidates.extend((3, path) for path in source_dir.rglob("*_summary.txt") if path.is_file())
+        except Exception:
+            pass
+        return candidates
+
+    def _best_summary_path(self, candidates: List[Tuple[int, Path]]) -> str:
+        if not candidates:
+            raise ValueError("No project summary file was found yet.")
+        unique: Dict[str, Tuple[int, Path]] = {}
+        for priority, path in candidates:
+            key = str(path.resolve())
+            if key not in unique or priority < unique[key][0]:
+                unique[key] = (priority, path)
+        best_priority = min(priority for priority, _path in unique.values())
+        priority_matches = [path for priority, path in unique.values() if priority == best_priority]
+        newest = max(priority_matches, key=lambda p: p.stat().st_mtime)
+        return str(newest)
+
+    def _available_project_summary_path(self) -> str:
+        candidates: List[Tuple[int, Path]] = []
+        if self.last_output_path:
+            summary_path = self._project_summary_path(self.last_output_path)
+            if summary_path.is_file():
+                candidates.append((0, summary_path))
+        if self.current_input_path:
+            candidates.extend(self._summary_candidates_for_source(Path(self.current_input_path)))
+        selected_text = self.path_var.get().strip().strip('"')
+        if selected_text:
+            candidates.extend(self._summary_candidates_for_source(Path(selected_text)))
+        return self._best_summary_path(candidates)
+
+    def _project_summary_search_hint(self) -> str:
+        source_text = self.current_input_path or self.path_var.get().strip().strip('"')
+        if not source_text:
+            return "No input file is currently selected."
+        source = Path(source_text)
+        expected = source.parent / f"{source.stem}_summary.txt"
+        return (
+            f"Loaded input:\n{source}\n\n"
+            f"Expected matching summary:\n{expected}\n\n"
+            "The summary must be in the same folder as the loaded input, or in a subfolder below it."
+        )
+
     def _interaction_root_for_output(self, dimer_out_path: str) -> Path:
         out_file = Path(dimer_out_path)
         return out_file.parent / f"{out_file.stem}_interaction_jobs"
@@ -5602,23 +5681,25 @@ class App(tk.Tk):
             self.active_run_context = None
             messagebox.showerror("Run error", str(exc))
 
-    def _schedule_monitor_poll(self):
+    def _schedule_monitor_poll(self, delay_ms: int = MONITOR_POLL_DELAY_MS):
         if self.monitor_job_id:
             try:
                 self.after_cancel(self.monitor_job_id)
             except Exception:
                 pass
-        self.monitor_job_id = self.after(1000, self.poll_job_monitor)
+        self.monitor_job_id = self.after(delay_ms, self.poll_job_monitor)
 
     def poll_job_monitor(self):
         self.monitor_job_id = None
         out_path = self.last_output_path
+        read_more_soon = False
         if out_path and os.path.isfile(out_path):
             try:
                 with open(out_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(self.monitor_offset)
-                    chunk = f.read()
+                    chunk = f.read(MONITOR_READ_CHARS_PER_POLL)
                     self.monitor_offset = f.tell()
+                    read_more_soon = len(chunk) >= MONITOR_READ_CHARS_PER_POLL
                 if chunk:
                     self.append_monitor(chunk)
                     stage = self.parse_orca_stage(chunk)
@@ -5638,8 +5719,11 @@ class App(tk.Tk):
         proc = self.run_process
         if proc is not None:
             code = proc.poll()
+            if code is not None and read_more_soon:
+                self._schedule_monitor_poll(MONITOR_CATCHUP_DELAY_MS)
+                return
             if code is None:
-                self._schedule_monitor_poll()
+                self._schedule_monitor_poll(MONITOR_CATCHUP_DELAY_MS if read_more_soon else MONITOR_POLL_DELAY_MS)
                 return
             self.run_process = None
             self._run_finished(code, out_path or "")
@@ -5755,14 +5839,29 @@ class App(tk.Tk):
             messagebox.showerror("Open folder error", str(exc))
 
     def show_project_summary(self):
+        summary_path: Optional[Path] = None
+        summary_text = ""
         try:
-            out_path = self._available_output_path()
-        except Exception as exc:
-            messagebox.showinfo("Show summary", "Summary not found because no output file is available yet.")
-            return
+            summary_path = Path(self._available_project_summary_path())
+            summary_text = summary_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            summary_path = None
 
-        summary_path = self._project_summary_path(out_path)
-        if not summary_path.is_file():
+        out_path = ""
+        if summary_path is None:
+            try:
+                out_path = self._available_output_path()
+            except Exception:
+                messagebox.showinfo(
+                    "Show summary",
+                    "Summary was not found, and no output file is available for regenerating it.\n\n"
+                    + self._project_summary_search_hint(),
+                )
+                return
+
+            summary_path = self._project_summary_path(out_path)
+
+        if not summary_text and not summary_path.is_file():
             output_ok, output_reason = validate_orca_output_file(out_path)
             if not output_ok:
                 messagebox.showinfo("Show summary", f"No valid completed ORCA output is available.\n{output_reason}\n\nOutput:\n{out_path}")
@@ -5773,13 +5872,14 @@ class App(tk.Tk):
             except Exception as exc:
                 messagebox.showerror("Show summary error", f"Summary file was not found and could not be generated:\n{exc}")
                 return
-        else:
+        elif not summary_text:
             try:
                 summary_text = summary_path.read_text(encoding="utf-8", errors="replace")
             except Exception as exc:
                 messagebox.showerror("Show summary error", str(exc))
                 return
 
+        self._show_output_mode("monitor")
         self.append_monitor(f"=== Project summary ===\nSaved: {summary_path}\n\n{summary_text}", clear=True, scroll_to_end=False, wrap="word")
         self._set_monitor_stage("Summary shown")
         self.status.configure(text=f"Summary shown: {summary_path}")
