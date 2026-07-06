@@ -1527,8 +1527,8 @@ COVALENT_RADIUS_VARIANTS = {
 
 
 ATOM_COLORS = {
-    "H": "#F2F2F2", "C": "#5A5A5A", "N": "#3050F8", "O": "#FF0D0D",
-    "F": "#90E050", "P": "#FF8000", "S": "#FFFF30", "Cl": "#1FF01F",
+    "H": "#F2F2F2", "C": "#666666", "N": "#3050F8", "O": "#E00000",
+    "F": "#B8FF00", "P": "#FF8000", "S": "#FFFF30", "Cl": "#B8FF00",
     "Br": "#A62929", "I": "#940094", "B": "#FFB5B5", "Si": "#F0C8A0",
     "Pd": "#006985", "Pt": "#D0D0E0", "Ru": "#248F8F", "Rh": "#0A7D8C",
     "Ir": "#175487", "Fe": "#E06633", "Co": "#F090A0", "Ni": "#50D050",
@@ -1537,11 +1537,22 @@ ATOM_COLORS = {
     "Mg": "#8AFF00", "Ca": "#3DFF00", "Al": "#BFA6A6", "Sn": "#668080",
     "Pb": "#575961",
 }
+MOLECULE_BOND_COLOR = "#A0A0A0"
+MOLECULE_FRAGMENT_BOND_COLOR = "#A0A0A0"
+MOLECULE_FALLBACK_COLOR = "#FF69B4"
 
 
 def get_atom_color(symbol: str) -> Tuple[int, int, int]:
     hex_color = ATOM_COLORS.get(symbol, "#B0B0B0").lstrip("#")
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def molecule_atom_color(symbol: str) -> str:
+    return ATOM_COLORS.get(symbol, MOLECULE_FALLBACK_COLOR)
+
+
+def molecule_bond_end_color(symbol: str) -> str:
+    return MOLECULE_BOND_COLOR if clean_symbol(symbol) in {"C", "H"} else molecule_atom_color(clean_symbol(symbol))
 
 
 def covalent_radius(symbol: str) -> float:
@@ -1601,7 +1612,7 @@ def add_ball_and_stick_atom(pv_module, plotter, symbol, point, color=None, name=
     return add_mesh_safe(
         plotter,
         sphere,
-        color=color if color is not None else ATOM_COLORS.get(symbol, "#FF69B4"),
+        color=color if color is not None else molecule_atom_color(symbol),
         name=name,
         **molecule_material_parameters(),
     )
@@ -4498,7 +4509,7 @@ class App(tk.Tk):
             for i, j in bonds:
                 sym_i = structure.atoms[i][0]
                 sym_j = structure.atoms[j][0]
-                add_split_colored_bond(pv_module, plotter, points[i], points[j], ATOM_COLORS.get(sym_i, "#FF69B4"), ATOM_COLORS.get(sym_j, "#FF69B4"))
+                add_split_colored_bond(pv_module, plotter, points[i], points[j], molecule_bond_end_color(sym_i), molecule_bond_end_color(sym_j))
             for idx, (sym, *_rest) in enumerate(structure.atoms):
                 add_ball_and_stick_atom(pv_module, plotter, sym, points[idx])
             labels = [f"{idx+1}:{sym}" for idx, (sym, *_rest) in enumerate(structure.atoms)]
@@ -4539,7 +4550,7 @@ class App(tk.Tk):
             configure_pyvista_defaults(pv_module, plotter, background="black", extent=extent)
 
             for i, j in bonds:
-                add_split_colored_bond(pv_module, plotter, points[i], points[j], "#A8A8A8", "#A8A8A8")
+                add_split_colored_bond(pv_module, plotter, points[i], points[j], MOLECULE_FRAGMENT_BOND_COLOR, MOLECULE_FRAGMENT_BOND_COLOR)
             for idx, (sym, *_rest) in enumerate(structure.atoms):
                 if idx in self.fragment_a_indices:
                     color = "royalblue"
@@ -4964,9 +4975,7 @@ class App(tk.Tk):
         has_analysis = bool(
             settings.get("print_mos")
             or settings.get("job_esp_mep")
-            or post.get("wfn_wfx_generated")
             or post.get("esp_mep_generated")
-            or analysis_files.get("wavefunction_files")
             or analysis_files.get("cube_files")
         )
         if has_analysis:
@@ -6049,15 +6058,22 @@ class App(tk.Tk):
             interaction_root = None
             interaction_error = ""
             context.setdefault("post_processing", {})
+            wavefunction_path = ""
+            try:
+                self._set_monitor_stage("Generating WFN/WFX")
+                self._set_monitor_progress(70.0)
+                wavefunction_path = self.run_orca_2aim(out_path)
+                self._set_monitor_progress(75.0)
+                context["post_processing"]["wfn_wfx_generated"] = True
+                context["post_processing"]["wavefunction_path"] = wavefunction_path
+                post_messages.append("WFN/WFX generation completed.")
+            except Exception as exc:
+                self._set_monitor_progress(75.0)
+                context["post_processing"]["wfn_wfx_error"] = str(exc)
+                post_messages.append(f"WFN/WFX generation failed: {exc}")
+                self.append_monitor(f"WFN/WFX generation failed: {exc}\n")
             if self.job_esp_mep_var.get():
                 try:
-                    self._set_monitor_stage("Generating WFN/WFX")
-                    self._set_monitor_progress(70.0)
-                    wavefunction_path = self.run_orca_2aim(out_path)
-                    self._set_monitor_progress(75.0)
-                    context["post_processing"]["wfn_wfx_generated"] = True
-                    context["post_processing"]["wavefunction_path"] = wavefunction_path
-                    post_messages.append("WFN/WFX generation completed.")
                     self._set_monitor_stage("Generating ESP/MEP cubes")
                     self._set_monitor_progress(78.0)
                     self.run_esp_cube_generation(wavefunction_path)
