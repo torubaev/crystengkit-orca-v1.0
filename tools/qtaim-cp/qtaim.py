@@ -142,15 +142,17 @@ COVALENT_RADIUS_VARIANTS = {
 }
 
 ATOM_COLORS = {
-    "H": "#F2F2F2", "C": "#5A5A5A", "N": "#3050F8", "O": "#FF0D0D",
-    "F": "#90E050", "P": "#FF8000", "S": "#FFFF30", "Cl": "#1FF01F",
-    "Br": "#A62929", "I": "#940094", "B": "#FFB5B5", "Si": "#F0C8A0",
-    "Pd": "#006985", "Pt": "#D0D0E0", "Ru": "#248F8F", "Rh": "#0A7D8C",
-    "Ir": "#175487", "Fe": "#E06633", "Co": "#F090A0", "Ni": "#50D050",
-    "Cu": "#C88033", "Zn": "#7D80B0", "Ag": "#C0C0C0", "Au": "#FFD123",
-    "Hg": "#B8B8D0", "Li": "#CC80FF", "Na": "#AB5CF2", "K": "#8F40D4",
-    "Mg": "#8AFF00", "Ca": "#3DFF00", "Al": "#BFA6A6", "Sn": "#668080",
-    "Pb": "#575961",
+    "H": "#E8E8E8", "C": "#5F5F5F", "N": "#2B48D8", "O": "#CC0000",
+    "F": "#82CC49", "P": "#E67300", "S": "#E6E62B", "Cl": "#1CD91C",
+    "Br": "#982626", "I": "#850085", "B": "#EAA6A6", "Si": "#DDB88F",
+    "Pd": "#005F78", "Pt": "#BFC0CE", "Ru": "#218282", "Rh": "#097382",
+    "Ir": "#154D7B", "Fe": "#CC5D2F", "Co": "#DC8493", "Ni": "#49BF49",
+    "Cu": "#B8752F", "Zn": "#7376A2", "Ag": "#B0B0B0", "Au": "#EABB20",
+    "Hg": "#A9A9BF", "Li": "#BA75EA", "Na": "#9D55DE", "K": "#833BC2",
+    "Mg": "#7ED900", "Ca": "#38E800", "Al": "#AF9999", "Sn": "#5E7575",
+    "Pb": "#575961", "Se": "#EA9400", "Te": "#C27000", "Cd": "#EAC781",
+    "Ga": "#B28484", "Ge": "#5E8383", "As": "#AD76D0", "Ti": "#AFB2B7",
+    "V": "#99999E", "Cr": "#7F8CB7", "Mn": "#8F70B7",
 }
 
 CP_COLORS = {
@@ -2091,7 +2093,7 @@ def add_ball_and_stick_atom(
     add_mesh_safe(
         plotter,
         sphere,
-        color=ATOM_COLORS.get(atom.symbol, "#FF69B4"),
+        color=ATOM_COLORS.get(atom.symbol, "#E95FA5"),
         **molecule_material_parameters(),
     )
 
@@ -2112,8 +2114,8 @@ def add_molecule_layer(
             plotter,
             (ai.x, ai.y, ai.z),
             (aj.x, aj.y, aj.z),
-            ATOM_COLORS.get(ai.symbol, "#FF69B4"),
-            ATOM_COLORS.get(aj.symbol, "#FF69B4"),
+            ATOM_COLORS.get(ai.symbol, "#E95FA5"),
+            ATOM_COLORS.get(aj.symbol, "#E95FA5"),
             radius=molecule_bond_radius(unit_factor, scale=max(0.2, bond_radius / 0.095)),
         )
     for atom in atoms:

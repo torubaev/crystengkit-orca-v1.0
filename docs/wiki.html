@@ -330,7 +330,7 @@
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
 <figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder main working window"></figure>
-<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls. The <code>Show summary</code> button displays the calculation summary in the <code>Job monitor</code> view, including summaries found for loaded existing <code>.inp</code> files.</p>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls. The <code>Show summary</code> button displays the calculation summary in the <code>Job monitor</code> view, including summaries found for loaded existing <code>.inp</code> files. Current Builder versions try to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run; for older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt="HOMO-LUMO energy diagram tool"></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
@@ -381,7 +381,7 @@
 <li><code>NCI plot</code> for RDG / sign(lambda2)rho noncovalent-interaction surfaces</li>
 <li><code>QTAIM CP</code> for critical-point inspection</li>
 </ul>
-<p>ESP, NCI, and QTAIM analyses require real wavefunction files such as <code>.wfn</code> or <code>.wfx</code>. In CrystEngKit they are generated automatically by default after the ORCA job finishes.</p>
+<p>ESP, NCI, and QTAIM analyses require real wavefunction files such as <code>.wfn</code> or <code>.wfx</code>. In CrystEngKit they are generated automatically by default after the ORCA job finishes. If an older project does not contain them, load or select the corresponding ORCA output and click <code>Generate WFN/WFX</code>; this uses <code>orca_2aim</code> and requires the matching <code>.gbw</code> file to be present.</p>
 <p>MO surface rendering requires a finished ORCA <code>.out</code> file, its matching <code>.gbw</code> file, and <code>orca_plot</code> from the ORCA installation.</p>
 <p>For consistent MO surface figures, orient and zoom one saved contact-sheet tile, press <code>S</code> in the MO viewer to save it, then use <code>Use view for all</code> from that tile to regenerate the rest of the current contact sheet with the same view and scale.</p>
 <h3 id="dimer-interaction-energy">Dimer Interaction Energy</h3>
@@ -490,6 +490,7 @@
 <li>that <code>orca_2aim</code> and Multiwfn are available</li>
 <li>that the ESP script path and Python command are correct</li>
 </ul>
+<p>For older ORCA outputs without <code>.wfn</code> / <code>.wfx</code>, click <code>Generate WFN/WFX</code> in the Builder. The matching <code>.gbw</code> file must be in the same folder as the <code>.out</code> file.</p>
 <h3 id="nci-plot-does-not-work">NCI plot does not work</h3>
 <p>Check:</p>
 <ul>

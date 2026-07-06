@@ -628,30 +628,49 @@ COVALENT_RADIUS_VARIANTS = {
 
 
 ATOM_COLORS = {
-    1: "#F2F2F2",
-    5: "#FFB5B5",
-    6: "#5A5A5A",
-    7: "#3050F8",
-    8: "#FF0D0D",
-    9: "#90E050",
-    14: "#F0C8A0",
-    15: "#FF8000",
-    16: "#FFFF30",
-    17: "#1FF01F",
-    26: "#E06633",
-    27: "#F090A0",
-    28: "#50D050",
-    29: "#C88033",
-    30: "#7D80B0",
-    35: "#A62929",
-    44: "#248F8F",
-    45: "#0A7D8C",
-    46: "#006985",
-    47: "#C0C0C0",
-    53: "#940094",
-    77: "#175487",
-    78: "#D0D0E0",
-    79: "#FFD123",
+    1: "#E8E8E8",
+    3: "#BA75EA",
+    5: "#EAA6A6",
+    6: "#5F5F5F",
+    7: "#2B48D8",
+    8: "#CC0000",
+    9: "#82CC49",
+    11: "#9D55DE",
+    12: "#7ED900",
+    13: "#AF9999",
+    14: "#DDB88F",
+    15: "#E67300",
+    16: "#E6E62B",
+    17: "#1CD91C",
+    19: "#833BC2",
+    20: "#38E800",
+    22: "#AFB2B7",
+    23: "#99999E",
+    24: "#7F8CB7",
+    25: "#8F70B7",
+    26: "#CC5D2F",
+    27: "#DC8493",
+    28: "#49BF49",
+    29: "#B8752F",
+    30: "#7376A2",
+    31: "#B28484",
+    32: "#5E8383",
+    33: "#AD76D0",
+    34: "#EA9400",
+    35: "#982626",
+    44: "#218282",
+    45: "#097382",
+    46: "#005F78",
+    47: "#B0B0B0",
+    48: "#EAC781",
+    50: "#5E7575",
+    52: "#C27000",
+    53: "#850085",
+    77: "#154D7B",
+    78: "#BFC0CE",
+    79: "#EABB20",
+    80: "#A9A9BF",
+    82: "#575961",
 }
 
 NCI_SCALAR_NAME = "sign(lambda2)rho"
@@ -2020,7 +2039,7 @@ class NCIPlotterApp:
         return float(np.clip(radius, 0.16, 0.55))
 
     def atom_color(self, atomic_number: int) -> str:
-        return ATOM_COLORS.get(atomic_number, "#FF69B4")
+        return ATOM_COLORS.get(atomic_number, "#E95FA5")
 
     def covalent_radius(self, atomic_number: int) -> float:
         return COVALENT_RADII.get(atomic_number, 0.77)

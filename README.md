@@ -112,7 +112,7 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ### ORCA Input Builder
 
-![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls. The `Show summary` button displays the calculation summary in the `Job monitor` view, including summaries found for loaded existing `.inp` files.
+![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls. The `Show summary` button displays the calculation summary in the `Job monitor` view, including summaries found for loaded existing `.inp` files. Current Builder versions try to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
 
 ### HOMO-LUMO Plotter
 
@@ -179,7 +179,7 @@ Use the top-panel buttons after the ORCA job finishes:
 - `NCI plot` for RDG / sign(lambda2)rho noncovalent-interaction surfaces
 - `QTAIM CP` for critical-point inspection
 
-ESP, NCI, and QTAIM analyses require real wavefunction files such as `.wfn` or `.wfx`. In CrystEngKit they are generated automatically by default after the ORCA job finishes.
+ESP, NCI, and QTAIM analyses require real wavefunction files such as `.wfn` or `.wfx`. In CrystEngKit they are generated automatically by default after the ORCA job finishes. If an older project does not contain them, load or select the corresponding ORCA output and click `Generate WFN/WFX`; this uses `orca_2aim` and requires the matching `.gbw` file to be present.
 
 MO surface rendering requires a finished ORCA `.out` file, its matching `.gbw` file, and `orca_plot` from the ORCA installation.
 
@@ -391,6 +391,8 @@ Check:
 - that the ORCA run produced a usable `.wfn`, `.wfx`, or `.fchk` file
 - that `orca_2aim` and Multiwfn are available
 - that the ESP script path and Python command are correct
+
+For older ORCA outputs without `.wfn` / `.wfx`, click `Generate WFN/WFX` in the Builder. The matching `.gbw` file must be in the same folder as the `.out` file.
 
 ### NCI plot does not work
 

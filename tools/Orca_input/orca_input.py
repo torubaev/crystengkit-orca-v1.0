@@ -1527,23 +1527,25 @@ COVALENT_RADIUS_VARIANTS = {
 
 
 ATOM_COLORS = {
-    "H": "#F2F2F2", "C": "#666666", "N": "#3050F8", "O": "#E00000",
-    "F": "#B8FF00", "P": "#FF8000", "S": "#FFFF30", "Cl": "#B8FF00",
-    "Br": "#A62929", "I": "#940094", "B": "#FFB5B5", "Si": "#F0C8A0",
-    "Pd": "#006985", "Pt": "#D0D0E0", "Ru": "#248F8F", "Rh": "#0A7D8C",
-    "Ir": "#175487", "Fe": "#E06633", "Co": "#F090A0", "Ni": "#50D050",
-    "Cu": "#C88033", "Zn": "#7D80B0", "Ag": "#C0C0C0", "Au": "#FFD123",
-    "Hg": "#B8B8D0", "Li": "#CC80FF", "Na": "#AB5CF2", "K": "#8F40D4",
-    "Mg": "#8AFF00", "Ca": "#3DFF00", "Al": "#BFA6A6", "Sn": "#668080",
-    "Pb": "#575961",
+    "H": "#E8E8E8", "C": "#5F5F5F", "N": "#2B48D8", "O": "#CC0000",
+    "F": "#82CC49", "P": "#E67300", "S": "#E6E62B", "Cl": "#1CD91C",
+    "Br": "#982626", "I": "#850085", "B": "#EAA6A6", "Si": "#DDB88F",
+    "Pd": "#005F78", "Pt": "#BFC0CE", "Ru": "#218282", "Rh": "#097382",
+    "Ir": "#154D7B", "Fe": "#CC5D2F", "Co": "#DC8493", "Ni": "#49BF49",
+    "Cu": "#B8752F", "Zn": "#7376A2", "Ag": "#B0B0B0", "Au": "#EABB20",
+    "Hg": "#A9A9BF", "Li": "#BA75EA", "Na": "#9D55DE", "K": "#833BC2",
+    "Mg": "#7ED900", "Ca": "#38E800", "Al": "#AF9999", "Sn": "#5E7575",
+    "Pb": "#575961", "Se": "#EA9400", "Te": "#C27000", "Cd": "#EAC781",
+    "Ga": "#B28484", "Ge": "#5E8383", "As": "#AD76D0", "Ti": "#AFB2B7",
+    "V": "#99999E", "Cr": "#7F8CB7", "Mn": "#8F70B7",
 }
-MOLECULE_BOND_COLOR = "#A0A0A0"
-MOLECULE_FRAGMENT_BOND_COLOR = "#A0A0A0"
-MOLECULE_FALLBACK_COLOR = "#FF69B4"
+MOLECULE_BOND_COLOR = "#8E8E8E"
+MOLECULE_FRAGMENT_BOND_COLOR = "#8E8E8E"
+MOLECULE_FALLBACK_COLOR = "#E95FA5"
 
 
 def get_atom_color(symbol: str) -> Tuple[int, int, int]:
-    hex_color = ATOM_COLORS.get(symbol, "#B0B0B0").lstrip("#")
+    hex_color = ATOM_COLORS.get(symbol, MOLECULE_FALLBACK_COLOR).lstrip("#")
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
 
@@ -2930,7 +2932,7 @@ class App(tk.Tk):
         esp_row = ttk.Frame(cbox)
         esp_row.grid(row=1, column=1, sticky="w", padx=(12, 0), pady=(0, 3))
         ttk.Checkbutton(esp_row, text="ESP / MEP package", variable=self.job_esp_mep_var).grid(row=0, column=0, sticky="w")
-        esp_info = InfoIcon(esp_row, "ESP / MEP package = density retention, ESP-ready output, and automatic WFN/WFX generation after a successful ORCA run.")
+        esp_info = InfoIcon(esp_row, "ESP / MEP package = density retention and automatic ESP/MEP cube generation after a successful ORCA run. WFN/WFX generation is attempted after every successful ORCA run.")
         esp_info.grid(row=0, column=1, padx=(5, 0))
         ttk.Checkbutton(cbox, text="NMR", variable=self.job_nmr_var).grid(row=2, column=0, sticky="w", pady=(0, 3))
         ttk.Checkbutton(cbox, text="TD-DFT / UV-Vis", variable=self.job_tddft_var).grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(0, 3))
@@ -3031,6 +3033,7 @@ class App(tk.Tk):
         )
         self.monitor_mode_button.grid(row=0, column=1, sticky="w", padx=(3, 0))
         ttk.Button(preview_actions, text="Save input file", command=self.save_input).grid(row=0, column=2, sticky="e", padx=(6, 0))
+        ttk.Button(preview_actions, text="Generate WFN/WFX", command=self.generate_wavefunction_files).grid(row=0, column=3, sticky="e", padx=(6, 0))
 
         monhdr = ttk.Frame(output_box)
         monhdr.grid(row=3, column=0, sticky="ew", pady=(6, 0))
@@ -3967,7 +3970,7 @@ class App(tk.Tk):
             try:
                 candidates.extend(
                     (2, path) for path in bounded_find_files(source_dir, names=(f"{source.stem}.out",))
-                    if path.is_file()
+                    if path.is_file() and not self._is_interaction_job_path(path)
                 )
             except Exception:
                 pass
@@ -3975,7 +3978,7 @@ class App(tk.Tk):
         try:
             candidates.extend(
                 (3, path) for path in bounded_find_files(source_dir, pattern_suffix=".out")
-                if path.is_file()
+                if path.is_file() and not self._is_interaction_job_path(path)
             )
         except Exception:
             pass
@@ -4044,6 +4047,21 @@ class App(tk.Tk):
                 return str(folder)
         return ""
 
+    @staticmethod
+    def _is_interaction_job_path(path: Path) -> bool:
+        return any(part.endswith("_interaction_jobs") for part in path.parts)
+
+    def _same_folder_wavefunction_candidates(self, folder: Path, patterns: Tuple[str, ...]) -> List[Path]:
+        candidates: List[Path] = []
+        if not folder.is_dir():
+            return candidates
+        for pattern in patterns:
+            candidates.extend(
+                path for path in folder.glob(pattern)
+                if path.is_file() and not self._is_interaction_job_path(path)
+            )
+        return candidates
+
     def _matching_wavefunction_path(self, out_path: str) -> str:
         out_file = Path(out_path)
         same_stem = [out_file.with_suffix(ext) for ext in (".wfn", ".wfx", ".fchk")]
@@ -4051,9 +4069,7 @@ class App(tk.Tk):
             if candidate.is_file():
                 return str(candidate)
         folder = out_file.parent
-        candidates: List[Path] = []
-        for pattern in ("*.wfn", "*.wfx", "*.fchk"):
-            candidates.extend(folder.glob(pattern))
+        candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfn", "*.wfx", "*.fchk"))
         if not candidates:
             raise ValueError(f"No .wfn/.wfx/.fchk file was found in:\n{folder}")
         return str(max(candidates, key=lambda p: p.stat().st_mtime))
@@ -4065,9 +4081,7 @@ class App(tk.Tk):
             if candidate.is_file():
                 return str(candidate)
         folder = out_file.parent
-        candidates: List[Path] = []
-        for pattern in ("*.wfx", "*.wfn"):
-            candidates.extend(folder.glob(pattern))
+        candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
         if not candidates:
             raise ValueError(f"No .wfx/.wfn file was found for NCI plotting in:\n{folder}")
         return str(max(candidates, key=lambda p: p.stat().st_mtime))
@@ -4084,9 +4098,7 @@ class App(tk.Tk):
 
         folder = source.parent
         if folder.is_dir():
-            candidates: List[Path] = []
-            for pattern in ("*.wfx", "*.wfn"):
-                candidates.extend(folder.glob(pattern))
+            candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
             if candidates:
                 return str(max(candidates, key=lambda p: p.stat().st_mtime))
 
@@ -4099,9 +4111,7 @@ class App(tk.Tk):
             if candidate.is_file():
                 return str(candidate)
         folder = out_file.parent
-        candidates: List[Path] = []
-        for pattern in ("*.wfx", "*.wfn"):
-            candidates.extend(folder.glob(pattern))
+        candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
         if not candidates:
             raise ValueError(f"No .wfx/.wfn file was found for QTAIM CP analysis in:\n{folder}")
         return str(max(candidates, key=lambda p: p.stat().st_mtime))
@@ -4118,9 +4128,7 @@ class App(tk.Tk):
 
         folder = source.parent
         if folder.is_dir():
-            candidates: List[Path] = []
-            for pattern in ("*.wfx", "*.wfn"):
-                candidates.extend(folder.glob(pattern))
+            candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
             if candidates:
                 return str(max(candidates, key=lambda p: p.stat().st_mtime))
 
@@ -4553,15 +4561,15 @@ class App(tk.Tk):
                 add_split_colored_bond(pv_module, plotter, points[i], points[j], MOLECULE_FRAGMENT_BOND_COLOR, MOLECULE_FRAGMENT_BOND_COLOR)
             for idx, (sym, *_rest) in enumerate(structure.atoms):
                 if idx in self.fragment_a_indices:
-                    color = "royalblue"
+                    color = "#315BA8"
                 elif idx in self.fragment_b_indices:
-                    color = "tomato"
+                    color = "#C94D3F"
                 else:
-                    color = "lightgray"
+                    color = "#B0B0B0"
                 add_ball_and_stick_atom(pv_module, plotter, sym, points[idx], color=color, name=f"fragment_view_atom_{idx}")
 
-            a_formula = formula_with_subscripts(formula_for_indices(structure, self.fragment_a_indices))
-            b_formula = formula_with_subscripts(formula_for_indices(structure, self.fragment_b_indices))
+            a_formula = formula_for_indices(structure, self.fragment_a_indices)
+            b_formula = formula_for_indices(structure, self.fragment_b_indices)
             plotter.add_text(
                 f"Blue = fragment A ({a_formula})\n"
                 f"Red = fragment B ({b_formula})",
@@ -5102,8 +5110,12 @@ class App(tk.Tk):
             key = str(path.resolve())
             if key not in unique or priority < unique[key][0]:
                 unique[key] = (priority, path)
-        best_priority = min(priority for priority, _path in unique.values())
-        priority_matches = [path for priority, path in unique.values() if priority == best_priority]
+        values = list(unique.values())
+        main_job_values = [(priority, path) for priority, path in values if not self._is_interaction_job_path(path)]
+        if main_job_values:
+            values = main_job_values
+        best_priority = min(priority for priority, _path in values)
+        priority_matches = [path for priority, path in values if priority == best_priority]
         newest = max(priority_matches, key=lambda p: p.stat().st_mtime)
         return str(newest)
 
@@ -5975,7 +5987,15 @@ class App(tk.Tk):
         orca_2aim_path = self._find_orca_2aim()
         base_name = Path(gbw_path).stem
         workdir = str(Path(gbw_path).parent)
-        self.append_monitor(f"\n=== WFN/WFX generation via orca_2aim ===\nExecutable: {orca_2aim_path}\nBase name: {base_name}\nWorking directory: {workdir}\n")
+        self.append_monitor(
+            "\n=== WFN/WFX generation via orca_2aim ===\n"
+            f"Executable: {orca_2aim_path}\n"
+            f"GBW file: {gbw_path}\n"
+            f"Base name: {base_name}\n"
+            f"Working directory: {workdir}\n"
+            "Status: running orca_2aim; this may take a moment...\n"
+        )
+        self.update_idletasks()
         proc = subprocess.run(
             [orca_2aim_path, base_name],
             cwd=workdir,
@@ -5994,8 +6014,47 @@ class App(tk.Tk):
             raise RuntimeError(f"orca_2aim finished with exit code {proc.returncode}.")
         if missing:
             raise FileNotFoundError("orca_2aim finished, but the expected file(s) were not created: " + ", ".join(missing))
-        self.append_monitor(f"Generated: {wfn_path}\nGenerated: {wfx_path}\n")
+        self.append_monitor(f"Status: WFN/WFX generation completed.\nGenerated: {wfn_path}\nGenerated: {wfx_path}\n")
         return wfn_path
+
+    def generate_wavefunction_files(self):
+        try:
+            out_path = self._available_output_path()
+        except Exception as exc:
+            messagebox.showinfo("Generate WFN/WFX", f"No ORCA output file is available yet.\n\n{exc}")
+            return
+
+        output_ok, output_reason = validate_orca_output_file(out_path)
+        if not output_ok:
+            messagebox.showinfo(
+                "Generate WFN/WFX",
+                f"No valid completed ORCA output is available.\n{output_reason}\n\nOutput:\n{out_path}",
+            )
+            return
+
+        try:
+            self._show_output_mode("monitor")
+            self._set_monitor_stage("Generating WFN/WFX")
+            self._set_monitor_progress(0.0, allow_decrease=True)
+            self.status.configure(text=f"Generating WFN/WFX from {out_path}")
+            self.append_monitor(f"\nManual WFN/WFX generation requested for:\n{out_path}\n")
+            self._set_monitor_progress(25.0)
+            wavefunction_path = self.run_orca_2aim(out_path)
+            self._set_monitor_progress(100.0)
+            fchk_path = str(Path(out_path).with_suffix(".fchk"))
+            fchk_note = f"\nExisting FCHK: {fchk_path}" if os.path.isfile(fchk_path) else "\nFCHK was not generated; ORCA/orca_2aim normally produces WFN/WFX, not Gaussian FCHK."
+            self.append_monitor(fchk_note + "\n")
+            self._set_monitor_stage("WFN/WFX generated")
+            self.status.configure(text=f"WFN/WFX generated: {wavefunction_path}")
+            messagebox.showinfo(
+                "Generate WFN/WFX",
+                f"WFN/WFX generation completed.\n\nOutput:\n{out_path}{fchk_note}",
+            )
+        except Exception as exc:
+            self._set_monitor_stage("WFN/WFX failed")
+            self.append_monitor(f"WFN/WFX generation failed: {exc}\n")
+            self.status.configure(text=f"WFN/WFX generation failed: {exc}")
+            messagebox.showerror("Generate WFN/WFX error", str(exc))
 
     def run_esp_cube_generation(self, wavefunction_path: str):
         if not wavefunction_path:

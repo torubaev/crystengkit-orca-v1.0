@@ -407,15 +407,17 @@ def configure_molecule_renderer_lights(pv_module, renderer, extent=1.0):
 
 
 ELEMENT_COLORS = {
-    "H": "#F2F2F2", "C": "#5A5A5A", "N": "#3050F8", "O": "#FF0D0D",
-    "F": "#90E050", "P": "#FF8000", "S": "#FFFF30", "Cl": "#1FF01F",
-    "Br": "#A62929", "I": "#940094", "B": "#FFB5B5", "Si": "#F0C8A0",
-    "Pd": "#006985", "Pt": "#D0D0E0", "Ru": "#248F8F", "Rh": "#0A7D8C",
-    "Ir": "#175487", "Fe": "#E06633", "Co": "#F090A0", "Ni": "#50D050",
-    "Cu": "#C88033", "Zn": "#7D80B0", "Ag": "#C0C0C0", "Au": "#FFD123",
-    "Hg": "#B8B8D0", "Li": "#CC80FF", "Na": "#AB5CF2", "K": "#8F40D4",
-    "Mg": "#8AFF00", "Ca": "#3DFF00", "Al": "#BFA6A6", "Sn": "#668080",
-    "Pb": "#575961",
+    "H": "#E8E8E8", "C": "#5F5F5F", "N": "#2B48D8", "O": "#CC0000",
+    "F": "#82CC49", "P": "#E67300", "S": "#E6E62B", "Cl": "#1CD91C",
+    "Br": "#982626", "I": "#850085", "B": "#EAA6A6", "Si": "#DDB88F",
+    "Pd": "#005F78", "Pt": "#BFC0CE", "Ru": "#218282", "Rh": "#097382",
+    "Ir": "#154D7B", "Fe": "#CC5D2F", "Co": "#DC8493", "Ni": "#49BF49",
+    "Cu": "#B8752F", "Zn": "#7376A2", "Ag": "#B0B0B0", "Au": "#EABB20",
+    "Hg": "#A9A9BF", "Li": "#BA75EA", "Na": "#9D55DE", "K": "#833BC2",
+    "Mg": "#7ED900", "Ca": "#38E800", "Al": "#AF9999", "Sn": "#5E7575",
+    "Pb": "#575961", "Se": "#EA9400", "Te": "#C27000", "Cd": "#EAC781",
+    "Ga": "#B28484", "Ge": "#5E8383", "As": "#AD76D0", "Ti": "#AFB2B7",
+    "V": "#99999E", "Cr": "#7F8CB7", "Mn": "#8F70B7",
 }
 
 COVALENT_RADII = {
@@ -480,7 +482,7 @@ def atom_color_from_number(atomic_number):
         symbol = dnc2all[int(atomic_number)][0]
     except Exception:
         symbol = ""
-    return hex_to_rgb01(ELEMENT_COLORS.get(symbol, "#FF69B4"))
+    return hex_to_rgb01(ELEMENT_COLORS.get(symbol, "#E95FA5"))
 
 
 def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=HQ_BOND_RESOLUTION):
@@ -2137,6 +2139,21 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     root.option_add("*Scale.Foreground", text_fg)
     root.option_add("*Scale.troughColor", "#d7e1ee")
 
+    style = ttk.Style(root)
+    try:
+        style.theme_use("clam")
+    except tk.TclError:
+        pass
+    style.configure(
+        "Blue.Horizontal.TProgressbar",
+        troughcolor="#dbeafe",
+        background="#2563eb",
+        lightcolor="#3b82f6",
+        darkcolor="#1d4ed8",
+        bordercolor="#93c5fd",
+        thickness=14,
+    )
+
     screen_w, screen_h = _get_screen_size()
     gui_width = max(int(screen_w * 0.40), 720)
     gui_height = max(1, int(screen_h * 0.80))
@@ -2459,10 +2476,17 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     APP_STATE["status_label"] = status
 
     progress_frame = tk.Frame(frm, bg=app_bg)
-    progress_frame.grid(row=5, column=0, columnspan=2, sticky="we", pady=(2, 0))
+    progress_frame.grid(row=2, column=0, columnspan=2, sticky="we", pady=(0, 12))
     progress_frame.columnconfigure(0, weight=1)
     progress_var = tk.IntVar(value=0)
-    progress_bar = ttk.Progressbar(progress_frame, orient="horizontal", mode="determinate", maximum=100, variable=progress_var)
+    progress_bar = ttk.Progressbar(
+        progress_frame,
+        orient="horizontal",
+        mode="determinate",
+        maximum=100,
+        variable=progress_var,
+        style="Blue.Horizontal.TProgressbar",
+    )
     progress_bar.grid(row=0, column=0, sticky="we")
     progress_label = tk.Label(progress_frame, text="0%", anchor="w", justify="left", fg="blue", bg=app_bg, font=base_font)
     progress_label.grid(row=1, column=0, sticky="we", pady=(2, 0))
