@@ -361,7 +361,6 @@ internal sealed class InstallerForm : Form
     private static void CreateDesktopShortcut(string installDirectory)
     {
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-        CreateShortcut(Path.Combine(desktop, "ORCA Input Builder.lnk"), installDirectory);
         CreateShortcut(Path.Combine(desktop, "CrystEngKit ORCA.lnk"), installDirectory);
     }
 

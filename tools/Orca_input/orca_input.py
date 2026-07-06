@@ -1699,6 +1699,13 @@ def formula_for_indices(structure: Structure, indices: List[int]) -> str:
     return "".join(parts)
 
 
+SUBSCRIPT_DIGITS = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+
+
+def formula_with_subscripts(formula: str) -> str:
+    return formula.translate(SUBSCRIPT_DIGITS)
+
+
 def electron_count_for_indices(structure: Structure, indices: List[int], charge: int) -> int:
     electrons = 0
     for idx in indices:
@@ -3816,11 +3823,10 @@ class App(tk.Tk):
 
     def _structure_preview_window_size(self) -> Tuple[int, int]:
         try:
-            width = max(360, int(self.winfo_screenwidth() / 3))
             height = max(1, int(self.winfo_screenheight() * 0.80))
-            return width, height
+            return height, height
         except Exception:
-            return 430, 800
+            return 800, 800
 
     def open_launcher_settings(self):
         self._auto_locate_launcher_defaults()
@@ -4530,7 +4536,7 @@ class App(tk.Tk):
             points = np.array([[x, y, z] for _, x, y, z in structure.atoms], dtype=float)
             extent = float(np.linalg.norm(points.max(axis=0) - points.min(axis=0))) if len(points) else 1.0
             plotter = pv_module.Plotter(window_size=self._screen_fraction_window_size(1200), lighting="none")
-            configure_pyvista_defaults(pv_module, plotter, extent=extent)
+            configure_pyvista_defaults(pv_module, plotter, background="black", extent=extent)
 
             for i, j in bonds:
                 add_split_colored_bond(pv_module, plotter, points[i], points[j], "#A8A8A8", "#A8A8A8")
@@ -4543,13 +4549,14 @@ class App(tk.Tk):
                     color = "lightgray"
                 add_ball_and_stick_atom(pv_module, plotter, sym, points[idx], color=color, name=f"fragment_view_atom_{idx}")
 
-            a_formula = formula_for_indices(structure, self.fragment_a_indices)
-            b_formula = formula_for_indices(structure, self.fragment_b_indices)
+            a_formula = formula_with_subscripts(formula_for_indices(structure, self.fragment_a_indices))
+            b_formula = formula_with_subscripts(formula_for_indices(structure, self.fragment_b_indices))
             plotter.add_text(
                 f"Blue = fragment A ({a_formula})\n"
                 f"Red = fragment B ({b_formula})",
                 position="upper_left",
                 font_size=10,
+                color="white",
                 name="color_code_text",
             )
             bring_pyvista_window_to_front(plotter)
