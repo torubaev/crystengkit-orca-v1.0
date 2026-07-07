@@ -1418,11 +1418,42 @@ def _remove_extrema_actors():
     for key in ["extrema_points_actor", "extrema_labels_actor"]:
         actor = VIEWER_STATE.get(key)
         if actor is not None:
+            for renderer_key in ("label_renderer", "overlay_renderer"):
+                renderer = VIEWER_STATE.get(renderer_key)
+                if renderer is None:
+                    continue
+                for prop in actor if isinstance(actor, (list, tuple)) else (actor,):
+                    try:
+                        renderer.RemoveViewProp(prop)
+                    except Exception:
+                        pass
             try:
                 plotter.remove_actor(actor, render=False)
             except Exception:
                 pass
             VIEWER_STATE[key] = None
+
+
+def _move_extrema_labels_to_top_layer(actor):
+    if VIEWER_STATE is None or actor is None:
+        return
+    label_renderer = VIEWER_STATE.get("label_renderer")
+    if label_renderer is None:
+        return
+    plotter = VIEWER_STATE.get("plotter")
+    renderers = [getattr(plotter, "renderer", None), VIEWER_STATE.get("overlay_renderer")]
+    for prop in actor if isinstance(actor, (list, tuple)) else (actor,):
+        for renderer in renderers:
+            if renderer is None:
+                continue
+            try:
+                renderer.RemoveViewProp(prop)
+            except Exception:
+                pass
+        try:
+            label_renderer.AddViewProp(prop)
+        except Exception:
+            pass
 
 
 def _render_extrema(points):
@@ -1460,10 +1491,11 @@ def _render_extrema(points):
         shape=None,
         margin=0,
         tolerance=0.025,
-        always_visible=False,
+        always_visible=True,
         name="extrema_labels",
         render=False,
     )
+    _move_extrema_labels_to_top_layer(VIEWER_STATE["extrema_labels_actor"])
     plotter.render()
     bring_pyvista_window_to_front(plotter, delay_s=0.05)
 
@@ -1641,9 +1673,10 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
     plotter = pv.Plotter(window_size=(viewer_width, viewer_height))
     main_renderer = plotter.renderer
     overlay_renderer = None
+    label_renderer = None
 
     try:
-        plotter.ren_win.SetNumberOfLayers(2)
+        plotter.ren_win.SetNumberOfLayers(3)
         overlay_renderer = pv._vtk.vtkRenderer()
         overlay_renderer.SetLayer(1)
         overlay_renderer.InteractiveOff()
@@ -1656,6 +1689,20 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         plotter.ren_win.AddRenderer(overlay_renderer)
     except Exception:
         overlay_renderer = None
+
+    if overlay_renderer is not None:
+        try:
+            label_renderer = pv._vtk.vtkRenderer()
+            label_renderer.SetLayer(2)
+            label_renderer.InteractiveOff()
+            label_renderer.SetViewport(0.0, 0.0, 1.0, 1.0)
+            try:
+                label_renderer.SetActiveCamera(main_renderer.GetActiveCamera())
+            except Exception:
+                label_renderer.SetActiveCamera(main_renderer.camera)
+            plotter.ren_win.AddRenderer(label_renderer)
+        except Exception:
+            label_renderer = None
 
     def _position_viewer_window():
         root = APP_STATE.get("root")
@@ -1671,13 +1718,19 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         except Exception:
             pass
     def _sync_overlay_camera():
-        if overlay_renderer is None:
+        renderers = [renderer for renderer in (overlay_renderer, label_renderer) if renderer is not None]
+        if not renderers:
             return
         try:
-            overlay_renderer.SetActiveCamera(main_renderer.GetActiveCamera())
+            camera = main_renderer.GetActiveCamera()
         except Exception:
             try:
-                overlay_renderer.SetActiveCamera(main_renderer.camera)
+                camera = main_renderer.camera
+            except Exception:
+                return
+        for renderer in renderers:
+            try:
+                renderer.SetActiveCamera(camera)
             except Exception:
                 pass
 
@@ -1913,6 +1966,8 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
     VIEWER_STATE = {
         "pv": pv,
         "plotter": plotter,
+        "overlay_renderer": overlay_renderer,
+        "label_renderer": label_renderer,
         "state": state,
         "rebuild_surface": rebuild_surface,
         "build_overlay_atoms": build_overlay_atoms,
