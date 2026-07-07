@@ -1412,7 +1412,7 @@ class MOSurfaceContactSheet(tk.Toplevel):
         tk.Label(
             tile,
             text=contact_sheet_orbital_label(orbital),
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 20, "bold"),
             bg=CONTACT_HEADER_BG,
             fg=CONTACT_HEADER_FG,
             anchor="center",
@@ -1420,7 +1420,7 @@ class MOSurfaceContactSheet(tk.Toplevel):
             pady=2,
         ).pack(fill="x", pady=(0, 4))
         ttk.Label(tile, text=f"MO #{orbital['mo_number']}").pack(anchor="w")
-        ttk.Label(tile, text="" if energy is None else f"{energy:.4f} eV").pack(anchor="w")
+        ttk.Label(tile, text="" if energy is None else f"{energy:.4f} eV", font=("Segoe UI", 18)).pack(anchor="w")
 
         img_label = ttk.Label(tile, text="No saved image", width=22, anchor="center", relief="groove")
         img_label.pack(fill="both", expand=True, pady=(6, 6))
@@ -2673,15 +2673,15 @@ class App(tk.Tk):
         )
         tile_w = max(base_tile_w, int(math.ceil(base_tile_w * scale)))
         tile_h = max(base_tile_h, int(math.ceil(base_tile_h * scale)))
-        header_h = max(30, int(math.ceil(30 * scale)))
-        image_box = max(360, int(math.ceil(360 * scale)))
+        header_h = max(58, int(math.ceil(58 * scale)))
         margin = max(5, int(math.ceil(5 * scale)))
         image_margin_x = max(35, int(math.ceil(35 * scale)))
-        image_margin_y = max(60, int(math.ceil(60 * scale)))
-        text_y = max(10, int(math.ceil(10 * scale)))
-        detail_y = max(40, int(math.ceil(40 * scale)))
-        header_font = self._contact_sheet_font(max(10, int(round(12 * scale))), bold=True)
-        detail_font = self._contact_sheet_font(max(10, int(round(11 * scale))), bold=False)
+        image_margin_y = max(105, int(math.ceil(105 * scale)))
+        image_box = max(260, min(int(math.ceil(360 * scale)), tile_h - image_margin_y - margin * 3))
+        text_y = max(12, int(math.ceil(12 * scale)))
+        detail_y = max(72, int(math.ceil(72 * scale)))
+        header_font = self._contact_sheet_font(max(20, int(round(24 * scale))), bold=True)
+        detail_font = self._contact_sheet_font(max(18, int(round(22 * scale))), bold=False)
         sheet = Image.new("RGB", (cols * tile_w, 2 * tile_h), "white")
         draw = ImageDraw.Draw(sheet)
         for row, row_orbitals in enumerate(rows_by_kind):
@@ -2761,7 +2761,7 @@ class App(tk.Tk):
         cols_xml = "".join(f'<col min="{i + 1}" max="{i + 1}" width="31" customWidth="1"/>' for i in range(cols))
         row_xml_parts: List[str] = []
         for row_num in range(1, 8):
-            height = 205 if row_num in (3, 7) else 24
+            height = 205 if row_num in (3, 7) else 48
             cells = "".join(cell_rows.get(row_num, []))
             row_xml_parts.append(f'<row r="{row_num}" ht="{height}" customHeight="1">{cells}</row>')
         worksheet_xml = (
@@ -2807,7 +2807,7 @@ class App(tk.Tk):
         styles_xml = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="13"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><sz val="10"/><color rgb="FF475569"/><name val="Calibri"/></font></fonts>'
+            '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="26"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><sz val="20"/><color rgb="FF475569"/><name val="Calibri"/></font></fonts>'
             '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0F2D44"/><bgColor indexed="64"/></patternFill></fill></fills>'
             '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
             '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
@@ -2872,7 +2872,7 @@ class App(tk.Tk):
                 energy = orbital.get("energy_ev")
                 detail = "" if energy is None else f"{energy:.4f} eV"
                 label_cells.append(cell_text(label, "ceHeader"))
-                detail_cells.append(cell_text(detail))
+                detail_cells.append(cell_text(detail, "ceDetail"))
                 thumb_path = Path(orbital.get("thumbnail_path") or "")
                 if thumb_path.is_file():
                     image_name = f"Pictures/mo_{len(pictures) + 1}.png"
@@ -2916,10 +2916,11 @@ class App(tk.Tk):
             'office:version="1.2">'
             '<office:automatic-styles>'
             '<style:style style:name="co1" style:family="table-column"><style:table-column-properties style:column-width="6.2cm"/></style:style>'
-            '<style:style style:name="roText" style:family="table-row"><style:table-row-properties style:row-height="0.55cm"/></style:style>'
+            '<style:style style:name="roText" style:family="table-row"><style:table-row-properties style:row-height="1.1cm"/></style:style>'
             '<style:style style:name="roImage" style:family="table-row"><style:table-row-properties style:row-height="6.2cm"/></style:style>'
             '<style:style style:name="roGap" style:family="table-row"><style:table-row-properties style:row-height="0.35cm"/></style:style>'
-            '<style:style style:name="ceHeader" style:family="table-cell"><style:table-cell-properties fo:background-color="#0f2d44"/><style:text-properties fo:color="#ffffff" fo:font-weight="bold"/></style:style>'
+            '<style:style style:name="ceHeader" style:family="table-cell"><style:table-cell-properties fo:background-color="#0f2d44"/><style:text-properties fo:color="#ffffff" fo:font-size="20pt" fo:font-weight="bold"/></style:style>'
+            '<style:style style:name="ceDetail" style:family="table-cell"><style:text-properties fo:color="#475569" fo:font-size="18pt"/></style:style>'
             '<style:style style:name="gr1" style:family="graphic"><style:graphic-properties fo:clip="rect(0cm, 0cm, 0cm, 0cm)" draw:luminance="0%" draw:contrast="0%" draw:gamma="100%" draw:color-inversion="false"/></style:style>'
             '</office:automatic-styles>'
             '<office:body><office:spreadsheet>'
