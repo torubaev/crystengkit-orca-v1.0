@@ -56,6 +56,10 @@ except Exception:
 
 TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from app_identity import configure_tk_window_identity, set_windows_app_id
+
 QTAIM_ICON_PATH = TOOLS_ROOT / "images" / "qtaim.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
@@ -2620,7 +2624,9 @@ def visualize_qtaim(
 
 class QTAIMGui(tk.Tk):
     def __init__(self, initial_input_path: Optional[str] = None):
+        set_windows_app_id("QTAIM")
         super().__init__()
+        configure_tk_window_identity(self, "QTAIM")
         self.title("QTAIM")
         self.main_window_size = self.detect_main_window_size()
         self.geometry(f"{self.main_window_size[0]}x{self.main_window_size[1]}")

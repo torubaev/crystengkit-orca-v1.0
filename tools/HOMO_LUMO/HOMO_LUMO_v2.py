@@ -63,6 +63,10 @@ _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?"
 
 TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from app_identity import configure_tk_window_identity, set_windows_app_id
+
 HOMO_LUMO_ICON_PATH = TOOLS_ROOT / "images" / "tr_homo_lumo_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
@@ -1450,7 +1454,9 @@ class MOSurfaceContactSheet(tk.Toplevel):
 
 class App(tk.Tk):
     def __init__(self) -> None:
+        set_windows_app_id("HOMOLUMO")
         super().__init__()
+        configure_tk_window_identity(self, "HOMOLUMO")
         self.title("HOMO–LUMO Levels Plot")
         window_height = screen_fraction_height(self)
         self.geometry(f"1100x{window_height}")

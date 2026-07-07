@@ -61,6 +61,10 @@ except Exception as exc:
 CONFIG_FILE = Path.home() / ".nci_plotter_config.json"
 TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from app_identity import configure_tk_window_identity, set_windows_app_id
+
 NCI_ICON_PATH = TOOLS_ROOT / "images" / "tr_NCI_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
@@ -2211,7 +2215,9 @@ class NCIPlotterApp:
 
 def main() -> None:
     initial_wavefunction_path = sys.argv[1] if len(sys.argv) > 1 else None
+    set_windows_app_id("NCI")
     root = tk.Tk()
+    configure_tk_window_identity(root, "NCI")
     app = NCIPlotterApp(root, initial_wavefunction_path=initial_wavefunction_path)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()

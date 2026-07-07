@@ -34,6 +34,10 @@ except Exception:
 
 TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from app_identity import configure_tk_window_identity, set_windows_app_id
+
 LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
 DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
 DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
@@ -1011,12 +1015,12 @@ def resolve_solvent(user_text: str) -> Optional[Dict[str, str]]:
     key = normalize_text(user_text)
     if not key:
         return None
-    if key not in ORCA_SMD_SOLVENT_NORMALIZED:
-        return None
     canonical = KNOWN_SOLVENT_ALIAS_MAP.get(key)
     if canonical is not None:
         data = SOLVENT_LIBRARY[canonical]
         return {"canonical": canonical, "orca": str(data["orca"]), "gaussian": str(data["gaussian"])}
+    if key not in ORCA_SMD_SOLVENT_NORMALIZED:
+        return None
     normalized_text = user_text.strip()
     return {"canonical": normalized_text, "orca": normalized_text, "gaussian": normalized_text}
 
@@ -2586,6 +2590,7 @@ class ModeTextProxy:
 
 class App(tk.Tk):
     def __init__(self):
+        set_windows_app_id("Builder")
         super().__init__()
         self.title("ORCA input builder")
         screen_w = self.winfo_screenwidth()
@@ -2638,6 +2643,8 @@ class App(tk.Tk):
         self.job_tddft_var.trace_add("write", lambda *args: self._sync_job_target_flags("tddft"))
         self.freeze_heavy_var = tk.BooleanVar(value=False)
         self.freeze_all_var = tk.BooleanVar(value=False)
+        self.freeze_heavy_var.trace_add("write", lambda *args: self._sync_constraint_flags("heavy"))
+        self.freeze_all_var.trace_add("write", lambda *args: self._sync_constraint_flags("all"))
 
         self.interaction_relax_var = tk.BooleanVar(value=False)
         self.interaction_relax_var.trace_add("write", lambda *args: self._update_interaction_section())
@@ -2700,11 +2707,7 @@ class App(tk.Tk):
                     img = tk.PhotoImage(data=base64.b64encode(f.read()))
                 self.window_icon_image = img
                 self.iconphoto(True, img)
-            if os.name == "nt" and BUILDER_ICON_ICO_PATH.is_file():
-                try:
-                    self.iconbitmap(default=str(BUILDER_ICON_ICO_PATH))
-                except Exception:
-                    pass
+            configure_tk_window_identity(self, "Builder", BUILDER_ICON_ICO_PATH)
         except Exception:
             self.window_icon_image = None
 
@@ -3135,6 +3138,10 @@ class App(tk.Tk):
                 self.job_tddft_var.get(),
             ])
             if source == "sp" and self.job_sp_var.get():
+                if self.freeze_heavy_var.get():
+                    self.freeze_heavy_var.set(False)
+                if self.freeze_all_var.get():
+                    self.freeze_all_var.set(False)
                 if self.job_opt_var.get():
                     self.job_opt_var.set(False)
                 if self.job_freq_var.get() and not self.job_interaction_var.get():
@@ -3155,6 +3162,26 @@ class App(tk.Tk):
                 self.job_sp_var.set(True)
         finally:
             self._syncing_job_flags = False
+
+    def _sync_constraint_flags(self, source: str = ""):
+        if getattr(self, "_syncing_constraint_flags", False):
+            return
+        self._syncing_constraint_flags = True
+        try:
+            if source == "heavy" and self.freeze_heavy_var.get():
+                if self.freeze_all_var.get():
+                    self.freeze_all_var.set(False)
+            elif source == "all" and self.freeze_all_var.get():
+                if self.freeze_heavy_var.get():
+                    self.freeze_heavy_var.set(False)
+
+            if self.freeze_heavy_var.get() or self.freeze_all_var.get():
+                if self.job_sp_var.get():
+                    self.job_sp_var.set(False)
+                if not self.job_opt_var.get():
+                    self.job_opt_var.set(True)
+        finally:
+            self._syncing_constraint_flags = False
 
     def _update_interaction_section(self):
         if getattr(self, "interaction_box", None) is None:
@@ -4381,6 +4408,9 @@ class App(tk.Tk):
         return input_structure, None
 
     def collect(self):
+        freeze_heavy = bool(self.freeze_heavy_var.get())
+        freeze_all = bool(self.freeze_all_var.get())
+        constrained_opt = freeze_heavy or freeze_all
         return {
             "program": self.program_var.get(),
             "functional": self.functional_var.get().strip(),
@@ -4393,8 +4423,8 @@ class App(tk.Tk):
             "ri_jcosx": bool(self.ri_jcosx_var.get()),
             "tight_scf": bool(self.tight_scf_var.get()),
             "print_mos": bool(self.print_mos_var.get()),
-            "job_sp": bool(self.job_sp_var.get()),
-            "job_opt": bool(self.job_opt_var.get()),
+            "job_sp": bool(self.job_sp_var.get()) and not constrained_opt,
+            "job_opt": bool(self.job_opt_var.get()) or constrained_opt,
             "job_freq": bool(self.job_freq_var.get()),
             "job_density": bool(self.job_esp_mep_var.get()),
             "job_esp": bool(self.job_esp_mep_var.get()),
@@ -4405,8 +4435,8 @@ class App(tk.Tk):
             "job_interaction": bool(self.job_interaction_var.get()),
             "interaction_relaxation": bool(self.interaction_relax_var.get()),
             "interaction_thermo": bool(self.interaction_thermo_var.get()),
-            "freeze_heavy": bool(self.freeze_heavy_var.get()),
-            "freeze_all": bool(self.freeze_all_var.get()),
+            "freeze_heavy": freeze_heavy,
+            "freeze_all": freeze_all,
             "solvent_text": self.solvent_var.get().strip(),
             "extra": "",
         }
@@ -5432,7 +5462,10 @@ class App(tk.Tk):
             base_dir = filedialog.askdirectory(title="Choose parent folder for interaction jobs")
             if not base_dir:
                 return
-            src_name = Path(self.path_var.get().strip()).stem or "dimer"
+            if geometry_source and Path(geometry_source).suffix.lower() == ".out":
+                src_name = Path(geometry_source).stem
+            else:
+                src_name = Path(self.path_var.get().strip()).stem or "dimer"
             root = Path(base_dir) / f"{src_name}_interaction_jobs"
             root.mkdir(parents=True, exist_ok=True)
 

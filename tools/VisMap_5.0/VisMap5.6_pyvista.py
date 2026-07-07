@@ -53,6 +53,10 @@ DEFAULT_MULTIWFN_PATHS = [
 Multiwfnpath = DEFAULT_MULTIWFN_PATHS[0]
 TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from app_identity import configure_tk_window_identity, set_windows_app_id
+
 ESP_ICON_PATH = TOOLS_ROOT / "images" / "tr_ESP_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
@@ -2080,7 +2084,9 @@ def process_selected_file(selected_inputfile, selected_nproc="4", selected_mode=
 
 def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", initial_vis="y",
                initial_pregen=False, initial_cpisov=None, initial_multiwfn=None, autorun=False):
+    set_windows_app_id("VisMap")
     root = tk.Tk()
+    configure_tk_window_identity(root, "VisMap")
     APP_STATE["root"] = root
     root.title("VisMap GUI")
     root.resizable(True, True)
