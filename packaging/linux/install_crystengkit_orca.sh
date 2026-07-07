@@ -160,6 +160,8 @@ if not roots:
 source_root = roots[0]
 install_dir.mkdir(parents=True, exist_ok=True)
 for item in source_root.iterdir():
+    if item.name == "app_metadata":
+        continue
     target = install_dir / item.name
     if target.exists():
         if target.is_dir():

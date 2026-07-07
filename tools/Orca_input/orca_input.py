@@ -4,6 +4,8 @@ import math
 import os
 import base64
 import importlib.util
+import datetime
+import platform
 import re
 import shutil
 import subprocess
@@ -13,6 +15,8 @@ import threading
 import time
 import tkinter as tk
 import json
+import urllib.error
+import urllib.request
 import webbrowser
 from dataclasses import dataclass
 
@@ -43,6 +47,8 @@ DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
 DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
 DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
+APP_VERSION = "1.0.0"
+STARTUP_NEWS_URL = "https://raw.githubusercontent.com/torubaev/crystengkit-orca-v1.0/main/app_metadata/startup_news.json"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 CONTACT_EMAIL = "torubaev(at)gmail.com"
@@ -57,6 +63,313 @@ def wiki_url() -> str:
 
 def open_readme_or_wiki():
     webbrowser.open(wiki_url(), new=2)
+
+
+def startup_news_cache_dir() -> Path:
+    system = platform.system().lower()
+    if system == "windows":
+        root = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(root) / "CrystEngKit-ORCA"
+    if system == "darwin":
+        return Path.home() / "Library" / "Application Support" / "CrystEngKit-ORCA"
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "CrystEngKit-ORCA"
+
+
+STARTUP_NEWS_CACHE_PATH = startup_news_cache_dir() / "startup_news_cache.json"
+STARTUP_NEWS_SETTINGS_PATH = startup_news_cache_dir() / "startup_news_settings.json"
+STARTUP_NEWS_TIMEOUT = 1.8
+STARTUP_NEWS_TITLE_LIMIT = 90
+STARTUP_NEWS_MESSAGE_LIMIT = 520
+STARTUP_SPLASH_MIN_VISIBLE_MS = 10000
+
+
+def safe_read_json(path: Path) -> Optional[Dict]:
+    try:
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return None
+
+
+def safe_write_json(path: Path, data: Dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def normalize_news_text(value: object, limit: int) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+    if len(text) > limit:
+        text = text[: max(0, limit - 3)].rstrip() + "..."
+    return text
+
+
+def parse_iso_date(value: object) -> Optional[datetime.date]:
+    try:
+        return datetime.date.fromisoformat(str(value).strip())
+    except Exception:
+        return None
+
+
+def semantic_version_tuple(value: object) -> Tuple[int, int, int]:
+    parts = re.findall(r"\d+", str(value or ""))[:3]
+    nums = [int(part) for part in parts]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums[:3])
+
+
+def is_valid_news_url(url: str) -> bool:
+    return bool(re.match(r"^https?://", str(url or "").strip(), re.IGNORECASE))
+
+
+def validate_startup_news(raw: object) -> Dict:
+    if not isinstance(raw, dict):
+        return {"title": "Startup news", "message": "No current online news available.", "severity": "info"}
+    force_show = bool(raw.get("force_show", False))
+    severity = str(raw.get("severity", "info")).strip().lower()
+    if severity not in {"info", "warning", "critical"}:
+        severity = "info"
+    message_id = normalize_news_text(raw.get("message_id", ""), 120)
+    show_until = normalize_news_text(raw.get("show_until", ""), 20)
+    if show_until and not force_show:
+        until_date = parse_iso_date(show_until)
+        if until_date and datetime.date.today() > until_date:
+            return {"title": "Startup news", "message": "No current online news available.", "severity": "info", "expired": True}
+
+    title = normalize_news_text(raw.get("title", "Startup news"), STARTUP_NEWS_TITLE_LIMIT) or "Startup news"
+    message = normalize_news_text(raw.get("message", "No current online news available."), STARTUP_NEWS_MESSAGE_LIMIT)
+    latest_version = normalize_news_text(raw.get("latest_version", ""), 32)
+    if latest_version and semantic_version_tuple(latest_version) > semantic_version_tuple(APP_VERSION):
+        message = normalize_news_text(f"Update available: version {latest_version}. {message}", STARTUP_NEWS_MESSAGE_LIMIT)
+    details_url = normalize_news_text(raw.get("details_url", ""), 240)
+    if not is_valid_news_url(details_url):
+        details_url = ""
+    return {
+        "schema": raw.get("schema", 1),
+        "latest_version": latest_version,
+        "release_date": normalize_news_text(raw.get("release_date", ""), 20),
+        "title": title,
+        "message": message or "No current online news available.",
+        "details_url": details_url,
+        "severity": severity,
+        "message_id": message_id,
+        "show_until": show_until,
+        "force_show": force_show,
+    }
+
+
+def load_startup_news_settings() -> Dict:
+    data = safe_read_json(STARTUP_NEWS_SETTINGS_PATH)
+    if not isinstance(data, dict):
+        return {"dismissed_message_ids": []}
+    dismissed = data.get("dismissed_message_ids", [])
+    if not isinstance(dismissed, list):
+        dismissed = []
+    return {"dismissed_message_ids": [str(item) for item in dismissed[:200]]}
+
+
+def save_dismissed_startup_message(message_id: str) -> None:
+    if not message_id:
+        return
+    settings = load_startup_news_settings()
+    dismissed = list(dict.fromkeys(settings.get("dismissed_message_ids", []) + [message_id]))
+    safe_write_json(STARTUP_NEWS_SETTINGS_PATH, {"dismissed_message_ids": dismissed[-200:]})
+
+
+def load_cached_startup_news() -> Optional[Dict]:
+    cached = safe_read_json(STARTUP_NEWS_CACHE_PATH)
+    return validate_startup_news(cached) if cached else None
+
+
+def load_development_startup_news() -> Optional[Dict]:
+    local_path = APP_ROOT / "app_metadata" / "startup_news.json"
+    local = safe_read_json(local_path)
+    return validate_startup_news(local) if local else None
+
+
+def fetch_startup_news() -> Dict:
+    try:
+        request = urllib.request.Request(STARTUP_NEWS_URL, headers={"User-Agent": "CrystEngKit-ORCA"})
+        with urllib.request.urlopen(request, timeout=STARTUP_NEWS_TIMEOUT) as response:
+            payload = response.read(20000).decode("utf-8", errors="replace")
+        raw = json.loads(payload)
+        news = validate_startup_news(raw)
+        safe_write_json(STARTUP_NEWS_CACHE_PATH, raw if isinstance(raw, dict) else news)
+        return news
+    except Exception:
+        if os.environ.get("CRYSTENGKIT_STARTUP_NEWS_DEV_FALLBACK") == "1":
+            development_news = load_development_startup_news()
+            if development_news:
+                return development_news
+        return load_cached_startup_news() or {
+            "title": "Startup news",
+            "message": "No current online news available.",
+            "severity": "info",
+            "message_id": "",
+            "force_show": False,
+            "details_url": "",
+        }
+
+
+class StartupSplash:
+    def __init__(self, master: tk.Tk):
+        self.master = master
+        self.closed = False
+        self.news: Dict = {}
+        self.require_continue = False
+        self.ready = False
+        self.created_at = time.monotonic()
+        self.window = tk.Toplevel(master)
+        self.window.title("CrystEngKit-ORCA")
+        self.window.geometry("520x320")
+        self.window.resizable(False, False)
+        self.window.attributes("-topmost", True)
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
+        configure_tk_window_identity(self.window, "Startup", BUILDER_ICON_ICO_PATH)
+        self.logo_image = None
+        self._build()
+        self._center()
+        self.progress.start(12)
+        self.set_status("Starting CrystEngKit-ORCA...")
+        self.master.after(STARTUP_SPLASH_MIN_VISIBLE_MS, self._allow_close)
+        self.fetch_thread = threading.Thread(target=self._fetch_news_worker, daemon=True)
+        self.fetch_thread.start()
+
+    def _build(self):
+        outer = ttk.Frame(self.window, padding=16)
+        outer.pack(fill="both", expand=True)
+        header = ttk.Frame(outer)
+        header.pack(fill="x")
+        if ORCA_ICON_PATH.is_file():
+            try:
+                self.logo_image = tk.PhotoImage(file=str(ORCA_ICON_PATH))
+                self.logo_image = self.logo_image.subsample(max(1, self.logo_image.width() // 54), max(1, self.logo_image.height() // 54))
+                ttk.Label(header, image=self.logo_image).pack(side="left", padx=(0, 12))
+            except Exception:
+                self.logo_image = None
+        title_box = ttk.Frame(header)
+        title_box.pack(side="left", fill="x", expand=True)
+        ttk.Label(title_box, text="CrystEngKit-ORCA", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(title_box, text="ORCA Input Builder", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(1, 0))
+        ttk.Label(title_box, text=f"Version: {APP_VERSION}", font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
+
+        self.progress = ttk.Progressbar(outer, mode="indeterminate")
+        self.progress.pack(fill="x", pady=(18, 4))
+        self.status_var = tk.StringVar(value="")
+        ttk.Label(outer, textvariable=self.status_var).pack(anchor="w")
+
+        news_box = ttk.LabelFrame(outer, text="News", padding=10)
+        news_box.pack(fill="both", expand=True, pady=(12, 8))
+        self.news_title_var = tk.StringVar(value="Checking online news...")
+        self.news_message_var = tk.StringVar(value="")
+        ttk.Label(news_box, textvariable=self.news_title_var, font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        ttk.Label(news_box, textvariable=self.news_message_var, wraplength=465, justify="left").pack(anchor="w", fill="x", pady=(4, 0))
+
+        bottom = ttk.Frame(outer)
+        bottom.pack(fill="x")
+        self.dismiss_var = tk.BooleanVar(value=False)
+        self.release_button = ttk.Button(bottom, text="Open release page", command=self.open_details, state="disabled")
+        self.release_button.pack(side="left")
+        ttk.Checkbutton(bottom, text="Don't show this message again", variable=self.dismiss_var).pack(side="left", padx=(12, 0))
+        self.close_button = ttk.Button(bottom, text="Close", command=self.close)
+        self.close_button.pack(side="right")
+
+    def _allow_close(self):
+        if self.closed:
+            return
+        if self.ready and not self.require_continue:
+            self.close()
+
+    def _center(self):
+        try:
+            self.window.update_idletasks()
+            width = self.window.winfo_width()
+            height = self.window.winfo_height()
+            x = (self.window.winfo_screenwidth() - width) // 2
+            y = (self.window.winfo_screenheight() - height) // 2
+            self.window.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            pass
+
+    def set_status(self, text: str):
+        if not self.closed:
+            try:
+                self.status_var.set(text)
+                self.window.update_idletasks()
+            except Exception:
+                pass
+
+    def _fetch_news_worker(self):
+        news = fetch_startup_news()
+        try:
+            self.master.after(0, lambda: self.apply_news(news))
+        except Exception:
+            pass
+
+    def apply_news(self, news: Dict):
+        if self.closed:
+            return
+        self.news = validate_startup_news(news)
+        settings = load_startup_news_settings()
+        dismissed = set(settings.get("dismissed_message_ids", []))
+        message_id = self.news.get("message_id", "")
+        force_show = bool(self.news.get("force_show"))
+        if message_id and message_id in dismissed and not force_show:
+            self.news_title_var.set("Startup news")
+            self.news_message_var.set("This startup message was dismissed earlier.")
+        else:
+            self.news_title_var.set(self.news.get("title", "Startup news"))
+            self.news_message_var.set(self.news.get("message", "No current online news available."))
+        details_url = self.news.get("details_url", "")
+        self.release_button.configure(state="normal" if is_valid_news_url(details_url) else "disabled")
+        self.require_continue = force_show or self.news.get("severity") == "critical"
+        self.set_status("Checking online news...")
+
+    def open_details(self):
+        url = self.news.get("details_url", "")
+        if is_valid_news_url(url):
+            try:
+                webbrowser.open(url, new=2)
+            except Exception:
+                pass
+
+    def builder_ready(self):
+        if self.closed:
+            return
+        self.ready = True
+        try:
+            self.progress.stop()
+        except Exception:
+            pass
+        self.set_status("Ready.")
+        try:
+            self.window.attributes("-topmost", False)
+        except Exception:
+            pass
+        if not self.require_continue:
+            elapsed_ms = int((time.monotonic() - self.created_at) * 1000)
+            remaining_ms = max(0, STARTUP_SPLASH_MIN_VISIBLE_MS - elapsed_ms)
+            self.master.after(remaining_ms, self.close)
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        if self.dismiss_var.get():
+            save_dismissed_startup_message(str(self.news.get("message_id", "")))
+        try:
+            self.progress.stop()
+        except Exception:
+            pass
+        try:
+            self.window.destroy()
+        except Exception:
+            pass
 
 
 ENDNOTE_CITATION_RE = re.compile(r"\s*\[[^\[\]\r\n]{1,180}#[0-9]+[^\[\]\r\n]*\]")
@@ -2592,6 +2905,7 @@ class App(tk.Tk):
     def __init__(self):
         set_windows_app_id("Builder")
         super().__init__()
+        self.withdraw()
         self.title("ORCA input builder")
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
@@ -2686,19 +3000,48 @@ class App(tk.Tk):
         self.output_mode = "preview"
         self.output_buffers = {"preview": "", "monitor": ""}
         self.output_wraps = {"preview": "none", "monitor": "none"}
+        self.startup_splash: Optional[StartupSplash] = None
 
         self.auto_open_output_var.set(True)
+        self.startup_splash = self._create_startup_splash()
+        self._startup_status("Loading Builder interface...")
         self._apply_app_icon()
         self._build()
+        self._startup_status("Loading saved settings...")
         self._load_launcher_settings()
         self.auto_open_output_var.set(True)
+        self._startup_status("Checking Python tools...")
         self._use_latest_python_for_tools()
         self._refresh_engine_lists()
+        self._startup_status("Locating ORCA...")
         self.auto_locate_orca(silent=True)
         if not Path(self.qtaim_script_var.get().strip()).is_file():
             self.auto_locate_qtaim(silent=True)
         self._report_runtime_environment()
+        self._startup_status("Ready.")
+        self.deiconify()
+        self.after(150, self._finish_startup_splash)
 
+
+    def _create_startup_splash(self) -> Optional[StartupSplash]:
+        try:
+            return StartupSplash(self)
+        except Exception:
+            return None
+
+    def _startup_status(self, text: str):
+        try:
+            if self.startup_splash is not None:
+                self.startup_splash.set_status(text)
+        except Exception:
+            pass
+
+    def _finish_startup_splash(self):
+        try:
+            if self.startup_splash is not None:
+                self.startup_splash.builder_ready()
+        except Exception:
+            pass
 
     def _apply_app_icon(self):
         try:

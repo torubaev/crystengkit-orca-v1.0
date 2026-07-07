@@ -339,6 +339,8 @@ internal sealed class InstallerForm : Form
         var normalized = relativeName.Replace('\\', '/');
         if (normalized.StartsWith("install/releases/", StringComparison.OrdinalIgnoreCase))
             return true;
+        if (normalized.StartsWith("app_metadata/", StringComparison.OrdinalIgnoreCase))
+            return true;
         if (normalized.StartsWith("tests/", StringComparison.OrdinalIgnoreCase))
             return true;
         if (normalized.StartsWith(".github/", StringComparison.OrdinalIgnoreCase))
