@@ -192,6 +192,7 @@ CP_DESCRIPTIONS = {
     "(3,+1)": "Ring critical point (RCP): critical point associated with a ring of bond paths.",
     "(3,+3)": "Cage critical point (CCP): local minimum associated with a cage enclosed by ring paths.",
 }
+BCP_ENERGY_HEADER = "BCP energy estimate: E ≈ 0.5 * V(r_BCP)"
 
 QTAIM_UI_BUILD = "2026-06-12 CPprop energy export template"
 
@@ -241,6 +242,15 @@ def configure_builder_ui_style(widget: tk.Misc) -> None:
     style.configure("TCheckbutton", background="#f8fafc", padding=(1, 2), font=("Segoe UI", 9))
     style.configure("TLabel", background="#f8fafc", foreground="#263348", padding=(1, 1), font=("Segoe UI", 9))
     style.configure("Muted.TLabel", background="#f4f6f9", foreground="#53627a", font=("Segoe UI", 9))
+    style.configure(
+        "Blue.Horizontal.TProgressbar",
+        troughcolor="#dbeafe",
+        background="#2563eb",
+        lightcolor="#3b82f6",
+        darkcolor="#1d4ed8",
+        bordercolor="#93c5fd",
+        thickness=14,
+    )
 
 
 def keep_entry_end_visible(entry: tk.Entry, variable: Optional[tk.Variable] = None) -> tk.Entry:
@@ -415,10 +425,10 @@ def convert_cp_energy(value_hartree: float, unit: str) -> float:
 
 def format_cp_energy_label(cp: CriticalPoint, unit: str) -> str:
     value_hartree, source = cp_energy_value(cp)
-    if value_hartree is None:
-        return "E n/a"
+    if value_hartree is None or source != "0.5V":
+        return ""
     unit_label = "kcal/mol" if str(unit).lower().startswith("kcal") else "kJ/mol"
-    return f"E({source}) {convert_cp_energy(value_hartree, unit):.1f} {unit_label}"
+    return f"{convert_cp_energy(value_hartree, unit):.1f} {unit_label}"
 
 
 def read_atoms_from_wfn(path: Path) -> List[Atom]:
@@ -2403,6 +2413,7 @@ def draw_qtaim_scene(
 
     label_points = []
     label_text = []
+    energy_labels_visible = False
 
     visible_cp_count = 0
     for cp in cps:
@@ -2427,8 +2438,8 @@ def draw_qtaim_scene(
             diffuse=0.85,
             specular=0.50,
         )
-        if show_labels or show_cp_energy:
-            label_points.append((cp.x, cp.y, cp.z))
+        label_lines = []
+        if show_labels:
             label = f"{CP_LABELS.get(cpt, 'CP')}{cp.index}"
             if cpt == "(3,-1)" and show_covalent_bcp and show_non_covalent_bcp:
                 cls = bcp_interaction_class(cp, bcp_rho_threshold)
@@ -2438,9 +2449,15 @@ def draw_qtaim_scene(
                     label = f"i{label}"
                 elif cls == "noncovalent":
                     label = f"nc{label}"
-            if show_cp_energy:
-                label += "\n" + format_cp_energy_label(cp, cp_energy_unit)
-            label_text.append(label)
+            label_lines.append(label)
+        if show_cp_energy and cpt == "(3,-1)":
+            energy_label = format_cp_energy_label(cp, cp_energy_unit)
+            if energy_label:
+                label_lines.append(energy_label)
+                energy_labels_visible = True
+        if label_lines:
+            label_points.append((cp.x, cp.y, cp.z))
+            label_text.append("\n".join(label_lines))
 
     if visible_cp_count == 0:
         parsed_types = sorted({normalize_cp_type(cp.cp_type) for cp in cps})
@@ -2462,6 +2479,14 @@ def draw_qtaim_scene(
             shape_opacity=0.45,
             always_visible=True,
         )
+        if energy_labels_visible:
+            plotter.add_text(
+                BCP_ENERGY_HEADER,
+                position="upper_left",
+                font_size=10,
+                color=label_color,
+                name="bcp_energy_header",
+            )
 
     # Keep the scene free of depth-outline post-processing; eye-dome lighting
     # creates dark silhouettes around atoms, bonds, and QTAIM paths.
@@ -2606,6 +2631,8 @@ class QTAIMGui(tk.Tk):
         self.log_path = tk.StringVar()
         self.cp_file_path = tk.StringVar()
         self.path_file_path = tk.StringVar()
+        self.progress_var = tk.IntVar(value=0)
+        self.progress_text = tk.StringVar(value="0%")
 
         self.show_ncp = tk.BooleanVar(value=False)
         self.show_covalent_bcp = tk.BooleanVar(value=False)
@@ -2940,6 +2967,20 @@ class QTAIMGui(tk.Tk):
         file_frame.columnconfigure(1, weight=0)
         file_frame.columnconfigure(4, weight=1)
 
+        progress_frame = ttk.Frame(root, style="Panel.TFrame")
+        progress_frame.pack(fill="x", pady=(0, 8))
+        progress_frame.columnconfigure(0, weight=1)
+        self.progress_bar = ttk.Progressbar(
+            progress_frame,
+            orient="horizontal",
+            mode="determinate",
+            maximum=100,
+            variable=self.progress_var,
+            style="Blue.Horizontal.TProgressbar",
+        )
+        self.progress_bar.grid(row=0, column=0, sticky="ew")
+        ttk.Label(progress_frame, textvariable=self.progress_text, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
+
         settings = ttk.LabelFrame(root, text="Visualization settings", padding=10)
         settings.pack(fill="x", pady=(0, 8))
 
@@ -3014,6 +3055,25 @@ class QTAIMGui(tk.Tk):
         self.status.insert("end", msg.rstrip() + "\n")
         self.status.see("end")
         self.update_idletasks()
+
+    def update_progress(self, percent: int, message: str = "", color: str = "blue") -> None:
+        percent = max(0, min(100, int(percent)))
+
+        def apply() -> None:
+            self.progress_var.set(percent)
+            text = f"{percent}%"
+            if message:
+                text += f" - {message}"
+            self.progress_text.set(text)
+            try:
+                self.progress_bar.configure(style="Blue.Horizontal.TProgressbar")
+            except Exception:
+                pass
+
+        try:
+            self.after(0, apply)
+        except Exception:
+            apply()
 
     def open_settings(self):
         if self.settings_window is not None and self.settings_window.winfo_exists():
@@ -3229,6 +3289,7 @@ class QTAIMGui(tk.Tk):
         except Exception as exc:
             self.show_exception("Multiwfn not found", exc)
             return
+        self.update_progress(0, "Starting QTAIM...")
         t = threading.Thread(target=self.run_multiwfn_action, daemon=True)
         t.start()
 
@@ -3260,6 +3321,7 @@ class QTAIMGui(tk.Tk):
     def run_multiwfn_action(self):
         self.run_in_progress = True
         try:
+            self.update_progress(5, "Checking input...")
             input_text = self.input_path.get().strip()
             if not input_text:
                 raise ValueError("Select a .wfn or .wfx file before running QTAIM.")
@@ -3270,8 +3332,10 @@ class QTAIMGui(tk.Tk):
             self.bond_paths = []
             self.log("")
             self.log("----- QTAIM run started -----")
+            self.update_progress(12, "Loading atoms...")
             if not self.load_atoms():
                 self.log("QTAIM run stopped because atoms could not be loaded.")
+                self.update_progress(0, "Failed.")
                 return
 
             log_path = input_file.with_suffix(".multiwfn_qtaim.log")
@@ -3279,8 +3343,11 @@ class QTAIMGui(tk.Tk):
             self.cp_file_path.set(str(log_path))
 
             if bool(self.use_existing_outputs.get()):
+                self.update_progress(25, "Checking existing output files...")
                 if self.load_existing_outputs_if_available(input_file):
+                    self.update_progress(90, "Existing outputs loaded.")
                     self.schedule_final_visualize()
+                    self.update_progress(100, "Viewer queued.")
                     return
                 self.log("Existing-output option is enabled, but nothing usable was found. Recalculating now.")
 
@@ -3295,6 +3362,7 @@ class QTAIMGui(tk.Tk):
                 effective_commands = DEFAULT_MULTIWFN_COMMANDS.strip()
 
             run_started_at = time.time() - 2.0
+            self.update_progress(20, "Cleaning old QTAIM files...")
             removed = remove_generated_qtaim_files(input_file.parent, input_stem=input_file.stem)
             if removed:
                 self.log("Removed old QTAIM export files before this run:")
@@ -3305,6 +3373,7 @@ class QTAIMGui(tk.Tk):
             else:
                 self.log("No old QTAIM export files found before this run.")
             self.log("Running Multiwfn...")
+            self.update_progress(35, "Running Multiwfn...")
             rc = run_multiwfn(
                 input_file=input_file,
                 multiwfn_exe=self.multiwfn_path.get().strip(),
@@ -3312,6 +3381,7 @@ class QTAIMGui(tk.Tk):
                 log_path=log_path,
                 timeout_s=int(self.timeout_s.get()),
             )
+            self.update_progress(70, "Multiwfn finished; parsing output...")
             self.log(f"Multiwfn log saved: {log_path}")
             if rc != 0:
                 self.log(f"Multiwfn returned non-zero code {rc}; attempting to parse any CP/path files already produced.")
@@ -3331,6 +3401,7 @@ class QTAIMGui(tk.Tk):
                 if self.cps:
                     break
 
+            self.update_progress(82, "Loading QTAIM paths...")
             generated_paths = find_generated_qtaim_path_file(input_file, min_mtime=run_started_at)
             if generated_paths is not None:
                 self.path_file_path.set(str(generated_paths))
@@ -3351,12 +3422,16 @@ class QTAIMGui(tk.Tk):
                     self.log("CPs and exact paths were parsed. Opening PyVista viewer automatically.")
                 else:
                     self.log("CPs were parsed. Opening PyVista viewer automatically without QTAIM paths.")
+                self.update_progress(95, "Opening PyVista viewer...")
                 self.schedule_final_visualize()
                 if bool(self.open_native_after_run.get()):
                     self.open_native_multiwfn_threaded()
+                self.update_progress(100, "Done.")
             else:
                 self.log("No CPs were parsed. Check the generated CP/log file path above.")
+                self.update_progress(0, "No CPs parsed.")
         except Exception as exc:
+            self.update_progress(0, "Failed.")
             self.show_exception("Multiwfn run failed", exc)
         finally:
             self.run_in_progress = False
