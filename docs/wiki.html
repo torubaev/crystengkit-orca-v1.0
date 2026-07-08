@@ -266,6 +266,7 @@
 <a class="nav-link level-3" href="#qtaim-cp-does-not-work">QTAIM CP does not work</a>
 <a class="nav-link level-3" href="#structure-preview-does-not-open">Structure preview does not open</a>
 <a class="nav-link level-3" href="#interaction-calculation-finishes-only-partly">Interaction calculation finishes only partly</a></div></details>
+<a class="nav-link level-2" href="#how-to-cite-crystengkit-orca">How to cite CrystEngKit-ORCA</a>
 <a class="nav-link level-2" href="#repository-contents">Repository contents</a>
         <a class="nav-link level-2" href="#references">References</a>
       </nav>
@@ -284,7 +285,7 @@
 <figure><img src="../images/wiki/orca-input_1.png" alt="Orca Input builder"></figure>
 <p>The main GUI is the <strong>ORCA Input Builder</strong><sup><a href="#ref-orca">orca</a></sup>. It can:</p>
 <ul>
-<li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, ORCA <code>.inp</code>, 3D MOL/SDF files, and Gaussian input files</li>
+<li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, ORCA <code>.inp</code>, 3D MOL/SDF files, Gaussian input files, and external ORCA/Gaussian <code>.out</code> / <code>.log</code> files</li>
 <li>prepare ORCA and Gaussian<sup><a href="#ref-gaussian">gaussian</a></sup> input files</li>
 <li>run ORCA and show live output</li>
 <li>generate manuscript-ready computation summaries for experimental sections and supporting information</li>
@@ -330,7 +331,7 @@
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
 <figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder main working window"></figure>
-<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, or existing <code>.inp</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls. The <code>Show summary</code> button displays the calculation summary in the <code>Job monitor</code> view, including summaries found for loaded existing <code>.inp</code> files. Current Builder versions try to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run; for older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, existing <code>.inp</code> files, or external ORCA/Gaussian <code>.out</code> / <code>.log</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls. The <code>Show summary</code> button displays the calculation summary in the <code>Job monitor</code> view, including summaries found for loaded existing <code>.inp</code> files. Current Builder versions try to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run; for older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt="HOMO-LUMO energy diagram tool"></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
@@ -353,7 +354,7 @@
 <h2 id="how-to-use-the-tools">How to Use the Tools</h2>
 <h3 id="build-and-run-an-orca-job">Build and Run an ORCA Job</h3>
 <ol>
-<li>Load a supported structure file in the Builder. Native <code>.xyz</code>, <code>.cif</code>, ORCA <code>.inp</code>, and 3D <code>.mol</code>/<code>.sdf</code>/<code>.sd</code> files are read directly. Gaussian <code>.gjf</code>, <code>.com</code>, <code>.gau</code>, and <code>.gjc</code> files with ordinary Cartesian coordinates are also supported.</li>
+<li>Load a supported structure file in the Builder. Native <code>.xyz</code>, <code>.cif</code>, ORCA <code>.inp</code>, and 3D <code>.mol</code>/<code>.sdf</code>/<code>.sd</code> files are read directly. Gaussian <code>.gjf</code>, <code>.com</code>, <code>.gau</code>, and <code>.gjc</code> files with ordinary Cartesian coordinates are also supported. External ORCA/Gaussian <code>.out</code> / <code>.log</code> files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.</li>
 </ol>
 <figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder job setup window"></figure>
 <ol start="2">
@@ -523,6 +524,10 @@
 <li>but a later relaxed or thermodynamic follow-up job fails</li>
 </ul>
 <p>In that case, the summary should still preserve the successful interaction terms and report a crash note.</p>
+<h2 id="how-to-cite-crystengkit-orca">How to cite CrystEngKit-ORCA</h2>
+<p>If CrystEngKit-ORCA is useful for preparing calculations, analyzing ORCA/Multiwfn results, or making figures for a manuscript or supporting information, please cite the GitHub software repository:</p>
+<p>Torubaev, Y. <em>CrystEngKit-ORCA: practical GUI tools for ORCA and Multiwfn calculations in supramolecular chemistry and crystal engineering</em>, version 1.0; GitHub, 2026. &lt;https://github.com/torubaev/crystengkit-orca-v1.0&gt;</p>
+<p>For EndNote, Zotero, Mendeley, or other bibliography managers, import the RIS file: <a href="crystengkit-orca.ris">docs/crystengkit-orca.ris</a>.</p>
 <h2 id="repository-contents">Repository contents</h2>
 <p>Typical root structure:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>README.md

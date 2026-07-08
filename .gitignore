@@ -23,6 +23,8 @@ tmp/
 multiwfn_path_menu_probe.log
 orca_gaussian_builder_settings.json
 **/orca_gaussian_builder_settings.json
+orca_job_queue.json
+**/orca_job_queue.json
 .nci_plotter_config.json
 homo_lumo_gui_error.log
 installation_report.html

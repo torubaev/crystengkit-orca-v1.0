@@ -41,6 +41,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, set_windows_app_id
+from orca_job_queue import OrcaJobQueue, OrcaQueueJob, QUEUE_STATE_FILE
 
 LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
 DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
@@ -2554,6 +2555,11 @@ def resolve_dispersion_keyword(program: str, dispersion: str) -> Tuple[str, List
     return "", warnings
 
 
+def basis_supports_orca_rijcosx(basis: str) -> bool:
+    normalized = re.sub(r"[\s_]+", "", str(basis or "").strip()).lower()
+    return normalized.startswith("def2-") or normalized.startswith("def2") or normalized.startswith("ma-def2")
+
+
 def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, str]]) -> str:
     grid_kw, grid_warnings = normalize_orca_grid_keyword(data.get("grid", ""))
     if grid_warnings:
@@ -2566,7 +2572,13 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
     kw = [data["functional"], data["basis"]]
     if disp_kw:
         kw.append(disp_kw)
-    if data["ri_jcosx"]:
+    use_rijcosx = bool(data["ri_jcosx"]) and basis_supports_orca_rijcosx(data.get("basis", ""))
+    if data["ri_jcosx"] and not use_rijcosx:
+        existing = data.get("_warnings", [])
+        data["_warnings"] = existing + [
+            f'RIJCOSX was omitted because basis "{data.get("basis", "")}" is not a def2-family ORCA basis.'
+        ]
+    if use_rijcosx:
         kw.extend(["def2/J", "RIJCOSX"])
     if data["tight_scf"]:
         kw.append("TightSCF")
@@ -3013,6 +3025,14 @@ class App(tk.Tk):
         self.monitor_status_text: str = "Idle"
         self.monitor_progress_value: float = 0.0
         self.active_run_context: Optional[Dict] = None
+        self.queue_state_path = LAUNCHER_SETTINGS_PATH.with_name(QUEUE_STATE_FILE)
+        self.job_queue = OrcaJobQueue.load(self.queue_state_path)
+        self.queue_running = False
+        self.active_queue_job: Optional[OrcaQueueJob] = None
+        self.queue_window: Optional[tk.Toplevel] = None
+        self.queue_tree: Optional[ttk.Treeview] = None
+        self.queue_name_var = tk.StringVar(value=self.job_queue.active_queue)
+        self.queue_combo: Optional[ttk.Combobox] = None
         self.preview_thread: Optional[threading.Thread] = None
         self.last_helper_launch_key: Optional[Tuple[str, ...]] = None
         self.last_helper_launch_time: float = 0.0
@@ -3068,6 +3088,7 @@ class App(tk.Tk):
         self.tight_scf_var = tk.BooleanVar(value=True)
         self.ri_jcosx_var = tk.BooleanVar(value=True)
         self.print_mos_var = tk.BooleanVar(value=True)
+        self.basis_var.trace_add("write", lambda *args: self._sync_rijcosx_for_basis())
 
         self.orca_path_var = tk.StringVar(value="")
         self.openbabel_path_var = tk.StringVar(value="")
@@ -3465,7 +3486,9 @@ class App(tk.Tk):
         )
         self.monitor_mode_button.grid(row=0, column=1, sticky="w", padx=(3, 0))
         ttk.Button(preview_actions, text="Save input file", command=self.save_input).grid(row=0, column=2, sticky="e", padx=(6, 0))
-        ttk.Button(preview_actions, text="Generate WFN/WFX", command=self.generate_wavefunction_files).grid(row=0, column=3, sticky="e", padx=(6, 0))
+        ttk.Button(preview_actions, text="Add to Queue", command=self.add_current_input_to_queue).grid(row=0, column=3, sticky="e", padx=(6, 0))
+        ttk.Button(preview_actions, text="Queue Jobs", command=self.open_job_queue).grid(row=0, column=4, sticky="e", padx=(6, 0))
+        ttk.Button(preview_actions, text="Generate WFN/WFX", command=self.generate_wavefunction_files).grid(row=0, column=5, sticky="e", padx=(6, 0))
 
         monhdr = ttk.Frame(output_box)
         monhdr.grid(row=3, column=0, sticky="ew", pady=(6, 0))
@@ -3650,6 +3673,15 @@ class App(tk.Tk):
         else:
             self.solvent_var.set("")
 
+    def _sync_rijcosx_for_basis(self):
+        try:
+            if self.program_var.get() != "ORCA":
+                self.ri_jcosx_var.set(False)
+                return
+            self.ri_jcosx_var.set(basis_supports_orca_rijcosx(self.basis_var.get()))
+        except Exception:
+            pass
+
     def _refresh_engine_lists(self):
         if self.program_var.get() == "ORCA":
             self.functional_combo.set_values(ORCA_FUNCTIONALS)
@@ -3666,6 +3698,7 @@ class App(tk.Tk):
                 self.basis_var.set("6-31G(d)")
             if self.functional_var.get() not in GAUSSIAN_FUNCTIONALS:
                 self.functional_var.set("B3LYP")
+        self._sync_rijcosx_for_basis()
 
     def _parse_xyz_through_existing_loader(self, xyz_text: str, title: str) -> Structure:
         validate_xyz_text(xyz_text, title)
@@ -3927,6 +3960,7 @@ class App(tk.Tk):
         patterns = " ".join("*" + ext for ext in sorted(STRUCTURE_INPUT_EXTENSIONS))
         p = filedialog.askopenfilename(filetypes=[
             ("Supported structure files", patterns),
+            ("ORCA queue files", "*.orcaqueue.json *.queue.json *.json"),
             ("XYZ/CIF/ORCA input", "*.xyz *.cif *.inp"),
             ("ORCA/Gaussian output", "*.out *.log"),
             ("MOL/SDF and Open Babel formats", "*.mol *.sdf *.sd *.cml *.cdxml *.cdx *.ct"),
@@ -3936,6 +3970,8 @@ class App(tk.Tk):
         if not p:
             return
         try:
+            if self._maybe_load_job_queue_file(p):
+                return
             result = self.import_structure_file(p)
             if not self._apply_gaussian_charge_multiplicity(result):
                 return
@@ -3962,6 +3998,8 @@ class App(tk.Tk):
         if not path or not os.path.isfile(path):
             return
         try:
+            if self._maybe_load_job_queue_file(path):
+                return
             result = self.import_structure_file(path)
             if not self._apply_gaussian_charge_multiplicity(result):
                 return
@@ -6129,6 +6167,301 @@ class App(tk.Tk):
     def get_preview_text(self) -> str:
         return self.preview_text.get("1.0", "end-1c")
 
+    def _save_job_queue(self):
+        try:
+            self.job_queue.save(self.queue_state_path)
+        except Exception as exc:
+            self.append_monitor(f"Could not save ORCA job queue: {exc}\n")
+
+    def _load_job_queue_from_path(self, path: str, confirm_replace: bool = True) -> bool:
+        queue_path = Path(path)
+        if not OrcaJobQueue.looks_like_queue_file(queue_path):
+            return False
+        if self.run_process and self.run_process.poll() is None:
+            messagebox.showinfo("Load Queue", "Stop the running ORCA job before loading another queue file.")
+            return True
+        if confirm_replace and self._queue_has_any_jobs():
+            ok = messagebox.askyesno(
+                "Load Queue",
+                "Loading this queue file will replace the current queue manager list. Continue?",
+            )
+            if not ok:
+                return True
+        self.job_queue = OrcaJobQueue.load(queue_path)
+        self.queue_running = False
+        self.active_queue_job = None
+        self._save_job_queue()
+        self._refresh_queue_selector()
+        self._refresh_queue_tree()
+        self.path_var.set(str(queue_path))
+        self._show_output_mode("monitor")
+        self.append_monitor(
+            f"Loaded ORCA queue file: {queue_path}\n"
+            f"Active queue: {self.job_queue.active_queue}\n"
+            f"Queue: {self.job_queue.summary()}\n",
+            clear=True,
+        )
+        self.status.configure(text=f"Loaded ORCA queue file: {queue_path.name}")
+        return True
+
+    def _maybe_load_job_queue_file(self, path: str) -> bool:
+        try:
+            return self._load_job_queue_from_path(path)
+        except Exception as exc:
+            messagebox.showerror("Load Queue error", str(exc))
+            return True
+
+    def save_job_queue_as(self):
+        suggested = f"{self.job_queue.active_queue.replace(' ', '_')}.orcaqueue.json"
+        path = filedialog.asksaveasfilename(
+            title="Save ORCA queue file",
+            defaultextension=".orcaqueue.json",
+            initialfile=suggested,
+            filetypes=[("ORCA queue files", "*.orcaqueue.json"), ("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            self.job_queue.save(Path(path))
+            self._save_job_queue()
+            self.status.configure(text=f"Saved ORCA queue file: {path}")
+        except Exception as exc:
+            messagebox.showerror("Save Queue error", str(exc))
+
+    def load_job_queue_as(self):
+        path = filedialog.askopenfilename(
+            title="Load ORCA queue file",
+            filetypes=[("ORCA queue files", "*.orcaqueue.json *.queue.json *.json"), ("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        self._maybe_load_job_queue_file(path)
+
+    def _queue_has_any_jobs(self) -> bool:
+        return any(bool(jobs) for jobs in self.job_queue.queues.values())
+
+    def _refresh_queue_selector(self):
+        self.queue_name_var.set(self.job_queue.active_queue)
+        combo = self.queue_combo
+        if combo is not None and combo.winfo_exists():
+            combo.configure(values=self.job_queue.queue_names())
+
+    def _on_queue_selected(self, _event=None):
+        selected = self.queue_name_var.get().strip()
+        if not selected:
+            return
+        self.job_queue.set_active_queue(selected)
+        self._save_job_queue()
+        self._refresh_queue_selector()
+        self._refresh_queue_tree()
+        self.status.configure(text=f"Active ORCA queue: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+
+    def _ask_for_queue_name(self, title: str = "Queue name") -> Optional[str]:
+        name = simpledialog.askstring(title, "Queue name:", parent=self)
+        if name is None:
+            return None
+        cleaned = name.strip()
+        return cleaned or None
+
+    def _ensure_queue_for_addition(self) -> bool:
+        if self._queue_has_any_jobs():
+            return True
+        name = self._ask_for_queue_name("New ORCA job queue")
+        if not name:
+            return False
+        self.job_queue.create_queue(name)
+        self._save_job_queue()
+        self._refresh_queue_selector()
+        return True
+
+    def _create_job_queue(self):
+        name = self._ask_for_queue_name("New ORCA job queue")
+        if not name:
+            return
+        self.job_queue.create_queue(name)
+        self._save_job_queue()
+        self._refresh_queue_selector()
+        self._refresh_queue_tree()
+        self.status.configure(text=f"Active ORCA queue: {self.job_queue.active_queue}")
+
+    def _delete_active_job_queue(self):
+        if self.run_process and self.run_process.poll() is None:
+            messagebox.showinfo("Queue Jobs", "Stop the running ORCA job before deleting a queue.")
+            return
+        active_name = self.job_queue.active_queue
+        if self.job_queue.jobs and not messagebox.askyesno("Delete queue", f"Delete queue '{active_name}' and its job list?"):
+            return
+        self.job_queue.delete_active_queue()
+        self.queue_running = False
+        self.active_queue_job = None
+        self._save_job_queue()
+        self._refresh_queue_selector()
+        self._refresh_queue_tree()
+        self.status.configure(text=f"Deleted ORCA queue: {active_name}. Active queue: {self.job_queue.active_queue}")
+
+    def _refresh_queue_tree(self):
+        tree = self.queue_tree
+        if tree is None or not tree.winfo_exists():
+            return
+        tree.delete(*tree.get_children())
+        for idx, job in enumerate(self.job_queue.jobs):
+            tree.insert(
+                "",
+                "end",
+                iid=str(idx),
+                values=(idx + 1, job.name, job.status, job.output_path, job.folder, job.message),
+            )
+
+    def _add_files_to_job_queue(self):
+        if not self._ensure_queue_for_addition():
+            return
+        paths = filedialog.askopenfilenames(
+            title="Add ORCA input files to queue",
+            filetypes=[("ORCA input files", "*.inp"), ("All files", "*.*")],
+        )
+        if not paths:
+            return
+        added = self.job_queue.add_input_files(paths)
+        self._save_job_queue()
+        self._refresh_queue_selector()
+        self._refresh_queue_tree()
+        self.status.configure(text=f"Queue jobs added: {added}. Active queue: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+
+    def add_current_input_to_queue(self):
+        try:
+            if self.program_var.get() != "ORCA":
+                raise ValueError("Only ORCA .inp files can be added to the ORCA job queue.")
+            if not self._ensure_queue_for_addition():
+                return
+            inp_path = self.ensure_input_saved()
+            if not inp_path:
+                return
+            if Path(inp_path).suffix.lower() != ".inp":
+                raise ValueError(f"Only ORCA .inp files can be queued: {inp_path}")
+            added = self.job_queue.add_input_files([inp_path])
+            self._save_job_queue()
+            self._refresh_queue_selector()
+            self._refresh_queue_tree()
+            if added:
+                self.status.configure(text=f"Added to queue '{self.job_queue.active_queue}': {inp_path}")
+            else:
+                self.status.configure(text=f"Already in queue '{self.job_queue.active_queue}': {inp_path}")
+        except Exception as exc:
+            messagebox.showerror("Add to Queue error", str(exc))
+
+    def _remove_selected_queue_jobs(self):
+        if self.run_process and self.run_process.poll() is None:
+            messagebox.showinfo("Queue Jobs", "Stop the running ORCA job before removing queued jobs.")
+            return
+        tree = self.queue_tree
+        if tree is None or not tree.winfo_exists():
+            return
+        indices = []
+        for item in tree.selection():
+            try:
+                indices.append(int(item))
+            except Exception:
+                pass
+        if not indices:
+            return
+        running_indices = [
+            idx for idx in indices
+            if 0 <= idx < len(self.job_queue.jobs) and self.job_queue.jobs[idx].status == "running"
+        ]
+        if running_indices:
+            messagebox.showinfo("Queue Jobs", "The running job cannot be removed. Stop it first if needed.")
+            return
+        self.job_queue.remove_indices(indices)
+        self._save_job_queue()
+        self._refresh_queue_tree()
+        self.status.configure(text=f"Queue updated. Active queue: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+
+    def _clear_job_queue(self):
+        if self.run_process and self.run_process.poll() is None:
+            messagebox.showinfo("Queue Jobs", "Stop the running ORCA job before clearing the queue.")
+            return
+        self.job_queue.queues[self.job_queue.active_queue] = []
+        self.job_queue.current_index = None
+        self.job_queue.current_queue = None
+        self.queue_running = False
+        self.active_queue_job = None
+        self._save_job_queue()
+        self._refresh_queue_selector()
+        self._refresh_queue_tree()
+        self.status.configure(text=f"ORCA job queue cleared: {self.job_queue.active_queue}.")
+
+    def _reset_job_queue(self):
+        if self.run_process and self.run_process.poll() is None:
+            messagebox.showinfo("Queue Jobs", "Stop the running ORCA job before resetting the queue.")
+            return
+        self.job_queue.reset_pending()
+        self._save_job_queue()
+        self._refresh_queue_tree()
+        self.status.configure(text=f"Queue reset. Active queue: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+
+    def open_job_queue(self):
+        if self.queue_window is not None and self.queue_window.winfo_exists():
+            self.queue_window.lift()
+            self._refresh_queue_selector()
+            self._refresh_queue_tree()
+            return
+
+        win = tk.Toplevel(self)
+        configure_tk_window_identity(win, "Builder")
+        win.title("ORCA job queue")
+        win.geometry("920x360")
+        win.minsize(760, 260)
+        win.columnconfigure(0, weight=1)
+        win.rowconfigure(1, weight=1)
+        self.queue_window = win
+
+        top = ttk.Frame(win)
+        top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=8, pady=(8, 0))
+        top.columnconfigure(1, weight=1)
+        ttk.Label(top, text="Active queue").grid(row=0, column=0, sticky="w")
+        self.queue_combo = ttk.Combobox(
+            top,
+            textvariable=self.queue_name_var,
+            values=self.job_queue.queue_names(),
+            state="readonly",
+            width=28,
+        )
+        self.queue_combo.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        self.queue_combo.bind("<<ComboboxSelected>>", self._on_queue_selected)
+        ttk.Button(top, text="New queue", command=self._create_job_queue).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        ttk.Button(top, text="Delete queue", command=self._delete_active_job_queue).grid(row=0, column=3, sticky="e", padx=(6, 0))
+
+        columns = ("#", "Input", "Status", "Output", "Folder", "Message")
+        tree = ttk.Treeview(win, columns=columns, show="headings", selectmode="extended")
+        self.queue_tree = tree
+        widths = {"#": 45, "Input": 190, "Status": 90, "Output": 230, "Folder": 260, "Message": 180}
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=widths.get(col, 120), anchor="w", stretch=True)
+        tree.grid(row=1, column=0, sticky="nsew", padx=8, pady=(8, 0))
+
+        yscroll = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=yscroll.set)
+        yscroll.grid(row=1, column=1, sticky="ns", pady=(8, 0))
+
+        buttons = ttk.Frame(win)
+        buttons.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=8)
+        for idx in range(8):
+            buttons.columnconfigure(idx, weight=1)
+        ttk.Button(buttons, text="Add .inp files", command=self._add_files_to_job_queue).grid(row=0, column=0, sticky="ew")
+        ttk.Button(buttons, text="Remove selected", command=self._remove_selected_queue_jobs).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Reset finished", command=self._reset_job_queue).grid(row=0, column=2, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Clear queue", command=self._clear_job_queue).grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Save Queue", command=self.save_job_queue_as).grid(row=0, column=4, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Load Queue", command=self.load_job_queue_as).grid(row=0, column=5, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Autosave now", command=self._save_job_queue).grid(row=0, column=6, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=7, sticky="ew", padx=(6, 0))
+
+        self._refresh_queue_selector()
+        self._refresh_queue_tree()
+        if not self._queue_has_any_jobs():
+            self.after(100, self._add_files_to_job_queue)
+
     def ensure_input_saved(self) -> Optional[str]:
         selected_path = self.path_var.get().strip().strip('"')
         if self._is_existing_orca_input_path(selected_path):
@@ -6191,74 +6524,146 @@ class App(tk.Tk):
                 raise ValueError("Run ORCA is available only when Program = ORCA.")
             if self.run_process and self.run_process.poll() is None:
                 raise ValueError("An ORCA run is already in progress.")
-            orca_path = self.orca_path_var.get().strip().strip('"')
-            if not orca_path:
-                self.auto_locate_orca(silent=True)
-                orca_path = self.orca_path_var.get().strip().strip('"')
-            if not orca_path or not os.path.isfile(orca_path):
-                raise ValueError("ORCA executable was not found. Please locate `orca` / `orca.exe` manually.")
-            ok, reason = validate_orca_qm_executable(orca_path)
-            if not ok:
-                self.orca_path_var.set("")
-                raise ValueError(
-                    "The configured executable is not valid ORCA quantum chemistry:\n"
-                    f"{orca_path}\n\n{reason}\n\n"
-                    "Please select the real ORCA QM executable, for example /opt/orca*/orca or ~/programs/orca_*/orca."
-                )
+            orca_path = self._validated_orca_path()
+            if self._has_queued_jobs():
+                self._start_job_queue(orca_path)
+                return
             inp_path = self.ensure_input_saved()
             if not inp_path:
                 return
-            out_path = str(Path(inp_path).with_suffix(".out"))
-            self.last_output_path = out_path
-            args = [orca_path, os.path.basename(inp_path)]
-            workdir = os.path.dirname(inp_path) or os.getcwd()
-            self.active_run_context = {
-                "interaction_enabled": bool(self.job_interaction_var.get()),
-                "interaction_relax": bool(self.interaction_relax_var.get()),
-                "interaction_thermo": bool(self.interaction_thermo_var.get()),
-                "interaction_cp": True,
-                "fragment_a_indices": list(self.fragment_a_indices),
-                "fragment_b_indices": list(self.fragment_b_indices),
-                "frag_a_charge": int(self.frag_a_charge_var.get()),
-                "frag_a_mult": int(self.frag_a_mult_var.get()),
-                "frag_b_charge": int(self.frag_b_charge_var.get()),
-                "frag_b_mult": int(self.frag_b_mult_var.get()),
-                "input_path": inp_path,
-                "orca_path": orca_path,
-                "data": self.collect(),
-                "dimer_optimized": bool(self.job_opt_var.get()),
-            }
-            interaction_warnings = self._preflight_interaction_context(self.active_run_context)
-
-            self.clear_monitor(reset_status=False)
-            self._show_output_mode("monitor")
-            for warning in interaction_warnings:
-                self.append_monitor(f"Interaction warning: {warning}")
-            self.monitor_started_at = time.time()
-            self.monitor_offset = 0
-            self._set_monitor_progress(0.0, allow_decrease=True)
-            self._set_monitor_stage("Starting ORCA")
-            self.status.configure(text="Starting ORCA...")
-
-            fout = open(out_path, "w", encoding="utf-8", errors="replace")
-            try:
-                self.run_process = subprocess.Popen(
-                    args,
-                    cwd=workdir,
-                    env=subprocess_env_with_executable_dir(orca_path),
-                    stdout=fout,
-                    stderr=subprocess.STDOUT,
-                    shell=False
-                )
-            finally:
-                fout.close()
-
-            self.append_monitor(f"$ {' '.join(args)}\nWorking directory: {workdir}\nOutput file: {out_path}\n\n")
-            self._set_monitor_progress(5.0)
-            self._schedule_monitor_poll()
+            context = self._context_for_current_input(inp_path, orca_path)
+            self._start_orca_input(inp_path, orca_path, context)
         except Exception as exc:
             self.active_run_context = None
             messagebox.showerror("Run error", str(exc))
+
+    def _validated_orca_path(self) -> str:
+        orca_path = self.orca_path_var.get().strip().strip('"')
+        if not orca_path:
+            self.auto_locate_orca(silent=True)
+            orca_path = self.orca_path_var.get().strip().strip('"')
+        if not orca_path or not os.path.isfile(orca_path):
+            raise ValueError("ORCA executable was not found. Please locate `orca` / `orca.exe` manually.")
+        ok, reason = validate_orca_qm_executable(orca_path)
+        if not ok:
+            self.orca_path_var.set("")
+            raise ValueError(
+                "The configured executable is not valid ORCA quantum chemistry:\n"
+                f"{orca_path}\n\n{reason}\n\n"
+                "Please select the real ORCA QM executable, for example /opt/orca*/orca or ~/programs/orca_*/orca."
+            )
+        return orca_path
+
+    def _has_queued_jobs(self) -> bool:
+        return any(job.status == "queued" for job in self.job_queue.jobs)
+
+    def _context_for_current_input(self, inp_path: str, orca_path: str) -> Dict:
+        context = {
+            "interaction_enabled": bool(self.job_interaction_var.get()),
+            "interaction_relax": bool(self.interaction_relax_var.get()),
+            "interaction_thermo": bool(self.interaction_thermo_var.get()),
+            "interaction_cp": True,
+            "fragment_a_indices": list(self.fragment_a_indices),
+            "fragment_b_indices": list(self.fragment_b_indices),
+            "frag_a_charge": int(self.frag_a_charge_var.get()),
+            "frag_a_mult": int(self.frag_a_mult_var.get()),
+            "frag_b_charge": int(self.frag_b_charge_var.get()),
+            "frag_b_mult": int(self.frag_b_mult_var.get()),
+            "input_path": inp_path,
+            "orca_path": orca_path,
+            "data": self.collect(),
+            "dimer_optimized": bool(self.job_opt_var.get()),
+        }
+        return context
+
+    def _context_for_queued_input(self, inp_path: str, orca_path: str) -> Dict:
+        return {
+            "input_path": inp_path,
+            "orca_path": orca_path,
+            "data": self._data_from_orca_input_file(inp_path),
+            "post_processing": {},
+            "queue_job": True,
+        }
+
+    def _start_orca_input(self, inp_path: str, orca_path: str, context: Dict):
+        if not os.path.isfile(inp_path):
+            raise FileNotFoundError(f"ORCA input file was not found: {inp_path}")
+        if Path(inp_path).suffix.lower() != ".inp":
+            raise ValueError(f"Queued ORCA jobs must be .inp files: {inp_path}")
+        out_path = str(Path(inp_path).with_suffix(".out"))
+        self.current_input_path = inp_path
+        self.last_output_path = out_path
+        args = [orca_path, os.path.basename(inp_path)]
+        workdir = os.path.dirname(inp_path) or os.getcwd()
+        self.active_run_context = context
+        interaction_warnings = []
+        if context.get("interaction_enabled"):
+            interaction_warnings = self._preflight_interaction_context(context)
+
+        self.clear_monitor(reset_status=False)
+        self._show_output_mode("monitor")
+        if context.get("queue_job"):
+            self.append_monitor(f"=== Queued ORCA job ===\nInput: {inp_path}\n")
+        for warning in interaction_warnings:
+            self.append_monitor(f"Interaction warning: {warning}")
+        self.monitor_started_at = time.time()
+        self.monitor_offset = 0
+        self._set_monitor_progress(0.0, allow_decrease=True)
+        self._set_monitor_stage("Starting ORCA")
+        self.status.configure(text="Starting ORCA...")
+
+        fout = open(out_path, "w", encoding="utf-8", errors="replace")
+        try:
+            self.run_process = subprocess.Popen(
+                args,
+                cwd=workdir,
+                env=subprocess_env_with_executable_dir(orca_path),
+                stdout=fout,
+                stderr=subprocess.STDOUT,
+                shell=False
+            )
+        finally:
+            fout.close()
+
+        self.append_monitor(f"$ {' '.join(args)}\nWorking directory: {workdir}\nOutput file: {out_path}\n\n")
+        self._set_monitor_progress(5.0)
+        self._schedule_monitor_poll()
+
+    def _start_job_queue(self, orca_path: str):
+        if not self._has_queued_jobs():
+            raise ValueError("The ORCA job queue is empty.")
+        self.queue_running = True
+        self._show_output_mode("monitor")
+        self.append_monitor(
+            f"=== Starting ORCA job queue ===\n"
+            f"Active queue: {self.job_queue.active_queue}\n"
+            f"Queue: {self.job_queue.summary()}\n",
+            clear=True,
+        )
+        self._start_next_queued_job(orca_path)
+
+    def _start_next_queued_job(self, orca_path: str):
+        job = self.job_queue.next_queued()
+        self.active_queue_job = job
+        self._save_job_queue()
+        self._refresh_queue_tree()
+        if job is None:
+            self.queue_running = False
+            self.status.configure(text=f"ORCA queue finished: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+            self._set_monitor_stage("Queue finished")
+            self._set_monitor_progress(100.0)
+            messagebox.showinfo("ORCA queue finished", f"Queued ORCA jobs finished.\n\nQueue: {self.job_queue.active_queue}\n{self.job_queue.summary()}")
+            return
+        try:
+            context = self._context_for_queued_input(job.input_path, orca_path)
+            self._start_orca_input(job.input_path, orca_path, context)
+        except Exception as exc:
+            self.job_queue.mark_current("failed", str(exc))
+            self.active_queue_job = None
+            self._save_job_queue()
+            self._refresh_queue_tree()
+            self.append_monitor(f"Queued job failed before launch: {exc}\n")
+            self.after(250, lambda: self._start_next_queued_job(orca_path))
 
     def _schedule_monitor_poll(self, delay_ms: int = MONITOR_POLL_DELAY_MS):
         if self.monitor_job_id:
@@ -6392,6 +6797,10 @@ class App(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Stop job error", str(exc))
             return
+        if self.active_queue_job is not None:
+            self.queue_running = False
+            if self.active_run_context is not None:
+                self.active_run_context["queue_stopped"] = True
         self._set_monitor_stage("Stopping job")
         self.status.configure(text="Stopping ORCA job...")
         self._schedule_monitor_poll()
@@ -6609,6 +7018,7 @@ class App(tk.Tk):
                 pass
             self.monitor_job_id = None
         context = self.active_run_context or {}
+        queue_job = bool(context.get("queue_job") and self.active_queue_job)
         output_ok, output_reason = validate_orca_output_file(out_path)
         if code == 0 and output_ok:
             self._set_monitor_progress(65.0)
@@ -6675,15 +7085,16 @@ class App(tk.Tk):
             if post_messages:
                 status += " | " + " ".join(post_messages)
             self.status.configure(text=status)
-            if os.path.isfile(out_path):
+            if not queue_job and os.path.isfile(out_path):
                 try:
                     open_path_in_system(out_path)
                 except Exception:
                     pass
-            message = f"Exit code: {code}\nOutput file:\n{out_path}"
-            if post_messages:
-                message += "\n\n" + "\n".join(post_messages)
-            messagebox.showinfo("ORCA finished", message)
+            if not queue_job:
+                message = f"Exit code: {code}\nOutput file:\n{out_path}"
+                if post_messages:
+                    message += "\n\n" + "\n".join(post_messages)
+                messagebox.showinfo("ORCA finished", message)
         else:
             self._set_monitor_stage(f"Finished with exit code {code}")
             message = (
@@ -6693,8 +7104,23 @@ class App(tk.Tk):
             detail = f"Exit code: {code}\nOutput check: {output_reason}\nOutput: {out_path}"
             self.append_monitor("\n" + message + "\n" + detail + "\n")
             self.status.configure(text=message)
-            messagebox.showwarning("ORCA finished with errors", message + "\n\n" + detail)
+            if not queue_job:
+                messagebox.showwarning("ORCA finished with errors", message + "\n\n" + detail)
         self.active_run_context = None
+        if queue_job:
+            if context.get("queue_stopped"):
+                status = "stopped"
+                detail = "Stopped by user"
+            else:
+                status = "done" if code == 0 and output_ok else "failed"
+                detail = "Finished normally" if status == "done" else f"Exit code {code}; {output_reason}"
+            self.job_queue.mark_current(status, detail)
+            self.active_queue_job = None
+            self._save_job_queue()
+            self._refresh_queue_tree()
+            orca_path = str(context.get("orca_path", "")).strip()
+            if self.queue_running and orca_path:
+                self.after(500, lambda path=orca_path: self._start_next_queued_job(path))
 
 
 if __name__ == "__main__":

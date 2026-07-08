@@ -1,0 +1,10 @@
+TY  - COMP
+AU  - Torubaev, Yury
+TI  - CrystEngKit-ORCA: practical GUI tools for ORCA and Multiwfn calculations in supramolecular chemistry and crystal engineering
+PY  - 2026
+DA  - 2026
+ET  - 1.0
+PB  - GitHub
+UR  - https://github.com/torubaev/crystengkit-orca-v1.0
+AB  - Software repository for preparing ORCA/Gaussian input files, running ORCA calculations, and generating ESP, NCI, QTAIM, HOMO-LUMO, and intermolecular-interaction visualizations and summaries.
+ER  -

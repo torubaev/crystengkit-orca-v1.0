@@ -14,6 +14,7 @@
 - [Glossary](README.md#glossary)
 - [Examples and Benchmark Data](README.md#examples-and-benchmark-data)
 - [Troubleshooting](README.md#troubleshooting)
+- [How to cite CrystEngKit-ORCA](README.md#how-to-cite-crystengkit-orca)
 - [Repository contents](README.md#repository-contents)
 - [Notes](README.md#notes)
 
@@ -30,7 +31,7 @@ CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or n
 
 The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
-- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, 3D MOL/SDF files, and Gaussian input files
+- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, 3D MOL/SDF files, Gaussian input files, and external ORCA/Gaussian `.out` / `.log` files
 - prepare ORCA and Gaussian[^gaussian] input files
 - run ORCA and show live output
 - generate manuscript-ready computation summaries for experimental sections and supporting information
@@ -112,7 +113,7 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ### ORCA Input Builder
 
-![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, or existing `.inp` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls. The `Show summary` button displays the calculation summary in the `Job monitor` view, including summaries found for loaded existing `.inp` files. Current Builder versions try to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
+![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, existing `.inp` files, or external ORCA/Gaussian `.out` / `.log` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with an `Input preview` / `Job monitor` switch: `Input preview` generates or refreshes the current input file text, while `Job monitor` shows live ORCA output, progress, elapsed time, and summary/monitor controls. The `Show summary` button displays the calculation summary in the `Job monitor` view, including summaries found for loaded existing `.inp` files. Current Builder versions try to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
 
 ### HOMO-LUMO Plotter
 
@@ -152,7 +153,7 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 ### Build and Run an ORCA Job
 
-1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, and 3D `.mol`/`.sdf`/`.sd` files are read directly. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are also supported.
+1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, and 3D `.mol`/`.sdf`/`.sd` files are read directly. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are also supported. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
    
    ![ORCA Input Builder job setup window](images/wiki/orca-input_1.png)
 
@@ -430,6 +431,14 @@ This can happen when:
 - but a later relaxed or thermodynamic follow-up job fails
 
 In that case, the summary should still preserve the successful interaction terms and report a crash note.
+
+## How to cite CrystEngKit-ORCA
+
+If CrystEngKit-ORCA is useful for preparing calculations, analyzing ORCA/Multiwfn results, or making figures for a manuscript or supporting information, please cite the GitHub software repository:
+
+Torubaev, Y. *CrystEngKit-ORCA: practical GUI tools for ORCA and Multiwfn calculations in supramolecular chemistry and crystal engineering*, version 1.0; GitHub, 2026. <https://github.com/torubaev/crystengkit-orca-v1.0>
+
+For EndNote, Zotero, Mendeley, or other bibliography managers, import the RIS file: [docs/crystengkit-orca.ris](docs/crystengkit-orca.ris).
 
 ## Repository contents
 
