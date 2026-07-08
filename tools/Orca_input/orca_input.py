@@ -998,7 +998,8 @@ BOHR_TO_ANGSTROM = 0.529177210903
 OPEN_BABEL_TIMEOUT = 45.0
 OPEN_BABEL_EXTENSIONS = {".mol", ".sdf", ".sd", ".cml", ".cdxml", ".cdx", ".ct"}
 GAUSSIAN_INPUT_EXTENSIONS = {".gjf", ".com", ".gau", ".gjc"}
-STRUCTURE_INPUT_EXTENSIONS = {".xyz", ".cif", ".inp"} | OPEN_BABEL_EXTENSIONS | GAUSSIAN_INPUT_EXTENSIONS
+OUTPUT_STRUCTURE_EXTENSIONS = {".out", ".log"}
+STRUCTURE_INPUT_EXTENSIONS = {".xyz", ".cif", ".inp"} | OPEN_BABEL_EXTENSIONS | GAUSSIAN_INPUT_EXTENSIONS | OUTPUT_STRUCTURE_EXTENSIONS
 
 ORCA_FUNCTIONALS = sorted({
     "HF","BP86","BLYP","PBE","PBE0","B3LYP","B3LYP/G","TPSSh","TPSS0","TPSS","M06L","M06","M062X",
@@ -1436,12 +1437,14 @@ def structure_input_format(path: str) -> str:
         return "CIF"
     if ext == ".inp":
         return "ORCA input"
+    if ext in OUTPUT_STRUCTURE_EXTENSIONS:
+        return "Quantum chemistry output"
     if ext in OPEN_BABEL_EXTENSIONS:
         return ext[1:].upper()
     if ext in GAUSSIAN_INPUT_EXTENSIONS:
         return "Gaussian input"
     raise ValueError(
-        "Supported structure files: .xyz, .cif, ORCA .inp, .mol, .sdf/.sd, .cml, .cdxml, .cdx, .ct, and Gaussian .gjf/.com/.gau/.gjc."
+        "Supported structure files: .xyz, .cif, ORCA .inp, ORCA/Gaussian .out/.log, .mol, .sdf/.sd, .cml, .cdxml, .cdx, .ct, and Gaussian .gjf/.com/.gau/.gjc."
     )
 
 
@@ -1789,6 +1792,17 @@ def gaussian_sections_with_geometry(sections: List[GaussianSection]) -> List[Gau
     return [section for section in sections if section.atoms or section.requires_openbabel]
 
 
+def parse_gaussian_output_charge_multiplicity(text: str) -> Tuple[Optional[int], Optional[int]]:
+    matches = re.findall(r"Charge\s*=\s*([+-]?\d+)\s+Multiplicity\s*=\s*(\d+)", text, flags=re.IGNORECASE)
+    if not matches:
+        return None, None
+    charge_text, mult_text = matches[-1]
+    try:
+        return int(charge_text), int(mult_text)
+    except Exception:
+        return None, None
+
+
 def cif_unquote(value: str) -> str:
     value = value.strip()
     if (value.startswith("'") and value.endswith("'")) or (value.startswith('"') and value.endswith('"')):
@@ -2132,7 +2146,9 @@ class StructureParser:
             return StructureParser.parse_cif_fallback(path)
         if ext == ".inp":
             return StructureParser.parse_orca_input(path)
-        raise ValueError("Supported input files: .xyz, .cif, or ORCA .inp")
+        if ext in OUTPUT_STRUCTURE_EXTENSIONS:
+            return StructureParser.parse_output_geometry(path)
+        raise ValueError("Supported input files: .xyz, .cif, ORCA .inp, or ORCA/Gaussian .out/.log")
 
     @staticmethod
     def parse_xyz(path: str) -> Structure:
@@ -2265,6 +2281,76 @@ class StructureParser:
         if not last_atoms:
             raise ValueError("No final ORCA Cartesian coordinate block was found in the output file.")
         return Structure(last_atoms, title=f"{os.path.basename(path)} (final ORCA geometry)")
+
+    @staticmethod
+    def parse_gaussian_output_final_geometry(path: str) -> Structure:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines()
+        last_atoms: List[Tuple[str, float, float, float]] = []
+        last_label = ""
+        idx = 0
+        while idx < len(lines):
+            label = lines[idx].strip()
+            if label not in {"Standard orientation:", "Input orientation:"}:
+                idx += 1
+                continue
+            dashed_seen = 0
+            j = idx + 1
+            while j < len(lines) and dashed_seen < 2:
+                if set(lines[j].strip()) <= {"-"} and lines[j].strip():
+                    dashed_seen += 1
+                j += 1
+            atoms: List[Tuple[str, float, float, float]] = []
+            while j < len(lines):
+                stripped = lines[j].strip()
+                if not stripped:
+                    j += 1
+                    continue
+                if set(stripped) <= {"-"}:
+                    break
+                parts = stripped.split()
+                if len(parts) >= 6:
+                    try:
+                        atomic_number = int(parts[1])
+                        symbol = ELEMENT_BY_ATOMIC_NUMBER.get(atomic_number)
+                        if not symbol:
+                            raise ValueError(f"Unknown atomic number: {atomic_number}")
+                        atoms.append((symbol, float(parts[3]), float(parts[4]), float(parts[5])))
+                    except Exception:
+                        if atoms:
+                            break
+                elif atoms:
+                    break
+                j += 1
+            if atoms:
+                last_atoms = atoms
+                last_label = label.rstrip(":")
+            idx = max(j + 1, idx + 1)
+
+        if not last_atoms:
+            raise ValueError("No Gaussian Standard/Input orientation coordinate table was found in the output file.")
+        return Structure(last_atoms, title=f"{os.path.basename(path)} (final Gaussian {last_label.lower()})")
+
+    @staticmethod
+    def parse_output_geometry(path: str) -> Structure:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        upper = text.upper()
+        if _looks_like_gnome_orca(text):
+            raise ValueError("This file appears to be from the GNOME Orca screen reader, not ORCA quantum chemistry.")
+        if any(marker in upper for marker in ORCA_QM_IDENTITY_MARKERS) or "CARTESIAN COORDINATES (ANGSTROEM)" in upper:
+            return StructureParser.parse_orca_output_final_geometry(path)
+        if "STANDARD ORIENTATION:" in upper or "INPUT ORIENTATION:" in upper or "GAUSSIAN" in upper:
+            return StructureParser.parse_gaussian_output_final_geometry(path)
+        try:
+            return StructureParser.parse_orca_output_final_geometry(path)
+        except Exception as orca_exc:
+            try:
+                return StructureParser.parse_gaussian_output_final_geometry(path)
+            except Exception as gaussian_exc:
+                raise ValueError(
+                    "Output file was not recognized as a readable ORCA or Gaussian output.\n"
+                    f"ORCA parser: {orca_exc}\nGaussian parser: {gaussian_exc}"
+                ) from gaussian_exc
 
     @staticmethod
     def parse_cif_gemmi(path: str) -> Structure:
@@ -3778,6 +3864,39 @@ class App(tk.Tk):
             log_lines=log_lines,
         )
 
+    def _import_output_structure(self, path: str) -> ImportResult:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        upper = text.upper()
+        is_orca = any(marker in upper for marker in ORCA_QM_IDENTITY_MARKERS) or "CARTESIAN COORDINATES (ANGSTROEM)" in upper
+        is_gaussian = "STANDARD ORIENTATION:" in upper or "INPUT ORIENTATION:" in upper or "GAUSSIAN" in upper
+        structure = StructureParser.parse_output_geometry(path)
+        xyz_text = xyz_text_from_atoms(structure.atoms, structure.title)
+        validate_xyz_text(xyz_text, "Output geometry")
+        source_format = "ORCA output" if is_orca else "Gaussian output" if is_gaussian else "Quantum chemistry output"
+        charge: Optional[int] = None
+        multiplicity: Optional[int] = None
+        if source_format == "Gaussian output":
+            charge, multiplicity = parse_gaussian_output_charge_multiplicity(text)
+        log_lines = [
+            f"Source format: {source_format}",
+            "Imported geometry: final/last Cartesian coordinates from output file",
+            f"Atom count: {len(structure.atoms)}",
+        ]
+        warnings = [
+            "Only Cartesian coordinates were imported from the output file; method, basis, constraints, and other job settings were not transferred."
+        ]
+        return ImportResult(
+            structure,
+            xyz_text,
+            path,
+            source_format,
+            structure.title,
+            charge=charge,
+            multiplicity=multiplicity,
+            warnings=warnings,
+            log_lines=log_lines,
+        )
+
     def import_structure_file(self, path: str) -> ImportResult:
         ext = Path(path).suffix.lower()
         source_format = structure_input_format(path)
@@ -3800,6 +3919,8 @@ class App(tk.Tk):
             return self._import_openbabel_structure(path, ext)
         if ext in GAUSSIAN_INPUT_EXTENSIONS:
             return self._import_gaussian_structure(path)
+        if ext in OUTPUT_STRUCTURE_EXTENSIONS:
+            return self._import_output_structure(path)
         raise ValueError(f"Unsupported input format: {Path(path).suffix}")
 
     def browse(self):
@@ -3807,6 +3928,7 @@ class App(tk.Tk):
         p = filedialog.askopenfilename(filetypes=[
             ("Supported structure files", patterns),
             ("XYZ/CIF/ORCA input", "*.xyz *.cif *.inp"),
+            ("ORCA/Gaussian output", "*.out *.log"),
             ("MOL/SDF and Open Babel formats", "*.mol *.sdf *.sd *.cml *.cdxml *.cdx *.ct"),
             ("Gaussian input", "*.gjf *.com *.gau *.gjc"),
             ("All files", "*.*"),
@@ -3821,6 +3943,7 @@ class App(tk.Tk):
             self.structure = result.structure
             self.structure_source_path = str(Path(p).resolve())
             self.current_input_path = p if self._is_existing_orca_input_path(p) else None
+            self.last_output_path = p if result.source_format == "ORCA output" else self.last_output_path
             self.preview_text.delete("1.0", "end")
             if self.current_input_path:
                 self.preview_text.insert("1.0", Path(p).read_text(encoding="utf-8", errors="replace"))
@@ -3845,6 +3968,7 @@ class App(tk.Tk):
             self.structure = result.structure
             self.structure_source_path = str(Path(path).resolve())
             self.current_input_path = path if self._is_existing_orca_input_path(path) else None
+            self.last_output_path = path if result.source_format == "ORCA output" else self.last_output_path
             if self.current_input_path:
                 self._load_existing_orca_input_if_selected()
             else:
