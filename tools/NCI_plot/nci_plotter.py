@@ -72,6 +72,12 @@ CONTACT_EMAIL = "torubaev(at)gmail.com"
 LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
 README_LINK_TEXT = "README section: NCI Plotter"
 README_ANCHOR = "nci-plotter"
+CITATION_REFERENCE = (
+    "Torubaev, Y. CrystEngKit-ORCA: practical GUI tools for ORCA and "
+    "Multiwfn calculations in supramolecular chemistry and crystal engineering, "
+    "version 1.0; GitHub, 2026. https://github.com/torubaev/crystengkit-orca-v1.0"
+)
+CITATION_TEXT = f"Cite as: {CITATION_REFERENCE}"
 
 
 def wiki_url() -> str:
@@ -928,6 +934,15 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     win.transient(parent)
     win.columnconfigure(0, weight=1)
 
+    def copy_citation(_event=None) -> None:
+        try:
+            win.clipboard_clear()
+            win.clipboard_append(CITATION_REFERENCE)
+            citation_label.configure(text="Cite as: copied to clipboard", foreground="#047857")
+            win.after(1400, lambda: citation_label.configure(text=CITATION_TEXT, foreground="#1d4ed8") if citation_label.winfo_exists() else None)
+        except Exception as exc:
+            messagebox.showerror("Copy citation", str(exc), parent=win)
+
     box = ttk.Frame(win, padding=14)
     box.grid(row=0, column=0, sticky="nsew")
     box.columnconfigure(1, weight=1)
@@ -948,18 +963,21 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
     wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
-    ttk.Separator(box, orient="horizontal").grid(row=7, column=1, sticky="ew", pady=(12, 8))
-    ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=8, column=1, sticky="w")
+    citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
+    citation_label.grid(row=7, column=1, sticky="w", pady=(10, 0))
+    citation_label.bind("<Button-1>", copy_citation)
+    ttk.Separator(box, orient="horizontal").grid(row=8, column=1, sticky="ew", pady=(12, 8))
+    ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=9, column=1, sticky="w")
     contact = ttk.Frame(box)
-    contact.grid(row=9, column=1, sticky="w", pady=(7, 0))
+    contact.grid(row=10, column=1, sticky="w", pady=(7, 0))
     ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
     linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
     linkedin_icon.grid(row=0, column=1, padx=(10, 0))
     linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL))
 
-    ttk.Button(box, text="Close", command=win.destroy).grid(row=10, column=0, columnspan=2, sticky="e", pady=(14, 0))
-    win.geometry("590x370")
-    win.minsize(530, 340)
+    ttk.Button(box, text="Close", command=win.destroy).grid(row=11, column=0, columnspan=2, sticky="e", pady=(14, 0))
+    win.geometry("620x430")
+    win.minsize(560, 390)
     win.grab_set()
 
 

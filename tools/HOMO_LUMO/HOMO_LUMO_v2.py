@@ -74,6 +74,12 @@ CONTACT_EMAIL = "torubaev(at)gmail.com"
 LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
 README_LINK_TEXT = "README section: HOMO-LUMO Plotter"
 README_ANCHOR = "homo-lumo-plotter"
+CITATION_REFERENCE = (
+    "Torubaev, Y. CrystEngKit-ORCA: practical GUI tools for ORCA and "
+    "Multiwfn calculations in supramolecular chemistry and crystal engineering, "
+    "version 1.0; GitHub, 2026. https://github.com/torubaev/crystengkit-orca-v1.0"
+)
+CITATION_TEXT = f"Cite as: {CITATION_REFERENCE}"
 
 
 def wiki_url() -> str:
@@ -1331,6 +1337,15 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     win.transient(parent)
     win.columnconfigure(0, weight=1)
 
+    def copy_citation(_event=None) -> None:
+        try:
+            win.clipboard_clear()
+            win.clipboard_append(CITATION_REFERENCE)
+            citation_label.configure(text="Cite as: copied to clipboard", foreground="#047857")
+            win.after(1400, lambda: citation_label.configure(text=CITATION_TEXT, foreground="#1d4ed8") if citation_label.winfo_exists() else None)
+        except Exception as exc:
+            messagebox.showerror("Copy citation", str(exc), parent=win)
+
     box = ttk.Frame(win, padding=14)
     box.grid(row=0, column=0, sticky="nsew")
     box.columnconfigure(1, weight=1)
@@ -1351,18 +1366,21 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
     wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
-    ttk.Separator(box, orient="horizontal").grid(row=7, column=1, sticky="ew", pady=(12, 8))
-    ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=8, column=1, sticky="w")
+    citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
+    citation_label.grid(row=7, column=1, sticky="w", pady=(10, 0))
+    citation_label.bind("<Button-1>", copy_citation)
+    ttk.Separator(box, orient="horizontal").grid(row=8, column=1, sticky="ew", pady=(12, 8))
+    ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=9, column=1, sticky="w")
     contact = ttk.Frame(box)
-    contact.grid(row=9, column=1, sticky="w", pady=(7, 0))
+    contact.grid(row=10, column=1, sticky="w", pady=(7, 0))
     ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
     linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
     linkedin_icon.grid(row=0, column=1, padx=(10, 0))
     linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL))
 
-    ttk.Button(box, text="Close", command=win.destroy).grid(row=10, column=0, columnspan=2, sticky="e", pady=(14, 0))
-    win.geometry("590x370")
-    win.minsize(530, 340)
+    ttk.Button(box, text="Close", command=win.destroy).grid(row=11, column=0, columnspan=2, sticky="e", pady=(14, 0))
+    win.geometry("620x430")
+    win.minsize(560, 390)
     win.grab_set()
 
 
@@ -1480,6 +1498,7 @@ class App(tk.Tk):
         self.mo_contact_sheet: Optional[MOSurfaceContactSheet] = None
         self.active_mo_plotter: Any = None
         self.mo_viewer_opening = False
+        self.mo_surface_rendering = False
         self.mo_batch_thread: Optional[threading.Thread] = None
         self.mo_status_var = tk.StringVar(value="No ORCA output loaded.")
         self.recent_input_files = load_recent_files()
@@ -2194,6 +2213,8 @@ class App(tk.Tk):
         return plotter
 
     def _close_active_mo_plotter(self) -> None:
+        if getattr(self, "mo_surface_rendering", False):
+            return
         plotter = self.active_mo_plotter
         self.active_mo_plotter = None
         self._dispose_mo_plotter(plotter)
@@ -2214,6 +2235,9 @@ class App(tk.Tk):
             pass
 
     def open_mo_surface_viewer(self, orbital: Dict[str, Any]) -> None:
+        if self.mo_surface_rendering or (self.mo_batch_thread is not None and self.mo_batch_thread.is_alive()):
+            messagebox.showinfo("MO surface viewer", "MO surface rendering is in progress. Wait for it to finish before opening a live view.")
+            return
         if self.mo_viewer_opening:
             return
         self.mo_viewer_opening = True
@@ -2238,9 +2262,10 @@ class App(tk.Tk):
 
             def save_current_view() -> None:
                 nonlocal save_in_progress, save_completed
-                if save_in_progress or save_completed:
+                if save_in_progress or save_completed or self.mo_surface_rendering:
                     return
                 save_in_progress = True
+                self.mo_surface_rendering = True
                 try:
                     try:
                         plotter.remove_actor("save_prompt", render=False)
@@ -2253,7 +2278,8 @@ class App(tk.Tk):
                     live_image = plotter.screenshot(return_img=True, window_size=plotter.window_size, scale=1)
                     camera_position = plotter.camera_position
                     camera_state = capture_plotter_camera_state(plotter)
-                    self._close_active_mo_plotter()
+                    self.active_mo_plotter = None
+                    self._dispose_mo_plotter(plotter)
                     self.save_mo_surface_view(
                         orbital,
                         camera_position,
@@ -2264,14 +2290,28 @@ class App(tk.Tk):
                 except Exception as exc:
                     _show_error("Save MO surface image", exc)
                 finally:
+                    self.mo_surface_rendering = False
                     save_in_progress = False
+
+            def reset_current_view() -> None:
+                if self.mo_surface_rendering or save_in_progress:
+                    return
+                try:
+                    plotter.reset_camera()
+                except Exception:
+                    pass
+
+            def close_current_view() -> None:
+                if self.mo_surface_rendering or save_in_progress:
+                    return
+                self._close_active_mo_plotter()
 
             plotter.add_key_event("s", save_current_view)
             plotter.add_key_event("S", save_current_view)
             add_pyvista_keypress_observer(plotter, "s", save_current_view)
-            plotter.add_key_event("r", lambda: plotter.reset_camera())
-            plotter.add_key_event("R", lambda: plotter.reset_camera())
-            plotter.add_key_event("Escape", self._close_active_mo_plotter)
+            plotter.add_key_event("r", reset_current_view)
+            plotter.add_key_event("R", reset_current_view)
+            plotter.add_key_event("Escape", close_current_view)
             try:
                 bring_pyvista_window_to_front(plotter)
                 plotter.show(title=f"{orbital['display_label']} MO #{orbital['mo_number']}", auto_close=False)
@@ -2442,6 +2482,7 @@ class App(tk.Tk):
     ) -> None:
         count = len(orbitals)
         try:
+            self.mo_surface_rendering = True
             for index, orbital in enumerate(orbitals, start=1):
                 label = contact_sheet_orbital_label(orbital)
                 self._set_mo_status_from_worker(f"Rendering MO surface {index}/{count}: {label}")
@@ -2455,6 +2496,8 @@ class App(tk.Tk):
             self.after(0, lambda: self._finish_apply_mo_surface_view_to_all(count, None))
         except Exception as exc:
             self.after(0, lambda exc=exc: self._finish_apply_mo_surface_view_to_all(count, exc))
+        finally:
+            self.mo_surface_rendering = False
 
     def _finish_apply_mo_surface_view_to_all(self, count: int, exc: Optional[BaseException]) -> None:
         if exc is not None:
@@ -2478,89 +2521,94 @@ class App(tk.Tk):
     ) -> None:
         if Image is None:
             raise RuntimeError("Pillow is required to verify saved images and generate thumbnails.")
-        render_options = dict(render_options or {})
-        if {"preset", "width", "height", "isovalue", "opacity", "molecule_style", "color_scheme"}.issubset(render_options):
-            preset = str(render_options["preset"])
-            width = int(render_options["width"])
-            height = int(render_options["height"])
-            orbital["isovalue"] = float(render_options["isovalue"])
-            orbital["opacity"] = float(render_options["opacity"])
-            orbital["molecule_style"] = str(render_options["molecule_style"])
-            orbital["color_scheme"] = str(render_options["color_scheme"])
-        else:
-            preset, width, height = self._selected_image_resolution()
-            orbital["isovalue"], orbital["opacity"] = self._current_mo_visual_settings()
-            orbital["molecule_style"] = self.mo_molecule_style_var.get()
-            orbital["color_scheme"] = self.mo_color_scheme_var.get()
-            render_options.update({
-                "preset": preset,
-                "width": width,
-                "height": height,
+        previous_rendering_state = bool(getattr(self, "mo_surface_rendering", False))
+        self.mo_surface_rendering = True
+        try:
+            render_options = dict(render_options or {})
+            if {"preset", "width", "height", "isovalue", "opacity", "molecule_style", "color_scheme"}.issubset(render_options):
+                preset = str(render_options["preset"])
+                width = int(render_options["width"])
+                height = int(render_options["height"])
+                orbital["isovalue"] = float(render_options["isovalue"])
+                orbital["opacity"] = float(render_options["opacity"])
+                orbital["molecule_style"] = str(render_options["molecule_style"])
+                orbital["color_scheme"] = str(render_options["color_scheme"])
+            else:
+                preset, width, height = self._selected_image_resolution()
+                orbital["isovalue"], orbital["opacity"] = self._current_mo_visual_settings()
+                orbital["molecule_style"] = self.mo_molecule_style_var.get()
+                orbital["color_scheme"] = self.mo_color_scheme_var.get()
+                render_options.update({
+                    "preset": preset,
+                    "width": width,
+                    "height": height,
+                    "isovalue": orbital["isovalue"],
+                    "opacity": orbital["opacity"],
+                    "molecule_style": orbital["molecule_style"],
+                    "color_scheme": orbital["color_scheme"],
+                })
+            plotter = self._build_orbital_plotter(orbital, off_screen=True, window_size=(width, height), render_options=render_options)
+            apply_plotter_camera_state(plotter, camera_position, camera_state)
+            image_path = Path(orbital["image_path"])
+            thumb_path = Path(orbital["thumbnail_path"])
+            try:
+                for old_path in (image_path, thumb_path):
+                    try:
+                        if old_path.exists():
+                            old_path.unlink()
+                    except Exception:
+                        pass
+                img = pyvista_screenshot(plotter, str(image_path), window_size=(width, height), return_img=True)
+            except Exception as exc:
+                raise RuntimeError("High-resolution image saving failed. Try a smaller preset.") from exc
+            finally:
+                self._dispose_mo_plotter(plotter)
+            if img is None or getattr(img, "size", 0) == 0:
+                raise RuntimeError("Screenshot saving failed: blank image returned.")
+            with Image.open(image_path) as opened:
+                im = opened.convert("RGB")
+            if im.size != (width, height):
+                raise RuntimeError(f"Saved image has unexpected size {im.size}; expected {(width, height)}.")
+            extrema = im.convert("L").getextrema()
+            if extrema[0] == extrema[1]:
+                raise RuntimeError("Screenshot appears blank; image was not marked as saved.")
+            thumb = Image.fromarray(live_image).convert("RGB") if live_image is not None else im.copy()
+            thumb.thumbnail(THUMBNAIL_SIZE)
+            thumb.save(thumb_path)
+
+            out_path = self._require_orca_out_for_surfaces()
+            paths = ensure_mo_surface_dirs(out_path)
+            meta = load_mo_metadata(paths["metadata_file"])
+            meta.setdefault("orbitals", {})[orbital["safe_label"]] = {
+                "safe_label": orbital["safe_label"],
+                "display_label": orbital["display_label"],
+                "orca_mo_number": orbital["mo_number"],
+                "orbital_energy_ev": orbital.get("energy_ev"),
+                "cube_path": orbital["cube_path"],
+                "image_path": str(image_path),
+                "thumbnail_path": str(thumb_path),
                 "isovalue": orbital["isovalue"],
                 "opacity": orbital["opacity"],
                 "molecule_style": orbital["molecule_style"],
                 "color_scheme": orbital["color_scheme"],
-            })
-        plotter = self._build_orbital_plotter(orbital, off_screen=True, window_size=(width, height), render_options=render_options)
-        apply_plotter_camera_state(plotter, camera_position, camera_state)
-        image_path = Path(orbital["image_path"])
-        thumb_path = Path(orbital["thumbnail_path"])
-        try:
-            for old_path in (image_path, thumb_path):
-                try:
-                    if old_path.exists():
-                        old_path.unlink()
-                except Exception:
-                    pass
-            img = pyvista_screenshot(plotter, str(image_path), window_size=(width, height), return_img=True)
-        except Exception as exc:
-            raise RuntimeError("High-resolution image saving failed. Try a smaller preset.") from exc
+                "camera_position": camera_position_to_json(camera_position),
+                "camera_state": camera_state or {"camera_position": camera_position_to_json(camera_position)},
+                "saved_status": True,
+                "last_saved_timestamp": _dt.datetime.now().isoformat(timespec="seconds"),
+                "resolution_preset": preset,
+                "saved_image_width_px": width,
+                "saved_image_height_px": height,
+            }
+            save_mo_metadata(paths["metadata_file"], meta)
+            self.mo_metadata = meta
+            orbital["image_path"] = str(image_path)
+            orbital["thumbnail_path"] = str(thumb_path)
+            orbital["camera_position"] = camera_position_to_json(camera_position)
+            orbital["camera_state"] = camera_state or {"camera_position": camera_position_to_json(camera_position)}
+            if refresh_contact_sheet:
+                self.open_mo_contact_sheet()
         finally:
-            self._dispose_mo_plotter(plotter)
-        if img is None or getattr(img, "size", 0) == 0:
-            raise RuntimeError("Screenshot saving failed: blank image returned.")
-        with Image.open(image_path) as opened:
-            im = opened.convert("RGB")
-        if im.size != (width, height):
-            raise RuntimeError(f"Saved image has unexpected size {im.size}; expected {(width, height)}.")
-        extrema = im.convert("L").getextrema()
-        if extrema[0] == extrema[1]:
-            raise RuntimeError("Screenshot appears blank; image was not marked as saved.")
-        thumb = Image.fromarray(live_image).convert("RGB") if live_image is not None else im.copy()
-        thumb.thumbnail(THUMBNAIL_SIZE)
-        thumb.save(thumb_path)
-
-        out_path = self._require_orca_out_for_surfaces()
-        paths = ensure_mo_surface_dirs(out_path)
-        meta = load_mo_metadata(paths["metadata_file"])
-        meta.setdefault("orbitals", {})[orbital["safe_label"]] = {
-            "safe_label": orbital["safe_label"],
-            "display_label": orbital["display_label"],
-            "orca_mo_number": orbital["mo_number"],
-            "orbital_energy_ev": orbital.get("energy_ev"),
-            "cube_path": orbital["cube_path"],
-            "image_path": str(image_path),
-            "thumbnail_path": str(thumb_path),
-            "isovalue": orbital["isovalue"],
-            "opacity": orbital["opacity"],
-            "molecule_style": orbital["molecule_style"],
-            "color_scheme": orbital["color_scheme"],
-            "camera_position": camera_position_to_json(camera_position),
-            "camera_state": camera_state or {"camera_position": camera_position_to_json(camera_position)},
-            "saved_status": True,
-            "last_saved_timestamp": _dt.datetime.now().isoformat(timespec="seconds"),
-            "resolution_preset": preset,
-            "saved_image_width_px": width,
-            "saved_image_height_px": height,
-        }
-        save_mo_metadata(paths["metadata_file"], meta)
-        self.mo_metadata = meta
-        orbital["image_path"] = str(image_path)
-        orbital["thumbnail_path"] = str(thumb_path)
-        orbital["camera_position"] = camera_position_to_json(camera_position)
-        orbital["camera_state"] = camera_state or {"camera_position": camera_position_to_json(camera_position)}
-        if refresh_contact_sheet:
-            self.open_mo_contact_sheet()
+            self.mo_surface_rendering = previous_rendering_state
 
     def clean_all_mo_surfaces(self) -> None:
         out_path = self._require_orca_out_for_surfaces()

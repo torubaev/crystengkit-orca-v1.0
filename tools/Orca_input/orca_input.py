@@ -41,7 +41,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, set_windows_app_id
-from orca_job_queue import OrcaJobQueue, OrcaQueueJob, QUEUE_STATE_FILE
+from orca_job_queue import OrcaJobQueue, OrcaQueueJob
 
 LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
 DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
@@ -57,6 +57,12 @@ CONTACT_EMAIL = "torubaev(at)gmail.com"
 LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
 README_LINK_TEXT = "README section: ORCA Input Builder"
 README_ANCHOR = "orca-input-builder"
+CITATION_REFERENCE = (
+    "Torubaev, Y. CrystEngKit-ORCA: practical GUI tools for ORCA and "
+    "Multiwfn calculations in supramolecular chemistry and crystal engineering, "
+    "version 1.0; GitHub, 2026. https://github.com/torubaev/crystengkit-orca-v1.0"
+)
+CITATION_TEXT = f"Cite as: {CITATION_REFERENCE}"
 
 
 def wiki_url() -> str:
@@ -3031,8 +3037,8 @@ class App(tk.Tk):
         self.monitor_status_text: str = "Idle"
         self.monitor_progress_value: float = 0.0
         self.active_run_context: Optional[Dict] = None
-        self.queue_state_path = LAUNCHER_SETTINGS_PATH.with_name(QUEUE_STATE_FILE)
-        self.job_queue = OrcaJobQueue.load(self.queue_state_path)
+        self.queue_state_path: Optional[Path] = None
+        self.job_queue = OrcaJobQueue()
         self.queue_running = False
         self.active_queue_job: Optional[OrcaQueueJob] = None
         self.queue_window: Optional[tk.Toplevel] = None
@@ -4365,6 +4371,13 @@ class App(tk.Tk):
                     self.path_entry.configure(values=self.recent_input_files)
                 except Exception:
                     pass
+            queue_file = str(data.get("queue_file") or "").strip()
+            if queue_file:
+                queue_path = Path(queue_file).expanduser()
+                self.queue_state_path = queue_path
+                if queue_path.is_file():
+                    self.job_queue = OrcaJobQueue.load(queue_path)
+                    self._refresh_queue_selector()
         except Exception as exc:
             self.append_monitor(f"Launcher settings could not be loaded: {exc}\n")
 
@@ -4380,6 +4393,7 @@ class App(tk.Tk):
             "nci_python_command": active_python_command(),
             "qtaim_python_command": active_python_command(),
             "recent_input_files": self.recent_input_files[:5],
+            "queue_file": str(self.queue_state_path) if self.queue_state_path else "",
         }
         LAUNCHER_SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -4598,17 +4612,20 @@ class App(tk.Tk):
         wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
         wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
         wiki_link.bind("<Button-1>", lambda _e: open_readme_or_wiki())
-        ttk.Separator(box, orient="horizontal").grid(row=7, column=1, sticky="ew", pady=(12, 8))
-        ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=8, column=1, sticky="w")
+        citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
+        citation_label.grid(row=7, column=1, sticky="w", pady=(10, 0))
+        citation_label.bind("<Button-1>", lambda _e: self._copy_about_citation(win, citation_label))
+        ttk.Separator(box, orient="horizontal").grid(row=8, column=1, sticky="ew", pady=(12, 8))
+        ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=9, column=1, sticky="w")
         contact = ttk.Frame(box)
-        contact.grid(row=9, column=1, sticky="w", pady=(7, 0))
+        contact.grid(row=10, column=1, sticky="w", pady=(7, 0))
         ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
         linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
         linkedin_icon.grid(row=0, column=1, padx=(10, 0))
         linkedin_icon.bind("<Button-1>", lambda _e: open_path_in_system(LINKEDIN_URL))
 
         buttons = ttk.Frame(box)
-        buttons.grid(row=10, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        buttons.grid(row=11, column=0, columnspan=2, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=0)
 
         win.update_idletasks()
@@ -4624,6 +4641,15 @@ class App(tk.Tk):
         win.lift(self)
         win.focus_force()
         win.grab_set()
+
+    def _copy_about_citation(self, window: tk.Toplevel, label: ttk.Label):
+        try:
+            window.clipboard_clear()
+            window.clipboard_append(CITATION_REFERENCE)
+            label.configure(text="Cite as: copied to clipboard", foreground="#047857")
+            window.after(1400, lambda: label.configure(text=CITATION_TEXT, foreground="#1d4ed8") if label.winfo_exists() else None)
+        except Exception as exc:
+            messagebox.showerror("Copy citation", str(exc))
 
     def _output_candidates_for_source(self, source: Path) -> List[Tuple[int, Path]]:
         candidates: List[Tuple[int, Path]] = []
@@ -6317,11 +6343,38 @@ class App(tk.Tk):
     def get_preview_text(self) -> str:
         return self.preview_text.get("1.0", "end-1c")
 
-    def _save_job_queue(self):
+    def _queue_save_dialog_path(self) -> Optional[Path]:
+        suggested = f"{self.job_queue.active_queue.replace(' ', '_')}.orcaqueue.json"
+        initialdir = str(self.queue_state_path.parent) if self.queue_state_path else str(Path.home())
+        path = filedialog.asksaveasfilename(
+            title="Choose ORCA queue file",
+            defaultextension=".orcaqueue.json",
+            initialdir=initialdir,
+            initialfile=suggested,
+            filetypes=[("ORCA queue files", "*.orcaqueue.json"), ("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        return Path(path) if path else None
+
+    def _ensure_queue_state_path(self) -> bool:
+        if self.queue_state_path:
+            return True
+        path = self._queue_save_dialog_path()
+        if not path:
+            return False
+        self.queue_state_path = path
+        self._save_launcher_settings()
+        return True
+
+    def _save_job_queue(self) -> bool:
+        if not self._ensure_queue_state_path():
+            return False
         try:
             self.job_queue.save(self.queue_state_path)
+            self._save_launcher_settings()
+            return True
         except Exception as exc:
             self.append_monitor(f"Could not save ORCA job queue: {exc}\n")
+            return False
 
     def _load_job_queue_from_path(self, path: str, confirm_replace: bool = True) -> bool:
         queue_path = Path(path)
@@ -6338,6 +6391,7 @@ class App(tk.Tk):
             if not ok:
                 return True
         self.job_queue = OrcaJobQueue.load(queue_path)
+        self.queue_state_path = queue_path
         self.queue_running = False
         self.active_queue_job = None
         self._save_job_queue()
@@ -6362,18 +6416,13 @@ class App(tk.Tk):
             return True
 
     def save_job_queue_as(self):
-        suggested = f"{self.job_queue.active_queue.replace(' ', '_')}.orcaqueue.json"
-        path = filedialog.asksaveasfilename(
-            title="Save ORCA queue file",
-            defaultextension=".orcaqueue.json",
-            initialfile=suggested,
-            filetypes=[("ORCA queue files", "*.orcaqueue.json"), ("JSON files", "*.json"), ("All files", "*.*")],
-        )
-        if not path:
+        path = self._queue_save_dialog_path()
+        if path is None:
             return
         try:
-            self.job_queue.save(Path(path))
-            self._save_job_queue()
+            self.queue_state_path = path
+            self.job_queue.save(path)
+            self._save_launcher_settings()
             self.status.configure(text=f"Saved ORCA queue file: {path}")
         except Exception as exc:
             messagebox.showerror("Save Queue error", str(exc))
@@ -6414,15 +6463,13 @@ class App(tk.Tk):
         return cleaned or None
 
     def _ensure_queue_for_addition(self) -> bool:
-        if self._queue_has_any_jobs():
-            return True
-        name = self._ask_for_queue_name("New ORCA job queue")
-        if not name:
-            return False
-        self.job_queue.create_queue(name)
-        self._save_job_queue()
-        self._refresh_queue_selector()
-        return True
+        if not self._queue_has_any_jobs():
+            name = self._ask_for_queue_name("New ORCA job queue")
+            if not name:
+                return False
+            self.job_queue.create_queue(name)
+            self._refresh_queue_selector()
+        return self._ensure_queue_state_path()
 
     def _create_job_queue(self):
         name = self._ask_for_queue_name("New ORCA job queue")
