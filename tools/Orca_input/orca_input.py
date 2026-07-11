@@ -48,6 +48,7 @@ DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
 DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
 DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
+DEFAULT_TD_DFT_SCRIPT = TOOLS_ROOT / "TD_DFT" / "td_dft_module.py"
 APP_VERSION = "1.0.0"
 STARTUP_NEWS_URL = "https://raw.githubusercontent.com/torubaev/crystengkit-orca-v1.0/main/app_metadata/startup_news.json"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -2569,6 +2570,11 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
     if disp_warnings:
         existing = data.get("_warnings", [])
         data["_warnings"] = existing + disp_warnings
+    tddft_settings = data.get("tddft_settings") or {}
+    tddft_optimization = bool(data.get("job_tddft") and tddft_settings.get("excited_state_optimization"))
+    tddft_frequencies = bool(data.get("job_tddft") and tddft_settings.get("excited_state_frequencies"))
+    effective_opt = bool(data["job_opt"] or tddft_optimization)
+    effective_freq = bool(data["job_freq"] or tddft_frequencies)
     kw = [data["functional"], data["basis"]]
     if disp_kw:
         kw.append(disp_kw)
@@ -2584,9 +2590,9 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
         kw.append("TightSCF")
     if grid_kw:
         kw.append(grid_kw)
-    if data["job_opt"]:
+    if effective_opt:
         kw.append("Opt")
-    if data["job_freq"]:
+    if effective_freq:
         kw.append("Freq")
     if data["job_density"] or data["job_esp"]:
         kw.append("KeepDens")
@@ -2595,7 +2601,7 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
 
     lines = ["! " + " ".join(kw)]
     # --- Constraints (auto-generated) ---
-    if data.get("job_opt"):
+    if effective_opt:
         atoms = structure.atoms
         constraints = []
         if data.get("freeze_all"):
@@ -2611,8 +2617,8 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
             lines += ["  end", "end"]
 
 
-    if data["job_tddft"]:
-        lines += ["", "%tddft", f"  NRoots {data['nroots']}", "  Triplets false", "  DoTDA true", "end"]
+    if data["job_tddft"] and data.get("tddft_block", "").strip():
+        lines += ["", data["tddft_block"].strip()]
 
     if data["job_nmr"]:
         lines += ["", "%eprnmr", "  NMR true", "end"]
@@ -3036,6 +3042,10 @@ class App(tk.Tk):
         self.preview_thread: Optional[threading.Thread] = None
         self.last_helper_launch_key: Optional[Tuple[str, ...]] = None
         self.last_helper_launch_time: float = 0.0
+        self.current_tddft_block = ""
+        self.current_tddft_settings: Dict = {}
+        self.tddft_window: Optional[tk.Toplevel] = None
+        self.tddft_sync_status_var = tk.StringVar(value="TD-DFT: Not configured")
 
         self.path_var = tk.StringVar()
         self.program_var = tk.StringVar(value="ORCA")
@@ -3060,7 +3070,7 @@ class App(tk.Tk):
         self.job_opt_var.trace_add("write", lambda *args: self._sync_job_target_flags("opt"))
         self.job_freq_var.trace_add("write", lambda *args: self._sync_job_target_flags("freq"))
         self.job_nmr_var.trace_add("write", lambda *args: self._sync_job_target_flags("nmr"))
-        self.job_tddft_var.trace_add("write", lambda *args: self._sync_job_target_flags("tddft"))
+        self.job_tddft_var.trace_add("write", lambda *args: self._on_tddft_toggle())
         self.freeze_heavy_var = tk.BooleanVar(value=False)
         self.freeze_all_var = tk.BooleanVar(value=False)
         self.freeze_heavy_var.trace_add("write", lambda *args: self._sync_constraint_flags("heavy"))
@@ -3270,6 +3280,7 @@ class App(tk.Tk):
         self._add_header_image_action(header, 4, ESP_ICON_PATH, "ESP map", self.launch_esp)
         self._add_header_image_action(header, 5, NCI_ICON_PATH, "NCI plot", self.launch_nci)
         self._add_header_image_action(header, 6, QTAIM_ICON_PATH, "QTAIM CP", self.launch_qtaim)
+        self._add_header_image_action(header, 7, ORCA_ICON_PATH, "TD-DFT", self.launch_td_dft)
 
         body = ttk.Frame(self, style="Panel.TFrame", padding=10)
         body.grid(row=1, column=0, sticky="nsew")
@@ -3355,7 +3366,7 @@ class App(tk.Tk):
         ttk.Label(setup, text="ORCA grid").grid(row=3, column=2, sticky="w", padx=(14, 8), pady=(0, 4))
         ttk.Combobox(setup, textvariable=self.grid_var, values=["", "DefGrid1", "DefGrid2", "DefGrid3"], state="readonly", width=10).grid(row=3, column=3, sticky="w", pady=(0, 4))
 
-        ttk.Label(setup, text="TD-DFT roots").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=(0, 4))
+        ttk.Label(setup, text="Gaussian TD roots").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=(0, 4))
         ttk.Entry(setup, textvariable=self.nroots_var, width=8).grid(row=4, column=1, sticky="w", pady=(0, 4))
 
         opts = ttk.Frame(setup)
@@ -3388,7 +3399,10 @@ class App(tk.Tk):
         esp_info = InfoIcon(esp_row, "ESP / MEP package = density retention and automatic ESP/MEP cube generation after a successful ORCA run. WFN/WFX generation is attempted after every successful ORCA run.")
         esp_info.grid(row=0, column=1, padx=(5, 0))
         ttk.Checkbutton(cbox, text="NMR", variable=self.job_nmr_var).grid(row=2, column=0, sticky="w", pady=(0, 3))
-        ttk.Checkbutton(cbox, text="TD-DFT / UV-Vis", variable=self.job_tddft_var).grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(0, 3))
+        tddft_row = ttk.Frame(cbox)
+        tddft_row.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(0, 3))
+        ttk.Checkbutton(tddft_row, text="TD-DFT / UV-Vis", variable=self.job_tddft_var).pack(anchor="w")
+        ttk.Label(tddft_row, textvariable=self.tddft_sync_status_var, style="Muted.TLabel").pack(anchor="w")
         ttk.Checkbutton(cbox, text="Constrain all atoms except hydrogens", variable=self.freeze_heavy_var).grid(row=3, column=0, sticky="w", pady=(3, 0))
         ttk.Checkbutton(cbox, text="Constrain all atoms", variable=self.freeze_all_var).grid(row=3, column=1, sticky="w", padx=(12, 0), pady=(3, 0))
         self.interaction_toggle_button = ttk.Button(cbox, text="Intermolecular interactions", command=self._toggle_interaction_target)
@@ -3460,7 +3474,7 @@ class App(tk.Tk):
         preview_actions.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         preview_actions.columnconfigure(0, weight=1)
         switch_box = ttk.Frame(preview_actions)
-        switch_box.grid(row=0, column=0, sticky="w")
+        switch_box.grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.preview_mode_button = tk.Button(
             switch_box,
             text="Input preview",
@@ -3485,10 +3499,14 @@ class App(tk.Tk):
             font=("Segoe UI", 9, "bold"),
         )
         self.monitor_mode_button.grid(row=0, column=1, sticky="w", padx=(3, 0))
-        ttk.Button(preview_actions, text="Save input file", command=self.save_input).grid(row=0, column=2, sticky="e", padx=(6, 0))
-        ttk.Button(preview_actions, text="Add to Queue", command=self.add_current_input_to_queue).grid(row=0, column=3, sticky="e", padx=(6, 0))
-        ttk.Button(preview_actions, text="Queue Jobs", command=self.open_job_queue).grid(row=0, column=4, sticky="e", padx=(6, 0))
-        ttk.Button(preview_actions, text="Generate WFN/WFX", command=self.generate_wavefunction_files).grid(row=0, column=5, sticky="e", padx=(6, 0))
+        input_actions = ttk.Frame(preview_actions)
+        input_actions.grid(row=1, column=0, sticky="ew")
+        for column in range(4):
+            input_actions.columnconfigure(column, weight=1)
+        ttk.Button(input_actions, text="Save input file", command=self.save_input).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(input_actions, text="Add to Queue", command=self.add_current_input_to_queue).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(input_actions, text="Queue Jobs", command=self.open_job_queue).grid(row=0, column=2, sticky="ew", padx=4)
+        ttk.Button(input_actions, text="Generate WFN/WFX", command=self.generate_wavefunction_files).grid(row=0, column=3, sticky="ew", padx=(4, 0))
 
         monhdr = ttk.Frame(output_box)
         monhdr.grid(row=3, column=0, sticky="ew", pady=(6, 0))
@@ -3574,6 +3592,127 @@ class App(tk.Tk):
     def activate_input_preview(self):
         self._show_output_mode("preview")
         self.preview()
+
+    def _on_tddft_toggle(self):
+        self._sync_job_target_flags("tddft")
+        enabled = bool(self.job_tddft_var.get())
+        if enabled:
+            try:
+                self.open_tddft_module()
+            except Exception as exc:
+                self.job_tddft_var.set(False)
+                messagebox.showerror("TD-DFT", f"Could not open the TD-DFT module:\n{exc}", parent=self)
+        else:
+            self.clear_tddft_block()
+            if self.tddft_window is not None and self.tddft_window.winfo_exists():
+                try:
+                    self.tddft_window.set_builder_enabled(False)
+                except Exception:
+                    pass
+            if self.path_var.get().strip() and self.program_var.get() == "ORCA":
+                try:
+                    text = self.refresh_full_orca_input()
+                    self.show_full_orca_input(text)
+                except Exception as exc:
+                    messagebox.showerror("TD-DFT", f"TD-DFT was removed, but the input preview could not be regenerated:\n{exc}", parent=self)
+
+    def _load_tddft_module(self):
+        module_name = "crystengkit_td_dft_module"
+        cached = sys.modules.get(module_name)
+        if cached is not None:
+            return cached
+        module_path = DEFAULT_TD_DFT_SCRIPT
+        if not module_path.is_file():
+            raise FileNotFoundError(f"TD-DFT module was not found:\n{module_path}")
+        module_dir = str(module_path.parent)
+        if module_dir not in sys.path:
+            sys.path.insert(0, module_dir)
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load TD-DFT module from {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+        return module
+
+    def open_tddft_module(self):
+        if self.tddft_window is not None and self.tddft_window.winfo_exists():
+            self.tddft_window.set_builder_enabled(bool(self.job_tddft_var.get()), bool(self.current_tddft_block))
+            self.tddft_window.set_builder_context(self.get_tddft_global_context())
+            self.tddft_window.deiconify(); self.tddft_window.lift(self); self.tddft_window.focus_force()
+            return self.tddft_window
+        module = self._load_tddft_module()
+        initial = dict(self.current_tddft_settings) if self.current_tddft_settings else dict(module.DEFAULT_TDDFT_SETTINGS)
+        self.tddft_window = module.open_tddft_window(
+            parent=self,
+            initial_settings=initial,
+            on_apply=self.apply_tddft_from_module,
+            on_close=self._on_tddft_window_closed,
+            builder_context=self.get_tddft_global_context(),
+        )
+        self.tddft_window.set_builder_enabled(bool(self.job_tddft_var.get()), bool(self.current_tddft_block))
+        self.tddft_window.lift(self); self.tddft_window.focus_force()
+        return self.tddft_window
+
+    def get_tddft_global_context(self) -> Dict:
+        return {
+            "functional": self.functional_var.get().strip(),
+            "basis": self.basis_var.get().strip(),
+            "solvent": self.solvent_var.get().strip(),
+            "charge": int(self.charge_var.get()),
+            "multiplicity": int(self.mult_var.get()),
+        }
+
+    def _on_tddft_window_closed(self, window):
+        if self.tddft_window is window:
+            self.tddft_window = None
+
+    def set_tddft_block(self, block: str) -> None:
+        cleaned = str(block or "").strip()
+        markers = re.findall(r"(?im)^\s*%(?:tddft|cis)\b", cleaned)
+        if len(markers) != 1:
+            raise ValueError("The synchronized TD-DFT fragment must contain exactly one %tddft or %cis block.")
+        self.current_tddft_block = cleaned
+
+    def clear_tddft_block(self) -> None:
+        self.current_tddft_block = ""
+        self.tddft_sync_status_var.set("TD-DFT: Not configured" if self.job_tddft_var.get() else "TD-DFT: Disabled")
+
+    def refresh_full_orca_input(self) -> str:
+        text, _warnings = self.build_input()
+        return text
+
+    def show_full_orca_input(self, text: Optional[str] = None) -> None:
+        if text is None:
+            text = self.refresh_full_orca_input()
+        self.preview_text.delete("1.0", "end")
+        self.preview_text.insert("1.0", text)
+        self._show_output_mode("preview")
+        self.status.configure(text="Input preview generated with synchronized TD-DFT block.")
+
+    def focus_builder_window(self) -> None:
+        self.deiconify(); self.lift(); self.focus_force()
+
+    def apply_tddft_from_module(self, block: str, settings: Dict) -> None:
+        if not self.job_tddft_var.get():
+            raise ValueError("TD-DFT is disabled in ORCA Input Builder.")
+        old_block = self.current_tddft_block
+        old_settings = dict(self.current_tddft_settings)
+        try:
+            self.set_tddft_block(block)
+            self.current_tddft_settings = dict(settings)
+            text = self.refresh_full_orca_input()
+        except Exception:
+            self.current_tddft_block = old_block
+            self.current_tddft_settings = old_settings
+            raise
+        self.tddft_sync_status_var.set("TD-DFT: Synchronized")
+        self.show_full_orca_input(text)
+        self.focus_builder_window()
 
     def _toggle_interaction_target(self):
         self.job_interaction_var.set(not self.job_interaction_var.get())
@@ -4801,6 +4940,15 @@ class App(tk.Tk):
         except Exception as exc:
             messagebox.showerror("HOMO-LUMO launcher", str(exc))
 
+    def launch_td_dft(self):
+        try:
+            if not self.job_tddft_var.get():
+                self.job_tddft_var.set(True)
+            else:
+                self.open_tddft_module()
+        except Exception as exc:
+            messagebox.showerror("TD-DFT launcher", str(exc))
+
     def launch_esp(self):
         try:
             wavefunction_path = None
@@ -4937,6 +5085,8 @@ class App(tk.Tk):
             "job_esp_mep": bool(self.job_esp_mep_var.get()),
             "job_nmr": bool(self.job_nmr_var.get()),
             "job_tddft": bool(self.job_tddft_var.get()),
+            "tddft_block": self.current_tddft_block if self.job_tddft_var.get() else "",
+            "tddft_settings": dict(self.current_tddft_settings) if self.job_tddft_var.get() else {},
             "job_interaction": bool(self.job_interaction_var.get()),
             "interaction_relaxation": bool(self.interaction_relax_var.get()),
             "interaction_thermo": bool(self.interaction_thermo_var.get()),

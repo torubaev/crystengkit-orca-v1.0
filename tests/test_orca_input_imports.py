@@ -9,6 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "tools" / "Orca_input" / "orca_input.py"
+sys.path.insert(0, str(MODULE_PATH.parent))
 spec = importlib.util.spec_from_file_location("orca_input", MODULE_PATH)
 orca_input = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
@@ -167,6 +168,39 @@ $$$$
         ok, reason = orca_input.validate_openbabel_executable(str(ROOT / "missing_obabel"))
         self.assertFalse(ok)
         self.assertIn("does not exist", reason)
+
+    def test_orca_uses_synchronized_tddft_block_exactly_once(self):
+        structure = orca_input.Structure([("H", 0.0, 0.0, 0.0), ("H", 0.0, 0.0, 0.74)])
+        data = {
+            "functional": "B3LYP", "basis": "def2-SVP", "dispersion": "", "ri_jcosx": False,
+            "tight_scf": True, "grid": "DefGrid2", "job_opt": False, "job_freq": False,
+            "job_density": False, "job_esp": False, "job_sp": False, "job_tddft": True,
+            "job_nmr": False, "print_mos": False, "extra": "", "charge": 0, "multiplicity": 1,
+            "freeze_all": False, "freeze_heavy": False,
+            "tddft_block": "%tddft\n  NRoots 7\n  TDA true\n  Singlets true\n  Triplets false\nend",
+        }
+        text = orca_input.generate_orca(data, structure, None)
+        self.assertEqual(text.lower().count("%tddft"), 1)
+        self.assertIn("NRoots 7", text)
+
+        data["tddft_block"] = "%tddft\n  NRoots 11\n  TDA false\n  Singlets true\n  Triplets false\nend"
+        updated = orca_input.generate_orca(data, structure, None)
+        self.assertEqual(updated.lower().count("%tddft"), 1)
+        self.assertNotIn("NRoots 7", updated)
+        self.assertIn("NRoots 11", updated)
+
+        data["tddft_settings"] = {"excited_state_optimization": True, "excited_state_frequencies": True}
+        excited_state_job = orca_input.generate_orca(data, structure, None)
+        self.assertIn(" Opt", excited_state_job.splitlines()[0])
+        self.assertIn(" Freq", excited_state_job.splitlines()[0])
+
+    def test_builder_rejects_duplicate_tddft_fragments(self):
+        app = object.__new__(orca_input.App)
+        app.current_tddft_block = ""
+        app.set_tddft_block("%tddft\n  NRoots 5\nend")
+        self.assertEqual(app.current_tddft_block.count("%tddft"), 1)
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            app.set_tddft_block("%tddft\nend\n%cis\nend")
 
     @unittest.skipIf(os.name == "nt", "POSIX fake executable script")
     def test_openbabel_safe_command_with_spaces_and_unicode(self):
