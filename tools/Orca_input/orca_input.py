@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import base64
+import importlib
 import importlib.util
 import datetime
 import platform
@@ -48,7 +49,7 @@ DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
 DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
 DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
-DEFAULT_TD_DFT_SCRIPT = TOOLS_ROOT / "TD_DFT" / "td_dft_module.py"
+DEFAULT_TD_DFT_SCRIPT = TOOLS_ROOT / Path("TD_DFT") / "td_dft_module.py"
 APP_VERSION = "1.0.0"
 STARTUP_NEWS_URL = "https://raw.githubusercontent.com/torubaev/crystengkit-orca-v1.0/main/app_metadata/startup_news.json"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -542,11 +543,54 @@ def validate_orca_output_file(out_path: str) -> Tuple[bool, str]:
     if _looks_like_gnome_orca(text):
         return False, "output appears to come from Ubuntu GNOME Orca screen reader, not ORCA QM"
     if "ORCA TERMINATED NORMALLY" not in upper:
+        if "RPA/TD-DFT DID NOT CONVERGE" in upper:
+            return False, "TD-DFT/RPA did not converge; try TDA, fewer roots, or larger TD-DFT solver limits"
+        if "ORCA FINISHED BY ERROR TERMINATION IN CIS" in upper:
+            return False, "ORCA failed in the CIS/TD-DFT module"
         return False, "ORCA did not terminate normally"
     identity_hits = ("PROGRAM ORCA", "O   R   C   A", "ORCA VERSION", "ORCA TERMINATED NORMALLY")
     if not any(marker in upper for marker in identity_hits):
         return False, "output does not look like an ORCA quantum-chemistry output"
     return True, "valid completed ORCA output"
+
+
+def auto_detect_multiwfn_path(saved: str = "") -> str:
+    names = ("Multiwfn.exe", "Multiwfn", "multiwfn")
+    candidates: List[Path] = []
+    for value in (saved, os.environ.get("Multiwfnpath", "")):
+        value = str(value or "").strip().strip('"')
+        if not value:
+            continue
+        path = Path(value).expanduser()
+        candidates.extend([path / name for name in names] if path.is_dir() else [path])
+    for root in (
+        os.environ.get("ProgramFiles", ""),
+        os.environ.get("ProgramFiles(x86)", ""),
+        os.environ.get("LOCALAPPDATA", ""),
+        "C:\\Multiwfn",
+        "C:\\Program Files\\Multiwfn",
+    ):
+        if str(root).strip():
+            base = Path(root).expanduser()
+            candidates.extend(base / name for name in names)
+            candidates.extend(base / "Multiwfn" / name for name in names)
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
+    seen = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except Exception:
+            resolved = candidate
+        key = os.path.normcase(str(resolved))
+        if key in seen:
+            continue
+        seen.add(key)
+        if resolved.is_file():
+            return str(resolved)
+    return ""
 
 
 def app_relative_path(path: str) -> str:
@@ -2957,6 +3001,8 @@ class ModeTextProxy:
 
     def _set_buffer_from_widget(self) -> None:
         self.app.output_buffers[self.mode] = self._widget().get("1.0", "end-1c")
+        if self.mode == "preview":
+            self.app.highlight_input_preview()
 
     def _set_buffer(self, text: str) -> None:
         if self.mode == "monitor" and len(text) > MONITOR_BUFFER_MAX_CHARS:
@@ -2987,6 +3033,8 @@ class ModeTextProxy:
             self._set_buffer(chars + current)
         else:
             self._set_buffer(current + chars)
+        if self.mode == "preview" and self._is_active():
+            self.app.highlight_input_preview()
 
     def get(self, start, end=None):
         if self._is_active():
@@ -3108,6 +3156,7 @@ class App(tk.Tk):
 
         self.orca_path_var = tk.StringVar(value="")
         self.openbabel_path_var = tk.StringVar(value="")
+        self.multiwfn_path_var = tk.StringVar(value="")
         self.auto_open_output_var = tk.BooleanVar(value=True)
         self.homo_lumo_script_var = tk.StringVar(value=str(DEFAULT_HOMO_LUMO_SCRIPT))
         self.esp_script_var = tk.StringVar(value=str(DEFAULT_ESP_SCRIPT))
@@ -3138,6 +3187,8 @@ class App(tk.Tk):
         self._refresh_engine_lists()
         self._startup_status("Locating ORCA...")
         self.auto_locate_orca(silent=True)
+        self._startup_status("Locating Multiwfn...")
+        self.auto_locate_multiwfn(silent=True)
         if not Path(self.qtaim_script_var.get().strip()).is_file():
             self.auto_locate_qtaim(silent=True)
         self._report_runtime_environment()
@@ -3286,7 +3337,7 @@ class App(tk.Tk):
         self._add_header_image_action(header, 4, ESP_ICON_PATH, "ESP map", self.launch_esp)
         self._add_header_image_action(header, 5, NCI_ICON_PATH, "NCI plot", self.launch_nci)
         self._add_header_image_action(header, 6, QTAIM_ICON_PATH, "QTAIM CP", self.launch_qtaim)
-        self._add_header_image_action(header, 7, ORCA_ICON_PATH, "TD-DFT", self.launch_td_dft)
+        self._add_header_image_action(header, 7, HOMO_LUMO_ICON_PATH, "TD-DFT", self.launch_td_dft)
 
         body = ttk.Frame(self, style="Panel.TFrame", padding=10)
         body.grid(row=1, column=0, sticky="nsew")
@@ -3530,6 +3581,7 @@ class App(tk.Tk):
 
         self.output_text = tk.Text(output_box, wrap="none", font=("Consolas", 10), relief="solid", bd=1)
         self.output_text.grid(row=1, column=0, sticky="nsew")
+        self.output_text.tag_configure("tddft_block", foreground="#7f1d1d", background="#fee2e2")
         ys = ttk.Scrollbar(output_box, orient="vertical", command=self.output_text.yview)
         xs = ttk.Scrollbar(output_box, orient="horizontal", command=self.output_text.xview)
         self.output_text.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
@@ -3571,8 +3623,32 @@ class App(tk.Tk):
         if mode == "monitor":
             self.output_text.see("end")
         else:
+            self.highlight_input_preview()
             self.output_text.see("1.0")
         self._refresh_output_mode_buttons()
+
+    def highlight_input_preview(self) -> None:
+        if not hasattr(self, "output_text") or self.output_mode != "preview":
+            return
+        try:
+            self.output_text.tag_remove("tddft_block", "1.0", "end")
+            text = self.output_text.get("1.0", "end-1c")
+            pattern = re.compile(
+                r"(?ims)^[ \t]*%(?:tddft|cis)\b.*?^[ \t]*end\b[^\n]*(?:\n|$)"
+            )
+            for match in pattern.finditer(text):
+                start = self._text_index_from_offset(text, match.start())
+                end = self._text_index_from_offset(text, match.end())
+                self.output_text.tag_add("tddft_block", start, end)
+        except tk.TclError:
+            return
+
+    @staticmethod
+    def _text_index_from_offset(text: str, offset: int) -> str:
+        line = text.count("\n", 0, offset) + 1
+        previous_newline = text.rfind("\n", 0, offset)
+        column = offset if previous_newline < 0 else offset - previous_newline - 1
+        return f"{line}.{column}"
 
     def _refresh_output_mode_buttons(self):
         if not hasattr(self, "preview_mode_button"):
@@ -3623,23 +3699,18 @@ class App(tk.Tk):
                     messagebox.showerror("TD-DFT", f"TD-DFT was removed, but the input preview could not be regenerated:\n{exc}", parent=self)
 
     def _load_tddft_module(self):
-        module_name = "crystengkit_td_dft_module"
+        module_name = "TD_DFT.td_dft_module"
         cached = sys.modules.get(module_name)
         if cached is not None:
             return cached
         module_path = DEFAULT_TD_DFT_SCRIPT
         if not module_path.is_file():
             raise FileNotFoundError(f"TD-DFT module was not found:\n{module_path}")
-        module_dir = str(module_path.parent)
-        if module_dir not in sys.path:
-            sys.path.insert(0, module_dir)
-        spec = importlib.util.spec_from_file_location(module_name, module_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load TD-DFT module from {module_path}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
+        tools_root = str(TOOLS_ROOT)
+        if tools_root not in sys.path:
+            sys.path.insert(0, tools_root)
         try:
-            spec.loader.exec_module(module)
+            module = importlib.import_module(module_name)
         except Exception:
             sys.modules.pop(module_name, None)
             raise
@@ -3665,12 +3736,22 @@ class App(tk.Tk):
         return self.tddft_window
 
     def get_tddft_global_context(self) -> Dict:
+        output_path = ""
+        try:
+            candidate = self._available_output_path()
+            ok, _reason = validate_orca_output_file(candidate)
+            if ok:
+                output_path = candidate
+        except Exception:
+            output_path = ""
         return {
             "functional": self.functional_var.get().strip(),
             "basis": self.basis_var.get().strip(),
             "solvent": self.solvent_var.get().strip(),
             "charge": int(self.charge_var.get()),
             "multiplicity": int(self.mult_var.get()),
+            "multiwfn_path": self.multiwfn_path_var.get().strip(),
+            "output_path": output_path,
         }
 
     def _on_tddft_window_closed(self, window):
@@ -4337,6 +4418,7 @@ class App(tk.Tk):
         self.auto_locate_orca(silent=True)
         self.auto_locate_qtaim(silent=True)
         self.auto_locate_openbabel(silent=True)
+        self.auto_locate_multiwfn(silent=True)
         self._use_latest_python_for_tools()
 
     def _load_launcher_settings(self):
@@ -4359,6 +4441,9 @@ class App(tk.Tk):
                 ok, _reason = validate_openbabel_executable(openbabel_path)
                 if ok:
                     self.openbabel_path_var.set(openbabel_path)
+            multiwfn_path = str(data.get("multiwfn_path") or data.get("multiwfn_executable") or data.get("Multiwfnpath") or "").strip()
+            if multiwfn_path:
+                self.multiwfn_path_var.set(multiwfn_path)
             active_python = active_python_command()
             self.launch_python_var.set(active_python)
             self.esp_python_var.set(active_python)
@@ -4388,6 +4473,7 @@ class App(tk.Tk):
             "nci_script": app_relative_path(self.nci_script_var.get().strip()),
             "qtaim_script": app_relative_path(self.qtaim_script_var.get().strip()),
             "openbabel_executable": self.openbabel_path_var.get().strip(),
+            "multiwfn_path": self.multiwfn_path_var.get().strip(),
             "python_executable": active_python_command(),
             "esp_python_command": active_python_command(),
             "nci_python_command": active_python_command(),
@@ -4465,6 +4551,16 @@ class App(tk.Tk):
             messagebox.showwarning("Open Babel not found", "No valid Open Babel executable was found automatically." + ("\n\n" + detail if detail else ""))
         return ""
 
+    def auto_locate_multiwfn(self, silent: bool = False) -> str:
+        found = auto_detect_multiwfn_path(self.multiwfn_path_var.get())
+        if found:
+            self.multiwfn_path_var.set(found)
+            if not silent:
+                messagebox.showinfo("Multiwfn located", found)
+        elif not silent:
+            messagebox.showwarning("Multiwfn not found", "No Multiwfn executable was found automatically.\nPlease browse to Multiwfn manually.")
+        return found
+
     def require_openbabel_path(self) -> str:
         path = self.auto_locate_openbabel(silent=True)
         if path:
@@ -4539,6 +4635,7 @@ class App(tk.Tk):
         fields = [
             ("ORCA executable:", self.orca_path_var, self.browse_orca),
             ("Open Babel executable:", self.openbabel_path_var, self.browse_openbabel),
+            ("Multiwfn executable:", self.multiwfn_path_var, self._browse_executable_into),
             ("HOMO-LUMO script:", self.homo_lumo_script_var, self._browse_script_into),
             ("ESP script:", self.esp_script_var, self._browse_script_into),
             ("NCI plotter script:", self.nci_script_var, self._browse_script_into),

@@ -49,8 +49,9 @@
 - Added signed Gaussian-cube rendering through PyVista with molecular, bond,
   label, isovalue, opacity, overlay, screenshot, and safe cube-export controls.
 
-Run `python td_dft_module.py` to start it independently, or pass an output as
-`python td_dft_module.py --output calculation.out`.
+Run `python -m TD_DFT.td_dft_module` from the `tools` folder to start it
+independently, or pass an output as
+`python -m TD_DFT.td_dft_module --output calculation.out`.
 
 Load the completed `.out`; matching `.gbw`, Molden, WFN/WFX, and FCHK files are
 detected beside it. Select a state row and press **Generate All Analyses for

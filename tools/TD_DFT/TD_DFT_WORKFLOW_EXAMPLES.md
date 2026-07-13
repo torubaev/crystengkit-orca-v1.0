@@ -2,14 +2,14 @@
 
 ## Vertical excitation only
 
-For 20 singlet roots with TDA, **Show ORCA block** generates:
+For 10 singlet roots with TD-DFT, **Show ORCA block** generates:
 
 ```text
 %tddft
-  NRoots 20
-  TDA true
-  Singlets true
-  Triplets false
+  NRoots 10
+  TDA false
+  MaxDim 120
+  MaxIter 300
 end
 ```
 
@@ -19,10 +19,10 @@ The module contributes:
 
 ```text
 %tddft
-  NRoots 20
-  TDA true
-  Singlets true
-  Triplets false
+  NRoots 10
+  TDA false
+  MaxDim 120
+  MaxIter 300
   IRoot 1
   IRootMult singlet
 end

@@ -177,13 +177,13 @@ $$$$
             "job_density": False, "job_esp": False, "job_sp": False, "job_tddft": True,
             "job_nmr": False, "print_mos": False, "extra": "", "charge": 0, "multiplicity": 1,
             "freeze_all": False, "freeze_heavy": False,
-            "tddft_block": "%tddft\n  NRoots 7\n  TDA true\n  Singlets true\n  Triplets false\nend",
+            "tddft_block": "%tddft\n  NRoots 7\n  TDA true\nend",
         }
         text = orca_input.generate_orca(data, structure, None)
         self.assertEqual(text.lower().count("%tddft"), 1)
         self.assertIn("NRoots 7", text)
 
-        data["tddft_block"] = "%tddft\n  NRoots 11\n  TDA false\n  Singlets true\n  Triplets false\nend"
+        data["tddft_block"] = "%tddft\n  NRoots 11\n  TDA false\nend"
         updated = orca_input.generate_orca(data, structure, None)
         self.assertEqual(updated.lower().count("%tddft"), 1)
         self.assertNotIn("NRoots 7", updated)
@@ -193,6 +193,19 @@ $$$$
         excited_state_job = orca_input.generate_orca(data, structure, None)
         self.assertIn(" Opt", excited_state_job.splitlines()[0])
         self.assertIn(" Freq", excited_state_job.splitlines()[0])
+
+    def test_tddft_rpa_convergence_failure_is_reported_specifically(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / "failed.out"
+            out_path.write_text(
+                "ORCA finished by error termination in CIS\n"
+                "[file orca_cis/cis_solve_rpa.cpp, line 248]: "
+                "RPA/TD-DFT did not converge! You may try raising the number of iterations.\n",
+                encoding="utf-8",
+            )
+            ok, reason = orca_input.validate_orca_output_file(str(out_path))
+        self.assertFalse(ok)
+        self.assertIn("TD-DFT/RPA did not converge", reason)
 
     def test_builder_rejects_duplicate_tddft_fragments(self):
         app = object.__new__(orca_input.App)
