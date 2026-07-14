@@ -18,6 +18,13 @@ spec.loader.exec_module(orca_input)
 
 
 class ImportHelperTests(unittest.TestCase):
+    class _Var:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
     def test_new_extensions_are_case_insensitive(self):
         for ext in [".mol", ".SDF", ".sd", ".CML", ".cdxml", ".CDX", ".ct", ".GJF", ".com", ".GAU", ".gjc"]:
             self.assertTrue(orca_input.structure_input_format("molecule" + ext))
@@ -214,6 +221,36 @@ $$$$
         self.assertEqual(app.current_tddft_block.count("%tddft"), 1)
         with self.assertRaisesRegex(ValueError, "exactly one"):
             app.set_tddft_block("%tddft\nend\n%cis\nend")
+
+    def test_tddft_input_save_suggestion_adds_td_dft_tag_when_block_present(self):
+        app = object.__new__(orca_input.App)
+        app.path_var = self._Var(r"C:\calc\water.xyz")
+        app.program_var = self._Var("ORCA")
+        app.freeze_all_var = self._Var(False)
+        app.freeze_heavy_var = self._Var(False)
+        app.job_opt_var = self._Var(False)
+        app.job_tddft_var = self._Var(True)
+        app.current_tddft_block = "%tddft\n  NRoots 10\nend"
+        app.collect = lambda: {"functional": "B3LYP", "basis": "def2-SVP", "solvent_text": ""}
+
+        suggested = Path(app.suggest_input_save_path()).name
+
+        self.assertEqual(suggested, "water_B3LYP_def2-SVP_sp_td-dft.inp")
+
+    def test_tddft_input_save_suggestion_skips_td_dft_tag_without_block(self):
+        app = object.__new__(orca_input.App)
+        app.path_var = self._Var(r"C:\calc\water.xyz")
+        app.program_var = self._Var("ORCA")
+        app.freeze_all_var = self._Var(False)
+        app.freeze_heavy_var = self._Var(False)
+        app.job_opt_var = self._Var(False)
+        app.job_tddft_var = self._Var(True)
+        app.current_tddft_block = ""
+        app.collect = lambda: {"functional": "B3LYP", "basis": "def2-SVP", "solvent_text": ""}
+
+        suggested = Path(app.suggest_input_save_path()).name
+
+        self.assertEqual(suggested, "water_B3LYP_def2-SVP_sp.inp")
 
     @unittest.skipIf(os.name == "nt", "POSIX fake executable script")
     def test_openbabel_safe_command_with_spaces_and_unicode(self):

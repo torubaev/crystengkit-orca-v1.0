@@ -6434,6 +6434,18 @@ class App(tk.Tk):
         else:
             parts.append("sp")
 
+        if (
+            self.program_var.get() == "ORCA"
+            and self.job_tddft_var.get()
+            and self.current_tddft_block.strip()
+        ):
+            normalized_parts = {
+                re.sub(r"[^a-z0-9]+", "", str(part).lower())
+                for part in parts
+            }
+            if "tddft" not in normalized_parts:
+                parts.append("td-dft")
+
         ext = ".inp" if self.program_var.get() == "ORCA" else ".gjf"
         return str(src_path.with_name("_".join(parts) + ext))
 
