@@ -243,7 +243,6 @@ class StartupSplash:
         self.logo_image = None
         self._build()
         self._center()
-        self.progress.start(12)
         self.set_status("Starting CrystEngKit-ORCA...")
         self.master.after(STARTUP_SPLASH_MIN_VISIBLE_MS, self._allow_close)
         self.fetch_thread = threading.Thread(target=self._fetch_news_worker, daemon=True)
@@ -267,17 +266,13 @@ class StartupSplash:
         ttk.Label(title_box, text="ORCA Input Builder", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(1, 0))
         ttk.Label(title_box, text=f"Version: {APP_VERSION}", font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
 
-        self.progress = ttk.Progressbar(outer, mode="indeterminate")
-        self.progress.pack(fill="x", pady=(18, 4))
         self.status_var = tk.StringVar(value="")
-        ttk.Label(outer, textvariable=self.status_var).pack(anchor="w")
+        ttk.Label(outer, textvariable=self.status_var).pack(anchor="w", pady=(18, 0))
 
-        news_box = ttk.LabelFrame(outer, text="News", padding=10)
+        news_box = ttk.Frame(outer, padding=10)
         news_box.pack(fill="both", expand=True, pady=(12, 8))
-        self.news_title_var = tk.StringVar(value="Checking online news...")
-        self.news_message_var = tk.StringVar(value="")
-        ttk.Label(news_box, textvariable=self.news_title_var, font=("Segoe UI", 9, "bold")).pack(anchor="w")
-        ttk.Label(news_box, textvariable=self.news_message_var, wraplength=465, justify="left").pack(anchor="w", fill="x", pady=(4, 0))
+        self.news_message_var = tk.StringVar(value="Checking online news...")
+        ttk.Label(news_box, textvariable=self.news_message_var, font=("Segoe UI", 9, "bold"), wraplength=465, justify="left").pack(anchor="w", fill="x")
 
         bottom = ttk.Frame(outer)
         bottom.pack(fill="x")
@@ -329,10 +324,8 @@ class StartupSplash:
         message_id = self.news.get("message_id", "")
         force_show = bool(self.news.get("force_show"))
         if message_id and message_id in dismissed and not force_show:
-            self.news_title_var.set("Startup news")
             self.news_message_var.set("This startup message was dismissed earlier.")
         else:
-            self.news_title_var.set(self.news.get("title", "Startup news"))
             self.news_message_var.set(self.news.get("message", "No current online news available."))
         details_url = self.news.get("details_url", "")
         self.release_button.configure(state="normal" if is_valid_news_url(details_url) else "disabled")
@@ -351,10 +344,6 @@ class StartupSplash:
         if self.closed:
             return
         self.ready = True
-        try:
-            self.progress.stop()
-        except Exception:
-            pass
         self.set_status("Ready.")
         try:
             self.window.attributes("-topmost", False)
@@ -371,10 +360,6 @@ class StartupSplash:
         self.closed = True
         if self.dismiss_var.get():
             save_dismissed_startup_message(str(self.news.get("message_id", "")))
-        try:
-            self.progress.stop()
-        except Exception:
-            pass
         try:
             self.window.destroy()
         except Exception:
