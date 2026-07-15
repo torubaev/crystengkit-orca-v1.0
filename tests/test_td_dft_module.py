@@ -9,6 +9,10 @@ sys.path.insert(0, str(TOOLS_DIR))
 from TD_DFT.td_dft_module import (  # noqa: E402
     build_gaussian_broadened_spectrum,
     build_tddft_block,
+    classify_orca_tddft_failure_text,
+    estimate_tddft_expansion_vectors,
+    migrate_legacy_tddft_settings,
+    tddft_memory_risk_warnings,
     validate_tddft_settings,
     parse_orca_tddft_output,
     suggest_wavelength_range_for_states,
@@ -24,10 +28,64 @@ class TDDFTModuleTests(unittest.TestCase):
         block = build_tddft_block({"nroots": 12, "root": 1, "td_method": "TDA", "manifold": "Both"})
         self.assertIn("NRoots 12", block)
         self.assertIn("TDA true", block)
-        self.assertIn("MaxDim 120", block)
+        self.assertIn("MaxDim 5", block)
         self.assertIn("MaxIter 300", block)
         self.assertIn("Triplets true", block)
         self.assertNotIn("Singlets", block)
+
+    def test_default_maxdim_is_safe_small_multiplier(self):
+        block = build_tddft_block({})
+        self.assertIn("NRoots 10", block)
+        self.assertIn("MaxDim 5", block)
+        self.assertNotIn("MaxCore", block)
+
+    def test_maxdim_is_independent_of_nroots(self):
+        settings = validate_tddft_settings({"nroots": 10, "maxdim": 5})
+        self.assertEqual(settings["maxdim"], 5)
+        settings = validate_tddft_settings({"nroots": 20, "root": 1, "maxdim": 3})
+        self.assertEqual(settings["maxdim"], 3)
+        settings = validate_tddft_settings({"nroots": 20, "root": 1, "maxdim": 1})
+        self.assertEqual(settings["maxdim"], 1)
+
+    def test_invalid_tddft_solver_values_are_rejected(self):
+        for settings in (
+            {"maxdim": 0},
+            {"maxdim": -1},
+            {"nroots": 0},
+            {"nroots": 2, "root": 3},
+            {"maxiter": 0},
+        ):
+            with self.subTest(settings=settings):
+                with self.assertRaises(ValueError):
+                    validate_tddft_settings(settings)
+
+    def test_expansion_estimate_and_warnings(self):
+        self.assertEqual(estimate_tddft_expansion_vectors(10, 5), 50)
+        self.assertEqual(estimate_tddft_expansion_vectors(10, 120), 1200)
+        self.assertFalse(tddft_memory_risk_warnings({"nroots": 10, "maxdim": 5}))
+        warning = "\n".join(tddft_memory_risk_warnings({"nroots": 10, "maxdim": 120}))
+        self.assertIn("approximately 1200 vectors", warning)
+        self.assertIn("MaxCore", warning)
+        warning = "\n".join(tddft_memory_risk_warnings({"nroots": 20, "maxdim": 16}))
+        self.assertIn("Large TD-DFT expansion space", warning)
+
+    def test_legacy_maxdim_default_migrates(self):
+        migrated, warnings = migrate_legacy_tddft_settings({"maxdim": 120, "nroots": 10})
+        self.assertEqual(migrated["maxdim"], 5)
+        self.assertTrue(warnings)
+        explicit, warnings = migrate_legacy_tddft_settings({"maxdim": 96, "nroots": 10})
+        self.assertEqual(explicit["maxdim"], 96)
+        self.assertFalse(warnings)
+
+    def test_tddft_memory_failure_classifier(self):
+        result = classify_orca_tddft_failure_text(
+            "ORCA finished by error termination in CIS\n"
+            "Error (BatchOrganizer): Not a single batch is possible with the present MaxCore\n"
+            "aborting the run\n"
+        )
+        self.assertEqual(result["category"], "tddft_memory")
+        self.assertEqual(result["module"], "CIS/TD-DFT")
+        self.assertIn("Reduce MaxDim", result["recommendations"][0])
 
     def test_singlet_only_block_omits_rejected_singlets_keyword(self):
         block = build_tddft_block({"nroots": 12, "root": 1, "td_method": "TDDFT", "manifold": "Singlets"})

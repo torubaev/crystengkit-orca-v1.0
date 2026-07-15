@@ -3,7 +3,7 @@
   "latest_version": "1.0.0",
   "release_date": "2026-07-07",
   "title": "CrystEngKit-ORCA startup news",
-  "message": "Welcome to CrystEngKit-ORCA. This area will be used for release notes, known issues, and important user notifications.",
+  "message": "Checkout the latest release for new functions. TD DFT module is on the way. ",
   "details_url": "https://github.com/torubaev/crystengkit-orca-v1.0/releases",
   "severity": "info",
   "message_id": "2026-07-07-initial-startup-news",

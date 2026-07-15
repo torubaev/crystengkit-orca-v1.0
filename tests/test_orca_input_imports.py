@@ -214,6 +214,23 @@ $$$$
         self.assertFalse(ok)
         self.assertIn("TD-DFT/RPA did not converge", reason)
 
+    def test_tddft_maxcore_batch_failure_is_reported_specifically(self):
+        text = (
+            "ORCA TD-DFT CALCULATION\n"
+            "ORCA finished by error termination in CIS\n"
+            "Error (BatchOrganizer): Not a single batch is possible with the present MaxCore\n"
+            "aborting the run\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / "failed.out"
+            out_path.write_text(text, encoding="utf-8")
+            ok, reason = orca_input.validate_orca_output_file(str(out_path))
+        self.assertFalse(ok)
+        self.assertIn("TD-DFT memory failure", reason)
+        classified = orca_input.classify_orca_failure_output(text)
+        self.assertEqual(classified["category"], "tddft_memory")
+        self.assertNotIn("configured executable is not ORCA QM", classified["message"])
+
     def test_builder_rejects_duplicate_tddft_fragments(self):
         app = object.__new__(orca_input.App)
         app.current_tddft_block = ""

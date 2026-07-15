@@ -543,6 +543,8 @@ def validate_orca_output_file(out_path: str) -> Tuple[bool, str]:
     if _looks_like_gnome_orca(text):
         return False, "output appears to come from Ubuntu GNOME Orca screen reader, not ORCA QM"
     if "ORCA TERMINATED NORMALLY" not in upper:
+        if "NOT A SINGLE BATCH IS POSSIBLE WITH THE PRESENT MAXCORE" in upper:
+            return False, "ORCA TD-DFT memory failure in the CIS/TD-DFT module"
         if "RPA/TD-DFT DID NOT CONVERGE" in upper:
             return False, "TD-DFT/RPA did not converge; try TDA, fewer roots, or larger TD-DFT solver limits"
         if "ORCA FINISHED BY ERROR TERMINATION IN CIS" in upper:
@@ -552,6 +554,39 @@ def validate_orca_output_file(out_path: str) -> Tuple[bool, str]:
     if not any(marker in upper for marker in identity_hits):
         return False, "output does not look like an ORCA quantum-chemistry output"
     return True, "valid completed ORCA output"
+
+
+def classify_orca_failure_output(text: str) -> Dict:
+    upper = str(text or "").upper()
+    if "NOT A SINGLE BATCH IS POSSIBLE WITH THE PRESENT MAXCORE" in upper:
+        return {
+            "category": "tddft_memory",
+            "module": "CIS/TD-DFT",
+            "message": (
+                "ORCA TD-DFT failed in the CIS/TD-DFT module.\n\n"
+                "The TD-DFT integral batching could not fit a single batch within "
+                "the available MaxCore memory.\n\n"
+                "Check:\n"
+                "- MaxDim\n"
+                "- NRoots\n"
+                "- global or TD-DFT-specific MaxCore\n"
+                "- number of ORCA processes"
+            ),
+            "recommendations": [
+                "Reduce MaxDim to approximately 5.",
+                "Increase MaxCore according to available physical RAM.",
+                "Check NRoots.",
+                "Check the number of ORCA processes.",
+            ],
+        }
+    return {"category": "", "module": "", "message": "", "recommendations": []}
+
+
+def classify_orca_failure_file(out_path: str) -> Dict:
+    try:
+        return classify_orca_failure_output(Path(out_path).read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {"category": "", "module": "", "message": "", "recommendations": []}
 
 
 def auto_detect_multiwfn_path(saved: str = "") -> str:
@@ -3700,9 +3735,6 @@ class App(tk.Tk):
 
     def _load_tddft_module(self):
         module_name = "TD_DFT.td_dft_module"
-        cached = sys.modules.get(module_name)
-        if cached is not None:
-            return cached
         module_path = DEFAULT_TD_DFT_SCRIPT
         if not module_path.is_file():
             raise FileNotFoundError(f"TD-DFT module was not found:\n{module_path}")
@@ -3710,7 +3742,8 @@ class App(tk.Tk):
         if tools_root not in sys.path:
             sys.path.insert(0, tools_root)
         try:
-            module = importlib.import_module(module_name)
+            cached = sys.modules.get(module_name)
+            module = importlib.reload(cached) if cached is not None else importlib.import_module(module_name)
         except Exception:
             sys.modules.pop(module_name, None)
             raise
@@ -3730,6 +3763,7 @@ class App(tk.Tk):
             on_apply=self.apply_tddft_from_module,
             on_close=self._on_tddft_window_closed,
             builder_context=self.get_tddft_global_context(),
+            on_run_emission_sequence=self.run_tddft_emission_sequence,
         )
         self.tddft_window.set_builder_enabled(bool(self.job_tddft_var.get()), bool(self.current_tddft_block))
         self.tddft_window.lift(self); self.tddft_window.focus_force()
@@ -3737,11 +3771,19 @@ class App(tk.Tk):
 
     def get_tddft_global_context(self) -> Dict:
         output_path = ""
+        basis_functions = None
         try:
             candidate = self._available_output_path()
             ok, _reason = validate_orca_output_file(candidate)
             if ok:
                 output_path = candidate
+                try:
+                    text = Path(candidate).read_text(encoding="utf-8", errors="replace")
+                    match = re.search(r"(?im)^\s*(?:Number of basis functions|Basis dimension)\s+.*?(\d+)\s*$", text)
+                    if match:
+                        basis_functions = int(match.group(1))
+                except Exception:
+                    basis_functions = None
         except Exception:
             output_path = ""
         return {
@@ -3752,11 +3794,52 @@ class App(tk.Tk):
             "multiplicity": int(self.mult_var.get()),
             "multiwfn_path": self.multiwfn_path_var.get().strip(),
             "output_path": output_path,
+            "maxcore_mb": "",
+            "nprocs": 1,
+            "basis_functions": basis_functions,
         }
 
     def _on_tddft_window_closed(self, window):
         if self.tddft_window is window:
             self.tddft_window = None
+
+    def _load_tddft_emission_module(self):
+        tools_root = str(TOOLS_ROOT)
+        if tools_root not in sys.path:
+            sys.path.insert(0, tools_root)
+        return importlib.import_module("TD_DFT.td_dft_emission_sequence")
+
+    def _emission_context(self, sequence_dir: str, step_id: str, orca_path: str, inp_path: str) -> Dict:
+        return {
+            "input_path": inp_path,
+            "orca_path": orca_path,
+            "data": self._data_from_orca_input_file(inp_path),
+            "post_processing": {},
+            "emission_sequence": True,
+            "emission_sequence_dir": str(sequence_dir),
+            "emission_step": step_id,
+            "skip_wfn_wfx": True,
+            "suppress_success_dialog": True,
+            "skip_project_summary": True,
+        }
+
+    def run_tddft_emission_sequence(self, sequence_dir: str):
+        if self.program_var.get() != "ORCA":
+            raise ValueError("Emission automation is available only when Program = ORCA.")
+        if self.run_process and self.run_process.poll() is None:
+            raise ValueError("An ORCA run is already in progress.")
+        emission = self._load_tddft_emission_module()
+        manifest = emission.load_manifest(sequence_dir)
+        step = next((item for item in manifest.steps if item.step_id == "01_esopt"), None)
+        if step is None or not step.input_path:
+            raise ValueError("Emission sequence does not contain a ready 01_esopt input.")
+        orca_path = self._validated_orca_path()
+        self.append_monitor(
+            f"=== TD-DFT fluorescence emission sequence ===\nDirectory: {sequence_dir}\nStarting: {step.input_path}\n",
+            clear=True,
+        )
+        self.status.configure(text="Starting TD-DFT fluorescence emission sequence...")
+        self._start_orca_input(step.input_path, orca_path, self._emission_context(sequence_dir, "01_esopt", orca_path, step.input_path))
 
     def set_tddft_block(self, block: str) -> None:
         cleaned = str(block or "").strip()
@@ -3800,6 +3883,24 @@ class App(tk.Tk):
         self.tddft_sync_status_var.set("TD-DFT: Synchronized")
         self.show_full_orca_input(text)
         self.focus_builder_window()
+
+    def _tddft_memory_warnings(self) -> List[str]:
+        if not self.job_tddft_var.get() or not self.current_tddft_settings:
+            return []
+        try:
+            module = self._load_tddft_module()
+            context = self.get_tddft_global_context()
+            return module.tddft_memory_risk_warnings(self.current_tddft_settings, context)
+        except Exception:
+            return []
+
+    def _confirm_tddft_memory_risk(self) -> None:
+        warnings = self._tddft_memory_warnings()
+        if not warnings:
+            return
+        message = "\n\n".join(warnings) + "\n\nContinue with these TD-DFT settings?"
+        if not messagebox.askokcancel("TD-DFT memory-risk warning", message, parent=self):
+            raise ValueError("Operation cancelled after TD-DFT memory-risk warning.")
 
     def _toggle_interaction_target(self):
         self.job_interaction_var.set(not self.job_interaction_var.get())
@@ -6331,6 +6432,8 @@ class App(tk.Tk):
         errors, warnings, solvent = validate_engine_choices(data["program"], data["functional"], data["basis"], data["solvent_text"])
         if data.get("job_wfn_wfx") and data["program"] != "ORCA":
             warnings.append("WFN/WFX generation is available only for ORCA runs via orca_2aim.")
+        if data.get("job_tddft"):
+            warnings.extend(self._tddft_memory_warnings())
         if errors:
             self.report_validation(errors, warnings, solvent)
             raise ValueError("\n".join(errors))
@@ -6356,6 +6459,8 @@ class App(tk.Tk):
             errors, warnings, solvent = validate_engine_choices(data["program"], data["functional"], data["basis"], data["solvent_text"])
             if data.get("job_wfn_wfx") and data["program"] != "ORCA":
                 warnings.append("WFN/WFX generation is available only for ORCA runs via orca_2aim.")
+            if data.get("job_tddft"):
+                warnings.extend(self._tddft_memory_warnings())
             if errors:
                 raise ValueError("\n".join(errors))
             text = generate_orca(data, structure, solvent) if data["program"] == "ORCA" else generate_gaussian(data, structure, solvent)
@@ -6800,6 +6905,7 @@ class App(tk.Tk):
 
     def save_input(self):
         try:
+            self._confirm_tddft_memory_risk()
             text = self.get_preview_text()
             if not text.strip():
                 text, warnings = self.build_input()
@@ -6831,6 +6937,7 @@ class App(tk.Tk):
             if self.run_process and self.run_process.poll() is None:
                 raise ValueError("An ORCA run is already in progress.")
             orca_path = self._validated_orca_path()
+            self._confirm_tddft_memory_risk()
             if self._has_queued_jobs():
                 self._start_job_queue(orca_path)
                 return
@@ -7316,6 +7423,54 @@ class App(tk.Tk):
             raise FileNotFoundError("ESP/MEP cube generation finished, but expected cube file(s) were not created: " + ", ".join(missing))
         self.append_monitor(f"Generated/reused: {dens_cube}\nGenerated/reused: {esp_cube}\n")
 
+    def _handle_tddft_emission_sequence_success(self, context: Dict, out_path: str) -> bool:
+        sequence_dir = str(context.get("emission_sequence_dir", "")).strip()
+        step_id = str(context.get("emission_step", "")).strip()
+        if not sequence_dir or not step_id:
+            return False
+        emission = self._load_tddft_emission_module()
+        if step_id == "01_esopt":
+            self._set_monitor_stage("Preparing vertical emission input")
+            self._set_monitor_progress(98.0)
+            manifest = emission.advance_after_optimization(sequence_dir, out_path)
+            next_step = next((step for step in manifest.steps if step.step_id == "02_vertical_emission"), None)
+            if next_step is None or not next_step.input_path:
+                raise ValueError("Excited-state optimization finished, but vertical emission input was not generated.")
+            orca_path = str(context.get("orca_path", "")).strip() or self._validated_orca_path()
+            self.append_monitor(
+                "\n=== TD-DFT emission sequence ===\n"
+                f"Excited-state optimization finished: {out_path}\n"
+                f"Generated vertical emission input: {next_step.input_path}\n"
+                "Starting vertical emission calculation...\n"
+            )
+            self._start_orca_input(
+                next_step.input_path,
+                orca_path,
+                self._emission_context(sequence_dir, "02_vertical_emission", orca_path, next_step.input_path),
+            )
+            return True
+        if step_id == "02_vertical_emission":
+            self._set_monitor_stage("Finalizing emission outputs")
+            self._set_monitor_progress(98.0)
+            _manifest, result = emission.finalize_after_vertical(sequence_dir, out_path)
+            summary = (
+                "TD-DFT fluorescence emission sequence finished.\n"
+                f"Directory: {sequence_dir}\n"
+                f"Vertical emission: {result.emission_energy_ev:.4f} eV / {result.emission_wavelength_nm:.2f} nm\n"
+                f"Oscillator strength: {result.oscillator_strength:.6g}"
+            )
+            self.append_monitor("\n=== Fluorescence emission result ===\n" + summary + "\n")
+            self.status.configure(text=f"Emission finished: {result.emission_wavelength_nm:.2f} nm")
+            if self.tddft_window is not None and self.tddft_window.winfo_exists():
+                try:
+                    self.tddft_window.emission_directory = sequence_dir
+                    self.tddft_window.emission_status_var.set(summary)
+                    self.tddft_window.update_progress(100, "Emission sequence finished.", "darkgreen")
+                except Exception:
+                    pass
+            messagebox.showinfo("Fluorescence emission finished", summary)
+        return False
+
     def _run_finished(self, code: int, out_path: str):
         if self.monitor_job_id:
             try:
@@ -7334,20 +7489,24 @@ class App(tk.Tk):
             interaction_error = ""
             context.setdefault("post_processing", {})
             wavefunction_path = ""
-            try:
-                self._set_monitor_stage("Generating WFN/WFX")
-                self._set_monitor_progress(70.0)
-                wavefunction_path = self.run_orca_2aim(out_path)
+            if context.get("skip_wfn_wfx"):
                 self._set_monitor_progress(75.0)
-                context["post_processing"]["wfn_wfx_generated"] = True
-                context["post_processing"]["wavefunction_path"] = wavefunction_path
-                post_messages.append("WFN/WFX generation completed.")
-            except Exception as exc:
-                self._set_monitor_progress(75.0)
-                context["post_processing"]["wfn_wfx_error"] = str(exc)
-                post_messages.append(f"WFN/WFX generation failed: {exc}")
-                self.append_monitor(f"WFN/WFX generation failed: {exc}\n")
-            if self.job_esp_mep_var.get():
+                post_messages.append("WFN/WFX generation skipped for emission sequence step.")
+            else:
+                try:
+                    self._set_monitor_stage("Generating WFN/WFX")
+                    self._set_monitor_progress(70.0)
+                    wavefunction_path = self.run_orca_2aim(out_path)
+                    self._set_monitor_progress(75.0)
+                    context["post_processing"]["wfn_wfx_generated"] = True
+                    context["post_processing"]["wavefunction_path"] = wavefunction_path
+                    post_messages.append("WFN/WFX generation completed.")
+                except Exception as exc:
+                    self._set_monitor_progress(75.0)
+                    context["post_processing"]["wfn_wfx_error"] = str(exc)
+                    post_messages.append(f"WFN/WFX generation failed: {exc}")
+                    self.append_monitor(f"WFN/WFX generation failed: {exc}\n")
+            if self.job_esp_mep_var.get() and not context.get("skip_wfn_wfx"):
                 try:
                     self._set_monitor_stage("Generating ESP/MEP cubes")
                     self._set_monitor_progress(78.0)
@@ -7375,41 +7534,66 @@ class App(tk.Tk):
                     interaction_error = str(exc)
                     post_messages.append(f"Interaction workflow failed: {exc}")
                     self.append_monitor(f"Interaction workflow failed: {exc}\n")
-            try:
-                self._set_monitor_stage("Creating project summary")
+            if context.get("skip_project_summary"):
                 self._set_monitor_progress(97.0)
-                calc_summary = self._build_calculation_summary(context, out_path)
-                summary_path, summary_text = self._write_project_summary(out_path, calc_summary, interaction_summary, interaction_error)
-                post_messages.append(f"Summary saved: {summary_path}")
-                self.append_monitor(f"\n=== Project summary ===\nSaved: {summary_path}\n\n{summary_text}", wrap="word")
-            except Exception as exc:
-                post_messages.append(f"Project summary could not be created: {exc}")
-                self.append_monitor(f"Project summary could not be created: {exc}\n")
+                post_messages.append("Project summary skipped for emission sequence step.")
+            else:
+                try:
+                    self._set_monitor_stage("Creating project summary")
+                    self._set_monitor_progress(97.0)
+                    calc_summary = self._build_calculation_summary(context, out_path)
+                    summary_path, summary_text = self._write_project_summary(out_path, calc_summary, interaction_summary, interaction_error)
+                    post_messages.append(f"Summary saved: {summary_path}")
+                    self.append_monitor(f"\n=== Project summary ===\nSaved: {summary_path}\n\n{summary_text}", wrap="word")
+                except Exception as exc:
+                    post_messages.append(f"Project summary could not be created: {exc}")
+                    self.append_monitor(f"Project summary could not be created: {exc}\n")
             self._set_monitor_stage("Finished normally")
             self._set_monitor_progress(100.0)
             status = f"ORCA finished. Output: {out_path}"
             if post_messages:
                 status += " | " + " ".join(post_messages)
             self.status.configure(text=status)
-            if not queue_job and os.path.isfile(out_path):
+            if context.get("emission_sequence"):
+                try:
+                    if self._handle_tddft_emission_sequence_success(context, out_path):
+                        return
+                except Exception as exc:
+                    self.append_monitor(f"Emission sequence failed after completed ORCA step: {exc}\n")
+                    messagebox.showerror("Fluorescence emission error", str(exc))
+            if not queue_job and not context.get("suppress_success_dialog") and os.path.isfile(out_path):
                 try:
                     open_path_in_system(out_path)
                 except Exception:
                     pass
-            if not queue_job:
+            if not queue_job and not context.get("suppress_success_dialog"):
                 message = f"Exit code: {code}\nOutput file:\n{out_path}"
                 if post_messages:
                     message += "\n\n" + "\n".join(post_messages)
                 messagebox.showinfo("ORCA finished", message)
         else:
             self._set_monitor_stage(f"Finished with exit code {code}")
-            message = (
-                "ORCA calculation did not run successfully. The configured executable is not ORCA QM or the calculation failed. "
-                "Downstream analysis was not launched."
-            )
+            failure = classify_orca_failure_file(out_path)
+            if failure.get("category") == "tddft_memory":
+                message = failure["message"] + "\n\nDownstream analysis was not launched."
+            else:
+                message = (
+                    "ORCA calculation did not run successfully. The configured executable is not ORCA QM or the calculation failed. "
+                    "Downstream analysis was not launched."
+                )
             detail = f"Exit code: {code}\nOutput check: {output_reason}\nOutput: {out_path}"
             self.append_monitor("\n" + message + "\n" + detail + "\n")
             self.status.configure(text=message)
+            if context.get("emission_sequence"):
+                try:
+                    emission = self._load_tddft_emission_module()
+                    emission.mark_step_failed(
+                        str(context.get("emission_sequence_dir", "")),
+                        str(context.get("emission_step", "")),
+                        f"{message}\n{detail}",
+                    )
+                except Exception:
+                    pass
             if not queue_job:
                 messagebox.showwarning("ORCA finished with errors", message + "\n\n" + detail)
         self.active_run_context = None

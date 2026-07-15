@@ -67,7 +67,7 @@ DEFAULT_TDDFT_SETTINGS = {
     "td_method": "TDDFT",
     "nroots": 10,
     "root": 1,
-    "maxdim": 120,
+    "maxdim": 5,
     "maxiter": 300,
     "manifold": "Singlets",
     "target_manifold": "Singlet",
@@ -81,6 +81,105 @@ DEFAULT_TDDFT_SETTINGS = {
     "x_axis": "nm",
     "normalize": False,
 }
+
+LEGACY_ERRONEOUS_MAXDIM_DEFAULT = 120
+SAFE_DEFAULT_MAXDIM = 5
+MAXDIM_STRONG_WARNING_THRESHOLD = 20
+EXPANSION_WARNING_THRESHOLD = 300
+
+
+def estimate_tddft_expansion_vectors(nroots: int, maxdim: int) -> int:
+    """Return ORCA's practical iterative expansion-space indicator."""
+    return int(nroots) * int(maxdim)
+
+
+def migrate_legacy_tddft_settings(settings: Dict) -> Tuple[Dict, List[str]]:
+    """Migrate known unsafe saved TD-DFT defaults without changing new defaults."""
+    data = dict(settings or {})
+    warnings: List[str] = []
+    try:
+        maxdim = int(data.get("maxdim"))
+    except Exception:
+        return data, warnings
+    if maxdim == LEGACY_ERRONEOUS_MAXDIM_DEFAULT:
+        data["maxdim"] = SAFE_DEFAULT_MAXDIM
+        warnings.append(
+            "The legacy TD-DFT MaxDim default of 120 was corrected to 5 "
+            "to reduce excessive TD-DFT expansion-space memory use."
+        )
+    return data, warnings
+
+
+def tddft_memory_risk_warnings(settings: Dict, context: Optional[Dict] = None) -> List[str]:
+    """Return qualitative TD-DFT memory-risk warnings; this is not a RAM formula."""
+    data = validate_tddft_settings(settings)
+    context = context or {}
+    nroots, maxdim = int(data["nroots"]), int(data["maxdim"])
+    expansion = estimate_tddft_expansion_vectors(nroots, maxdim)
+    warnings: List[str] = []
+    if maxdim > MAXDIM_STRONG_WARNING_THRESHOLD or expansion > EXPANSION_WARNING_THRESHOLD:
+        warnings.append(
+            "Large TD-DFT expansion space\n\n"
+            f"NRoots: {nroots}\n"
+            f"MaxDim: {maxdim}\n"
+            f"Estimated maximum expansion space: approximately {expansion} vectors.\n\n"
+            "Large MaxDim values can require excessive memory and may cause ORCA to fail with:\n\n"
+            "Not a single batch is possible with the present MaxCore.\n\n"
+            "A typical MaxDim value is approximately 5."
+        )
+    maxcore = context.get("maxcore_mb")
+    basis_functions = context.get("basis_functions")
+    try:
+        maxcore_value = int(maxcore)
+    except Exception:
+        maxcore_value = None
+    try:
+        basis_count = int(basis_functions)
+    except Exception:
+        basis_count = None
+    if maxcore_value is not None and maxcore_value < 1000 and (basis_count is None or basis_count > 1000 or expansion > EXPANSION_WARNING_THRESHOLD):
+        warnings.append(
+            "TD-DFT memory-risk warning\n\n"
+            f"Global MaxCore: {maxcore_value} MB per process\n"
+            f"Basis functions: {basis_count if basis_count is not None else 'not known'}\n\n"
+            "This setup may be memory-limited for TD-DFT. Consider increasing MaxCore "
+            "according to available physical RAM and reducing MaxDim to approximately 5."
+        )
+    return warnings
+
+
+def classify_orca_tddft_failure_text(text: str) -> Dict:
+    """Classify known ORCA TD-DFT memory-batching failures."""
+    upper = str(text or "").upper()
+    if "NOT A SINGLE BATCH IS POSSIBLE WITH THE PRESENT MAXCORE" in upper:
+        return {
+            "category": "tddft_memory",
+            "module": "CIS/TD-DFT",
+            "message": (
+                "ORCA TD-DFT failed because no integral batch could fit "
+                "within the available MaxCore memory."
+            ),
+            "recommendations": [
+                "Reduce MaxDim to approximately 5.",
+                "Increase MaxCore according to available physical RAM.",
+                "Check NRoots.",
+                "Check the number of ORCA processes.",
+            ],
+            "matched": True,
+        }
+    if "ORCA FINISHED BY ERROR TERMINATION IN CIS" in upper and "RPA/TD-DFT DID NOT CONVERGE" in upper:
+        return {
+            "category": "tddft_nonconvergence",
+            "module": "CIS/TD-DFT",
+            "message": "ORCA TD-DFT/RPA did not converge.",
+            "recommendations": [
+                "Increase TD-DFT MaxIter if scientifically appropriate.",
+                "Try TDA only as a deliberate approximation.",
+                "Check the requested roots and starting wavefunction.",
+            ],
+            "matched": True,
+        }
+    return {"category": "", "module": "", "message": "", "recommendations": [], "matched": False}
 
 
 def configure_builder_ui_style(widget: tk.Misc) -> None:
@@ -186,8 +285,10 @@ def validate_tddft_settings(settings: Dict) -> Dict:
         data["vertical_excitation"] = True
     if data["nroots"] < 1 or data["root"] < 1:
         raise ValueError("NROOTS and ROOT must be positive integers.")
-    if data["maxdim"] < max(1, data["nroots"]) or data["maxiter"] < 1:
-        raise ValueError("MaxDim must be at least NROOTS, and MaxIter must be positive.")
+    if data["maxdim"] < 1:
+        raise ValueError("MaxDim must be a positive integer.")
+    if data["maxiter"] < 1:
+        raise ValueError("MaxIter must be a positive integer.")
     if data["root"] > data["nroots"]:
         raise ValueError("ROOT cannot be greater than NROOTS.")
     if data["broadening_ev"] <= 0:
@@ -463,7 +564,7 @@ def auto_detect_multiwfn_path(saved: str = "") -> str:
 
 
 class TDDFTWindow(tk.Toplevel):
-    def __init__(self, parent, settings: Dict, on_apply=None, on_close=None, builder_context=None):
+    def __init__(self, parent, settings: Dict, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None):
         super().__init__(parent)
         configure_tk_window_identity(self, "TDDFT")
         self.title("TD-DFT setup, analysis, and visualization")
@@ -476,8 +577,10 @@ class TDDFTWindow(tk.Toplevel):
         self.geometry(f"{window_width}x{window_height}+{x}+{y}")
         self.minsize(min(640, window_width), min(560, window_height))
         configure_builder_ui_style(self)
-        self.on_apply, self.on_close, self.states, self.output_path = on_apply, on_close, [], ""
+        self.on_apply, self.on_close, self.on_run_emission_sequence = on_apply, on_close, on_run_emission_sequence
+        self.states, self.output_path = [], ""
         self.builder_enabled = bool(on_apply)
+        self.builder_context: Dict = {}
         self.ui_mode = "input"
         self._pending_builder_output_path = ""
         self.connection_status_var = tk.StringVar(value="Connected to ORCA Input Builder" if on_apply else "Standalone mode - no ORCA Builder connected")
@@ -498,6 +601,10 @@ class TDDFTWindow(tk.Toplevel):
         self.opacity_var = tk.StringVar(value="0.65")
         self.show_molecule_var = tk.BooleanVar(value=True); self.show_bonds_var = tk.BooleanVar(value=True); self.show_labels_var = tk.BooleanVar(value=False)
         initial = dict(DEFAULT_TDDFT_SETTINGS); initial.update(settings or {})
+        migration_warnings: List[str] = []
+        if settings:
+            initial, migration_warnings = migrate_legacy_tddft_settings(initial)
+        self.migration_warnings = migration_warnings
         self.vars = {key: (tk.BooleanVar(value=value) if isinstance(value, bool) else tk.StringVar(value=str(value))) for key, value in initial.items()}
         self.vertical_excitation_var = self.vars["vertical_excitation"]
         self.excited_state_opt_var = self.vars["excited_state_optimization"]
@@ -505,11 +612,13 @@ class TDDFTWindow(tk.Toplevel):
         self.workflow_var = tk.StringVar(value=self._workflow_from_settings())
         self.workflow_summary_var = tk.StringVar()
         self.workflow_var.trace_add("write", lambda *_args: self._apply_workflow_selection())
-        for key in ("nroots", "root", "td_method", "manifold"):
+        for key in ("nroots", "root", "td_method", "manifold", "maxdim"):
             self.vars[key].trace_add("write", lambda *_args: self._sync_calculation_dependencies())
         self._build()
         self._apply_workflow_selection()
         self._auto_load_builder_output()
+        if self.migration_warnings:
+            self.update_progress(0, self.migration_warnings[0], "blue")
         for variable in self.vars.values():
             variable.trace_add("write", lambda *_args: self._mark_tddft_modified())
         self.protocol("WM_DELETE_WINDOW", self._close_window)
@@ -578,10 +687,17 @@ class TDDFTWindow(tk.Toplevel):
         ttk.Label(parameters, text="Target state").grid(row=5, column=0, sticky="w", padx=(0, 8), pady=2)
         self.target_manifold_combo = ttk.Combobox(parameters, textvariable=self.vars["target_manifold"], values=["Singlet", "Triplet"], state="readonly", width=14)
         self.target_manifold_combo.grid(row=5, column=1, sticky="ew", pady=2)
-        ttk.Label(parameters, text="Max expansion").grid(row=6, column=0, sticky="w", padx=(0, 8), pady=2)
+        ttk.Label(parameters, text="MaxDim multiplier").grid(row=6, column=0, sticky="w", padx=(0, 8), pady=2)
         ttk.Entry(parameters, textvariable=self.vars["maxdim"], width=10).grid(row=6, column=1, sticky="ew", pady=2)
         ttk.Label(parameters, text="Max iterations").grid(row=7, column=0, sticky="w", padx=(0, 8), pady=2)
         ttk.Entry(parameters, textvariable=self.vars["maxiter"], width=10).grid(row=7, column=1, sticky="ew", pady=2)
+        ttk.Label(
+            parameters,
+            text="Approximate maximum iterative expansion: NRoots x MaxDim. Typical MaxDim: 5.",
+            style="Muted.TLabel",
+            wraplength=330,
+            justify="left",
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(3, 0))
         ttk.Separator(setup, orient="horizontal").grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 6))
         ttk.Label(setup, textvariable=self.workflow_summary_var, style="Muted.TLabel", justify="left", wraplength=430).grid(row=2, column=0, sticky="w")
         apply_box = ttk.Frame(setup); apply_box.grid(row=2, column=1, sticky="e")
@@ -609,7 +725,13 @@ class TDDFTWindow(tk.Toplevel):
         ttk.Label(progress_frame, textvariable=self.progress_text, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
         tablebox = ttk.LabelFrame(root, text="ORCA TD-DFT states", padding=8); tablebox.grid(row=4, column=0, sticky="nsew"); tablebox.columnconfigure(0, weight=1); tablebox.rowconfigure(1, weight=1)
         actions = ttk.Frame(tablebox); actions.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        result_actions = [("Load ORCA output", self._load), ("Plot UV-Vis", self._plot), ("Export states CSV", self._export_table), ("Export spectrum CSV", self._export_spectrum), ("Save PNG", lambda: self._save_plot(".png")), ("Save SVG", lambda: self._save_plot(".svg"))]
+        result_actions = [
+            ("Load ORCA output", self._load),
+            ("Plot UV-Vis", self._plot),
+            ("Save image...", self._save_plot_image),
+            ("Export states CSV", self._export_table),
+            ("Export spectrum CSV", self._export_spectrum),
+        ]
         for index, (text, command) in enumerate(result_actions):
             ttk.Button(actions, text=text, command=command, style="Primary.TButton" if index == 0 else "TButton").grid(row=index // 3, column=index % 3, sticky="ew", padx=(0 if index % 3 == 0 else 5, 0), pady=(0, 5))
         for column in range(3): actions.columnconfigure(column, weight=1)
@@ -619,7 +741,19 @@ class TDDFTWindow(tk.Toplevel):
         tree_scroll = ttk.Scrollbar(tablebox, orient="horizontal", command=self.tree.xview); tree_scroll.grid(row=2, column=0, sticky="ew"); self.tree.configure(xscrollcommand=tree_scroll.set)
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._refresh_mode_availability())
 
-        viz = ttk.LabelFrame(root, text="Analysis and visualization", padding=8); viz.grid(row=5, column=0, sticky="ew"); viz.columnconfigure(0, weight=1)
+        emission = ttk.LabelFrame(root, text="Fluorescence emission", padding=8); emission.grid(row=5, column=0, sticky="ew", pady=(8, 0)); emission.columnconfigure(1, weight=1)
+        self.emission_status_var = tk.StringVar(value="Load a completed absorption TD-DFT output to prepare an emission calculation sequence.")
+        ttk.Label(emission, text="Emitting root").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Entry(emission, textvariable=self.vars["root"], width=8).grid(row=0, column=1, sticky="w")
+        emission_actions = ttk.Frame(emission)
+        emission_actions.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(8, 0))
+        ttk.Button(emission_actions, text="Prepare calculation sequence", command=self._prepare_emission_sequence, style="Primary.TButton").pack(side="left", padx=(0, 6))
+        ttk.Button(emission_actions, text="Prepare + Run sequence", command=self._run_emission_sequence, style="Primary.TButton").pack(side="left", padx=(0, 6))
+        ttk.Button(emission_actions, text="Open emission directory", command=self._open_emission_directory).pack(side="left")
+        ttk.Label(emission, textvariable=self.emission_status_var, style="Muted.TLabel", justify="left", wraplength=560).grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        self.emission_directory = ""
+
+        viz = ttk.LabelFrame(root, text="Analysis and visualization", padding=8); viz.grid(row=6, column=0, sticky="ew", pady=(8, 0)); viz.columnconfigure(0, weight=1)
         context = ttk.LabelFrame(viz, text="Files and executable", padding=8); context.grid(row=0, column=0, sticky="ew"); context.columnconfigure(1, weight=1)
         ttk.Label(context, text="ORCA output").grid(row=0, column=0, sticky="nw", padx=(0, 8)); self.output_label = ttk.Label(context, text="Not loaded", wraplength=430, justify="left"); self.output_label.grid(row=0, column=1, sticky="w")
         ttk.Label(context, text="Working directory").grid(row=1, column=0, sticky="nw", padx=(0, 8), pady=(3, 0)); ttk.Label(context, textvariable=self.workdir_var, wraplength=430, justify="left").grid(row=1, column=1, sticky="w", pady=(3, 0))
@@ -661,7 +795,7 @@ class TDDFTWindow(tk.Toplevel):
         footer.pack(fill="x")
         ttk.Label(footer, text=COPYRIGHT_NOTE, style="Muted.TLabel").pack(anchor="w")
         self.input_sections = (connection_box, setup)
-        self.post_sections = (spectrum, progress_frame, tablebox, viz)
+        self.post_sections = (spectrum, progress_frame, tablebox, emission, viz)
         self._set_ui_mode("input")
 
     def _set_ui_mode(self, mode: str) -> None:
@@ -789,7 +923,14 @@ class TDDFTWindow(tk.Toplevel):
         if self.excited_state_freq_var.get():
             prefix = "S" if self.vars["target_manifold"].get() == "Singlet" else "T"
             steps.append(f"Freq {prefix}{self.vars['root'].get()}")
-        self.workflow_summary_var.set("Steps: " + (" | ".join(steps) if steps else "none selected"))
+        try:
+            nroots = int(self.vars["nroots"].get())
+            maxdim = int(self.vars["maxdim"].get())
+            expansion = estimate_tddft_expansion_vectors(nroots, maxdim)
+            estimate = f"\nEstimated maximum expansion space: approximately {expansion} vectors"
+        except Exception:
+            estimate = "\nEstimated maximum expansion space: enter valid NRoots and MaxDim"
+        self.workflow_summary_var.set("Steps: " + (" | ".join(steps) if steps else "none selected") + estimate)
 
     def _mark_tddft_modified(self):
         if self.on_apply and self.builder_enabled:
@@ -805,6 +946,7 @@ class TDDFTWindow(tk.Toplevel):
             self.connection_status_var.set("TD-DFT is disabled in ORCA Input Builder")
 
     def set_builder_context(self, context: Dict) -> None:
+        self.builder_context = dict(context or {})
         if not context:
             self.builder_context_var.set("")
             self._pending_builder_output_path = ""
@@ -818,6 +960,21 @@ class TDDFTWindow(tk.Toplevel):
             f"Builder: {context.get('functional', '')} / {context.get('basis', '')} · "
             f"{solvent} · charge {context.get('charge', 0)} · multiplicity {context.get('multiplicity', 1)}"
         )
+
+        maxcore = context.get("maxcore_mb")
+        nprocs = context.get("nprocs")
+        try:
+            if maxcore not in (None, "") and nprocs not in (None, ""):
+                total = int(maxcore) * int(nprocs)
+                memory_line = (
+                    f"\nGlobal MaxCore: {int(maxcore)} MB per process | "
+                    f"ORCA processes: {int(nprocs)} | Approximate requested memory: {total} MB"
+                )
+            else:
+                memory_line = "\nGlobal MaxCore: not set in Builder context | ORCA processes: not set"
+        except Exception:
+            memory_line = "\nGlobal MaxCore / ORCA process count: unavailable"
+        self.builder_context_var.set(self.builder_context_var.get() + memory_line)
 
         if hasattr(self, "output_label"):
             self._auto_load_builder_output()
@@ -870,9 +1027,19 @@ class TDDFTWindow(tk.Toplevel):
         except Exception as exc:
             self.update_progress(0, "Failed.", "red")
             messagebox.showerror(title, str(exc), parent=self)
+
+    def _confirm_tddft_memory_risk(self, data: Dict) -> None:
+        warnings = tddft_memory_risk_warnings(data, self.builder_context)
+        if not warnings:
+            return
+        message = "\n\n".join(warnings) + "\n\nContinue with these TD-DFT settings?"
+        if not messagebox.askokcancel("TD-DFT memory-risk warning", message, parent=self):
+            raise ValueError("TD-DFT synchronization cancelled after memory-risk warning.")
+
     def _apply(self):
         def action():
             data = self._settings(); block = build_tddft_block(data)
+            self._confirm_tddft_memory_risk(data)
             self.clipboard_clear(); self.clipboard_append(block)
             if self.on_apply:
                 if not self.builder_enabled:
@@ -932,6 +1099,98 @@ class TDDFTWindow(tk.Toplevel):
             states, data = self._need_states(), self._settings(); path = filedialog.asksaveasfilename(parent=self, defaultextension=suffix, filetypes=[(suffix.upper()[1:], "*" + suffix)]);
             if path: save_spectrum(path, states, data)
         self._guard("Save spectrum", action)
+
+    def _save_plot_image(self):
+        def action():
+            states, data = self._need_states(), self._settings()
+            path = filedialog.asksaveasfilename(
+                parent=self,
+                title="Save spectrum image",
+                defaultextension=".png",
+                filetypes=[("PNG image", "*.png"), ("SVG vector image", "*.svg")],
+            )
+            if path:
+                save_spectrum(path, states, data)
+        self._guard("Save image", action)
+
+    def _emission_module(self):
+        try:
+            from . import td_dft_emission_sequence as emission
+        except ImportError:
+            import td_dft_emission_sequence as emission  # type: ignore
+        return emission
+
+    def _prepare_emission_sequence_manifest(self, run_automatically: bool = False):
+        if not self.output_path:
+            raise ValueError("Load a completed absorption TD-DFT output first.")
+        emission = self._emission_module()
+        data = self._settings()
+        settings = emission.EmissionSequenceSettings(
+            source_output=self.output_path,
+            target_root=int(data["root"]),
+            target_manifold=str(data["target_manifold"]),
+            follow_root=True,
+            nroots=int(data["nroots"]),
+            run_frequencies=False,
+            broadening_ev=float(data["broadening_ev"]),
+            wavelength_min_nm=float(data["wavelength_min_nm"]),
+            wavelength_max_nm=float(data["wavelength_max_nm"]),
+            normalize=bool(data["normalize"]),
+            run_automatically=run_automatically,
+        )
+        manifest = emission.prepare_emission_sequence(settings)
+        first_step = next((step for step in manifest.steps if step.step_id == "01_esopt"), None)
+        directory = str(Path(first_step.input_path).parent if first_step and first_step.input_path else Path(self.output_path).parent)
+        self.emission_directory = directory
+        self.emission_status_var.set(
+            "Prepared emission calculation sequence.\n"
+            f"Directory: {directory}\n"
+            f"Next input: {first_step.input_path if first_step else 'not available'}"
+        )
+        self.update_progress(100, "Emission calculation sequence prepared.", "darkgreen")
+        return manifest
+
+    def _prepare_emission_sequence(self):
+        def action():
+            manifest = self._prepare_emission_sequence_manifest(run_automatically=False)
+            first_step = next((step for step in manifest.steps if step.step_id == "01_esopt"), None)
+            directory = self.emission_directory or str(Path(self.output_path).parent)
+            messagebox.showinfo(
+                "Fluorescence emission",
+                "Prepared the emission calculation sequence.\n\n"
+                f"Directory:\n{directory}\n\n"
+                "Run the sequence from the Builder to automate S1 optimization, vertical emission, and result export.",
+                parent=self,
+            )
+        self._guard("Fluorescence emission", action)
+
+    def _run_emission_sequence(self):
+        def action():
+            if not self.on_run_emission_sequence:
+                raise ValueError("Automatic emission running is available only when TD-DFT is opened from ORCA Input Builder.")
+            manifest = self._prepare_emission_sequence_manifest(run_automatically=True)
+            if not self.emission_directory:
+                raise ValueError("Emission sequence directory was not created.")
+            self.on_run_emission_sequence(self.emission_directory)
+            first_step = next((step for step in manifest.steps if step.step_id == "01_esopt"), None)
+            self.emission_status_var.set(
+                "Emission calculation sequence started in ORCA Input Builder.\n"
+                f"Directory: {self.emission_directory}\n"
+                f"Running: {first_step.input_path if first_step else '01_esopt'}"
+            )
+            self.update_progress(100, "Emission calculation sequence started.", "darkgreen")
+        self._guard("Run emission sequence", action)
+
+    def _open_emission_directory(self):
+        def action():
+            if not self.emission_directory and not self.output_path:
+                raise ValueError("No emission directory is available yet.")
+            directory = Path(self.emission_directory or Path(self.output_path).parent)
+            directory.mkdir(parents=True, exist_ok=True)
+            if os.name == "nt": os.startfile(str(directory))
+            elif sys.platform == "darwin": subprocess.Popen(["open", str(directory)], shell=False)
+            else: subprocess.Popen(["xdg-open", str(directory)], shell=False)
+        self._guard("Open emission directory", action)
 
     def _set_loaded_output(self, path):
         self._set_ui_mode("post")
@@ -1100,11 +1359,18 @@ class TDDFTWindow(tk.Toplevel):
         self._guard("Open analysis directory", action)
 
 
-def open_tddft_window(parent=None, initial_settings=None, on_apply=None, on_close=None, builder_context=None) -> TDDFTWindow:
+def open_tddft_window(parent=None, initial_settings=None, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None) -> TDDFTWindow:
     """Open one Builder-connected TD-DFT ``Toplevel`` without creating a new Tk root."""
     if parent is None:
         raise ValueError("A Tk parent is required when embedding the TD-DFT window.")
-    return TDDFTWindow(parent, initial_settings or DEFAULT_TDDFT_SETTINGS, on_apply=on_apply, on_close=on_close, builder_context=builder_context)
+    return TDDFTWindow(
+        parent,
+        initial_settings or DEFAULT_TDDFT_SETTINGS,
+        on_apply=on_apply,
+        on_close=on_close,
+        builder_context=builder_context,
+        on_run_emission_sequence=on_run_emission_sequence,
+    )
 
 
 def main(argv=None):
