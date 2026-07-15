@@ -2,6 +2,8 @@
 
 <img title="" src="images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="Journal cover art example with molecular visualization" width="207"> <img title="" src="images/wiki/ZfK_C2H2I2_COVER.png" alt="Journal cover art example for crystal engineering" width="203"> <img title="" src="images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="Journal issue cover with computational chemistry artwork" width="204">
 
+<img title="" src="images/wiki/pccp_esp_cover.png" alt="Journal cover art example with ESP map visualization" width="206"> <img title="" src="images/wiki/open202100067-toc-0001-m.png" alt="Journal cover art example with crystal engineering visualization" width="204">
+
 *ESP maps, NCI plots, BCP/bonding paths, and HOMO-LUMO shapes are not only illustrations of your work but also good ideas for journal cover art*.
 
 ## Table of Contents
@@ -131,7 +133,6 @@ Creates electrostatic-potential maps on electron-density surfaces[^esp].
 Resulting ESP map Image
 
 ![ESP map](images/wiki/orca_vismap_output_2.png)
-
 
 This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as `.wfn`, `.wfx`, or `.fchk`.
 
