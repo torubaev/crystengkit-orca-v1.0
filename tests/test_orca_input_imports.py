@@ -176,6 +176,48 @@ $$$$
         self.assertFalse(ok)
         self.assertIn("does not exist", reason)
 
+    def test_show_active_run_input_prefers_running_job_input(self):
+        class DummyText:
+            def __init__(self):
+                self.content = ""
+
+            def delete(self, *_args, **_kwargs):
+                self.content = ""
+
+            def insert(self, *_args, **_kwargs):
+                self.content = _args[1] if len(_args) > 1 else ""
+
+        class DummyStatus:
+            def __init__(self):
+                self.messages = []
+
+            def configure(self, **kwargs):
+                self.messages.append(kwargs)
+
+        app = orca_input.App.__new__(orca_input.App)
+        app.run_process = type("Proc", (), {"poll": lambda self: None})()
+        app.current_input_path = None
+        app.preview_text = DummyText()
+        app.status = DummyStatus()
+        app.output_mode = "monitor"
+        app.output_buffers = {"preview": "", "monitor": ""}
+        app.output_wraps = {"preview": "none", "monitor": "none"}
+        app.preview_mode_button = None
+        app.monitor_mode_button = None
+        app._show_output_mode = lambda mode: setattr(app, "output_mode", mode)
+        app.preview = lambda: setattr(app, "preview_called", True)
+        app.preview_called = False
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inp_path = Path(tmpdir) / "running.inp"
+            inp_path.write_text("! Running input\n", encoding="utf-8")
+            app.current_input_path = str(inp_path)
+            app._show_running_job_input_preview()
+
+        self.assertFalse(getattr(app, "preview_called", False))
+        self.assertEqual(app.preview_text.content, "! Running input\n")
+        self.assertEqual(app.output_mode, "preview")
+
     def test_orca_uses_synchronized_tddft_block_exactly_once(self):
         structure = orca_input.Structure([("H", 0.0, 0.0, 0.0), ("H", 0.0, 0.0, 0.74)])
         data = {

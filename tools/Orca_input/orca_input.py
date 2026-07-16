@@ -243,7 +243,6 @@ class StartupSplash:
         self.logo_image = None
         self._build()
         self._center()
-        self.set_status("Starting CrystEngKit-ORCA...")
         self.master.after(STARTUP_SPLASH_MIN_VISIBLE_MS, self._allow_close)
         self.fetch_thread = threading.Thread(target=self._fetch_news_worker, daemon=True)
         self.fetch_thread.start()
@@ -265,9 +264,6 @@ class StartupSplash:
         ttk.Label(title_box, text="CrystEngKit-ORCA", font=("Segoe UI", 16, "bold")).pack(anchor="w")
         ttk.Label(title_box, text="ORCA Input Builder", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(1, 0))
         ttk.Label(title_box, text=f"Version: {APP_VERSION}", font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
-
-        self.status_var = tk.StringVar(value="")
-        ttk.Label(outer, textvariable=self.status_var).pack(anchor="w", pady=(18, 0))
 
         news_box = ttk.Frame(outer, padding=10)
         news_box.pack(fill="both", expand=True, pady=(12, 8))
@@ -300,14 +296,6 @@ class StartupSplash:
         except Exception:
             pass
 
-    def set_status(self, text: str):
-        if not self.closed:
-            try:
-                self.status_var.set(text)
-                self.window.update_idletasks()
-            except Exception:
-                pass
-
     def _fetch_news_worker(self):
         news = fetch_startup_news()
         try:
@@ -330,7 +318,6 @@ class StartupSplash:
         details_url = self.news.get("details_url", "")
         self.release_button.configure(state="normal" if is_valid_news_url(details_url) else "disabled")
         self.require_continue = force_show or self.news.get("severity") == "critical"
-        self.set_status("Checking online news...")
 
     def open_details(self):
         url = self.news.get("details_url", "")
@@ -344,7 +331,6 @@ class StartupSplash:
         if self.closed:
             return
         self.ready = True
-        self.set_status("Ready.")
         try:
             self.window.attributes("-topmost", False)
         except Exception:
@@ -3196,23 +3182,17 @@ class App(tk.Tk):
 
         self.auto_open_output_var.set(True)
         self.startup_splash = self._create_startup_splash()
-        self._startup_status("Loading Builder interface...")
         self._apply_app_icon()
         self._build()
-        self._startup_status("Loading saved settings...")
         self._load_launcher_settings()
         self.auto_open_output_var.set(True)
-        self._startup_status("Checking Python tools...")
         self._use_latest_python_for_tools()
         self._refresh_engine_lists()
-        self._startup_status("Locating ORCA...")
         self.auto_locate_orca(silent=True)
-        self._startup_status("Locating Multiwfn...")
         self.auto_locate_multiwfn(silent=True)
         if not Path(self.qtaim_script_var.get().strip()).is_file():
             self.auto_locate_qtaim(silent=True)
         self._report_runtime_environment()
-        self._startup_status("Ready.")
         self.deiconify()
         self.after(150, self._finish_startup_splash)
 
@@ -3222,13 +3202,6 @@ class App(tk.Tk):
             return StartupSplash(self)
         except Exception:
             return None
-
-    def _startup_status(self, text: str):
-        try:
-            if self.startup_splash is not None:
-                self.startup_splash.set_status(text)
-        except Exception:
-            pass
 
     def _finish_startup_splash(self):
         try:
@@ -3554,7 +3527,7 @@ class App(tk.Tk):
         switch_box.grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.preview_mode_button = tk.Button(
             switch_box,
-            text="Input preview",
+            text="Show input",
             command=self.activate_input_preview,
             relief="solid",
             borderwidth=1,
@@ -3691,8 +3664,44 @@ class App(tk.Tk):
                 activeforeground=colors["active_fg"] if is_active else colors["inactive_fg"],
             )
 
+    def _show_running_job_input_preview(self) -> bool:
+        proc = self.__dict__.get("run_process")
+        if proc is None or proc.poll() is not None:
+            return False
+        candidate_paths = []
+        context = self.__dict__.get("active_run_context") or {}
+        if context.get("input_path"):
+            candidate_paths.append(context["input_path"])
+        current_input_path = self.__dict__.get("current_input_path")
+        if current_input_path:
+            candidate_paths.append(current_input_path)
+        seen = set()
+        for candidate in candidate_paths:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                path = str(candidate)
+            except Exception:
+                continue
+            if not path or not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                    text = handle.read()
+            except Exception:
+                continue
+            self.preview_text.delete("1.0", "end")
+            self.preview_text.insert("1.0", text)
+            self._show_output_mode("preview")
+            self.status.configure(text=f"Showing input for active ORCA run: {path}")
+            return True
+        return False
+
     def activate_input_preview(self):
         self._show_output_mode("preview")
+        if self._show_running_job_input_preview():
+            return
         self.preview()
 
     def _on_tddft_toggle(self):
