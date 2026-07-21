@@ -256,6 +256,55 @@ $$$$
         self.assertFalse(ok)
         self.assertIn("TD-DFT/RPA did not converge", reason)
 
+    def test_ai_progress_prompt_redacts_sensitive_details_and_requests_short_answer(self):
+        output = (
+            "INPUT FILE C:\\Users\\chemist\\secret\\private_job.inp\n"
+            "C 0.000 1.000 2.000\nH 0.000 0.000 1.000\n"
+            "SCF ITERATION 12 ENERGY -100.0\napi_key=do-not-send\n"
+        )
+        prompt = orca_input.build_orca_progress_prompt(output)
+        self.assertNotIn(r"C:\Users\chemist", prompt)
+        self.assertNotIn("private_job", prompt)
+        self.assertNotIn("do-not-send", prompt)
+        self.assertNotIn("C 0.000 1.000 2.000", prompt)
+        self.assertIn("SCF ITERATION 12", prompt)
+        self.assertIn("at most 120 words", prompt)
+        self.assertIn("possibly incomplete live output", prompt)
+        self.assertTrue(prompt.endswith(orca_input.ORCA_PROMPT_END_MARKER))
+        self.assertIn("perform the check silently", prompt)
+        self.assertIn("Report incompleteness only", prompt)
+        self.assertIn("likely sequence of remaining stages", prompt)
+        self.assertIn("overall remaining time", prompt)
+        self.assertNotIn("INPUT_COMPLETE: YES", prompt)
+
+    def test_chatgpt_is_default_ai_web_model(self):
+        self.assertEqual(orca_input.DEFAULT_AI_WEB_MODEL, "ChatGPT")
+        self.assertEqual(next(iter(orca_input.AI_WEB_MODELS)), "ChatGPT")
+
+    def test_legacy_gemini_default_migrates_but_explicit_new_choice_remains(self):
+        self.assertEqual(orca_input.resolve_saved_ai_web_model({"ai_web_model": "Gemini"}), "ChatGPT")
+        self.assertEqual(
+            orca_input.resolve_saved_ai_web_model({
+                "ai_web_model": "Gemini",
+                "ai_web_model_settings_version": orca_input.AI_WEB_MODEL_SETTINGS_VERSION,
+            }),
+            "Gemini",
+        )
+
+    def test_ai_progress_prompt_rejects_empty_output(self):
+        with self.assertRaisesRegex(ValueError, "No ORCA output"):
+            orca_input.build_orca_progress_prompt("  ")
+
+    def test_ai_progress_reads_full_output_file(self):
+        app = object.__new__(orca_input.App)
+        app._sync_active_output_buffer = lambda: None
+        app.output_buffers = {"monitor": "trimmed monitor"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "running.out"
+            path.write_text("complete output\nlast iteration", encoding="utf-8")
+            app.last_output_path = str(path)
+            self.assertEqual(app._orca_output_for_ai(), "complete output\nlast iteration")
+
     def test_tddft_maxcore_batch_failure_is_reported_specifically(self):
         text = (
             "ORCA TD-DFT CALCULATION\n"
@@ -294,7 +343,11 @@ $$$$
 
         suggested = Path(app.suggest_input_save_path()).name
 
-        self.assertEqual(suggested, "water_B3LYP_def2-SVP_sp_td-dft.inp")
+        self.assertEqual(suggested, "water_B3LYP_def2-SVP_td-dft_absorption.inp")
+
+        app.current_tddft_settings = {"td_method": "TDA", "excited_state_optimization": True}
+        app.current_tddft_block = "%tddft\n  TDA true\nend"
+        self.assertEqual(Path(app.suggest_input_save_path()).name, "water_B3LYP_def2-SVP_tda_excited-state-optimization.inp")
 
     def test_tddft_input_save_suggestion_skips_td_dft_tag_without_block(self):
         app = object.__new__(orca_input.App)

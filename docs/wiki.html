@@ -242,12 +242,16 @@
 <a class="nav-link level-3" href="#manual-installation">Manual installation</a></div></details>
 <a class="nav-link level-2" href="#starting-the-suite">Starting the Suite</a>
 <details class="nav-group" open><summary><a href="#tools">Tools</a></summary><div class="nav-children"><a class="nav-link level-3" href="#orca-input-builder">ORCA Input Builder</a>
+<a class="nav-link level-3" href="#td-dft-setup-analysis-and-visualization">TD-DFT Setup, Analysis, and Visualization</a>
 <a class="nav-link level-3" href="#homo-lumo-plotter">HOMO-LUMO Plotter</a>
 <a class="nav-link level-3" href="#esp-vismap">ESP / VisMap</a>
 <a class="nav-link level-3" href="#nci-plotter">NCI Plotter</a>
 <a class="nav-link level-3" href="#qtaim-critical-points-viewer">QTAIM Critical Points Viewer</a>
 <a class="nav-link level-3" href="#nci-qtaim-overlay">NCI + QTAIM Overlay</a></div></details>
 <details class="nav-group"><summary><a href="#how-to-use-the-tools">How to Use the Tools</a></summary><div class="nav-children"><a class="nav-link level-3" href="#build-and-run-an-orca-job">Build and Run an ORCA Job</a>
+<a class="nav-link level-3" href="#run-orca-job-queues">Run ORCA Job Queues</a>
+<a class="nav-link level-3" href="#request-an-ai-progress-comment">Request an AI Progress Comment</a>
+<a class="nav-link level-3" href="#configure-and-analyze-a-td-dft-job">Configure and Analyze a TD-DFT Job</a>
 <a class="nav-link level-3" href="#make-figures-after-a-calculation">Make Figures After a Calculation</a>
 <a class="nav-link level-3" href="#dimer-interaction-energy">Dimer Interaction Energy</a>
 <a class="nav-link level-3" href="#modeling-of-solvation-effects">Modeling of Solvation Effects</a></div></details>
@@ -265,7 +269,9 @@
 <a class="nav-link level-3" href="#nci-plot-does-not-work">NCI plot does not work</a>
 <a class="nav-link level-3" href="#qtaim-cp-does-not-work">QTAIM CP does not work</a>
 <a class="nav-link level-3" href="#structure-preview-does-not-open">Structure preview does not open</a>
-<a class="nav-link level-3" href="#interaction-calculation-finishes-only-partly">Interaction calculation finishes only partly</a></div></details>
+<a class="nav-link level-3" href="#interaction-calculation-finishes-only-partly">Interaction calculation finishes only partly</a>
+<a class="nav-link level-3" href="#td-dft-spectrum-or-nto-analysis-is-unavailable">TD-DFT spectrum or NTO analysis is unavailable</a>
+<a class="nav-link level-3" href="#ai-progress-prompt-opens-the-wrong-service-or-appears-truncated">AI progress prompt opens the wrong service or appears truncated</a></div></details>
 <a class="nav-link level-2" href="#how-to-cite-crystengkit-orca">How to cite CrystEngKit-ORCA</a>
 <a class="nav-link level-2" href="#repository-contents">Repository contents</a>
         <a class="nav-link level-2" href="#references">References</a>
@@ -275,6 +281,7 @@
       <article>
         <h1 id="crystengkit-from-cif-files-to-esp-nci-and-qtaim-plots-in-a-few-clicks-a-practical-suite-for-supramolecular-chemistry-and-crystal-engineering-computations">CrystEngKit: From CIF files to ESP, NCI, and QTAIM plots in a few clicks — a practical suite for supramolecular chemistry and crystal engineering computations.</h1>
 <figure class="image-row"><img src="../images/wiki/CpFe(CO)2X_DITFB_COVER_1000x1300.png" alt="Journal cover art example with molecular visualization" title="" width="207"> <img src="../images/wiki/ZfK_C2H2I2_COVER.png" alt="Journal cover art example for crystal engineering" title="" width="203"> <img src="../images/wiki/jctcce.2014.10.issue-2.largecover.jpg" alt="Journal issue cover with computational chemistry artwork" title="" width="204"></figure>
+<figure class="image-row"><img src="../images/wiki/pccp_esp_cover.png" alt="Journal cover art example with ESP map visualization" title="" width="206"> <img src="../images/wiki/open202100067-toc-0001-m.png" alt="Journal cover art example with crystal engineering visualization" title="" width="204"></figure>
 <p><em>ESP maps, NCI plots, BCP/bonding paths, and HOMO-LUMO shapes are not only illustrations of your work but also good ideas for journal cover art</em>.</p>
 <h2 id="overview">Overview</h2>
 <p>CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.</p>
@@ -288,8 +295,11 @@
 <li>read molecular structures from <code>.cif</code>, <code>.xyz</code>, ORCA <code>.inp</code>, 3D MOL/SDF files, Gaussian input files, and external ORCA/Gaussian <code>.out</code> / <code>.log</code> files</li>
 <li>prepare ORCA and Gaussian<sup><a href="#ref-gaussian">gaussian</a></sup> input files</li>
 <li>run ORCA and show live output</li>
+<li>organize saved ORCA inputs into named, persistent job queues and run them sequentially</li>
+<li>prepare a privacy-redacted ORCA-progress prompt for a selected browser AI service</li>
 <li>generate manuscript-ready computation summaries for experimental sections and supporting information</li>
-<li>launch HOMO-LUMO, ESP, NCI, QTAIM, and interaction-energy computations and visualizations.</li>
+<li>configure TD-DFT/TDA absorption and emission workflows, UV-Vis spectra, and natural transition orbitals</li>
+<li>launch HOMO-LUMO, ESP, NCI, QTAIM, TD-DFT, and interaction-energy computations and visualizations.</li>
 </ul>
 <figure><img src="../images/wiki/orca-input_2.png" alt="Orca Input builder. Intermolecular computation section"></figure>
 <h2 id="installation-and-requirements">Installation and Requirements</h2>
@@ -327,19 +337,26 @@
 <p>Launch the main ORCA Builder with:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python tools/Orca_input/orca_input.py</code></pre></div>
 <p>Or double-click the <code>tools/Orca_input/orca_input.py</code> file.</p>
+<p>At startup, the Builder displays a short splash while checking the local tool environment and may show a repository-maintained notice. Notices can be dismissed individually; failure to retrieve online notice data does not prevent the Builder from opening.</p>
 <h2 id="tools">Tools</h2>
 <p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
 <figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder main working window"></figure>
-<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, existing <code>.inp</code> files, or external ORCA/Gaussian <code>.out</code> / <code>.log</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with an <code>Input preview</code> / <code>Job monitor</code> switch: <code>Input preview</code> generates or refreshes the current input file text, while <code>Job monitor</code> shows live ORCA output, progress, elapsed time, and summary/monitor controls. The <code>Show summary</code> button displays the calculation summary in the <code>Job monitor</code> view, including summaries found for loaded existing <code>.inp</code> files. Current Builder versions try to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run; for older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, existing <code>.inp</code> files, or external ORCA/Gaussian <code>.out</code> / <code>.log</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a <code>Show input</code> / <code>Job monitor</code> switch. During a run, <code>Show input</code> displays the exact input being executed without regenerating or replacing it; <code>Job monitor</code> shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. The Builder tries to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run; for older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
+<h3 id="td-dft-setup-analysis-and-visualization">TD-DFT Setup, Analysis, and Visualization</h3>
+<p>The TD-DFT module configures ORCA TD-DFT or TDA vertical excitations, singlet/triplet manifolds, target roots, excited-state optimization, excited-state frequencies, and absorption-to-emission sequences. When opened from the Builder, validated settings are synchronized into exactly one <code>%tddft</code> block while the Builder retains ownership of the functional, basis set, solvent, charge, multiplicity, and complete ORCA input.</p>
+<p>Every generated TD-DFT/TDA block requests natural transition orbitals with <code>DoNTO true</code> and <code>NTOThresh 1e-4</code>. Post-processing can parse excited states and oscillator strengths, plot stick or Gaussian-broadened UV-Vis spectra, export tables and images, generate selected-state NTO hole/electron cubes through a validated Multiwfn workflow, and display signed cubes with molecule, bond, label, isovalue, opacity, screenshot, and cube-export controls. Associated <code>.gbw</code>, <code>.wfn</code>, <code>.wfx</code>, Molden, and cube files are detected beside the ORCA output where applicable.</p>
+<p>TD-DFT input and emission-sequence filenames encode the structure, functional, basis, optional solvent, actual <code>td-dft</code>/<code>tda</code> method, and analysis step. CSV, spectrum, and screenshot dialogs suggest descriptive filenames while remaining editable.</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt="HOMO-LUMO energy diagram tool"></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
 <figure><img src="../images/wiki/orca_homo-lumo_3.png" alt="HOMO-LUMO molecular orbital surface table"></figure>
-<p>Recent MO-surface tools include capped-sticks molecule rendering by default, optional colored wireframe or ball-and-stick molecule overlays. In the table, each saved MO tile can be reopened with its saved camera, style, and scale. The <code>Use view for all</code> button applies the selected tile&#x27;s saved orientation and zoom/scale to every MO surface in the current table.</p>
+<p>MO-surface tools use capped-sticks molecule rendering by default and provide optional colored wireframe or ball-and-stick overlays. In the table, each saved MO tile can be reopened with its saved camera, style, and scale. The <code>Use view for all</code> button applies the selected tile&#x27;s saved orientation and zoom/scale to every MO surface in the current table.</p>
 <h3 id="esp-vismap">ESP / VisMap</h3>
 <p>Creates electrostatic-potential maps on electron-density surfaces<sup><a href="#ref-esp">esp</a></sup>.</p>
 <figure><img src="../images/wiki/orca_vismap_output_1.png" alt="ESP map visualization in VisMap"></figure>
+<p>Resulting ESP map Image</p>
+<figure><img src="../images/wiki/orca_vismap_output_2.png" alt="ESP map"></figure>
 <p>This version is based on the original VisMap code by aaan1s (&lt;https://github.com/aaan1s/VisMap&gt;) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as <code>.wfn</code>, <code>.wfx</code>, or <code>.fchk</code>.</p>
 <h3 id="nci-plotter">NCI Plotter</h3>
 <figure><img src="../images/wiki/orca_nci_output_1.png" alt="NCI plotter visualization of noncovalent interaction surfaces"></figure>
@@ -372,6 +389,19 @@
 </ol>
 <ol start="6">
 <li>Click <code>Run Orca</code>. The shared right panel switches automatically to <code>Job monitor</code>, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available. To view an existing or generated summary, click <code>Show summary</code>; the text is shown in the <code>Job monitor</code> view.</li>
+</ol>
+<h3 id="run-orca-job-queues">Run ORCA Job Queues</h3>
+<p>Use <code>Add to Queue</code> to save the current input and add it to the active named queue. <code>Queue Jobs</code> opens the queue manager, where queues can be created, selected, saved, loaded, reordered, and reset. Jobs run sequentially and retain pending, running, completed, failed, or stopped status. Queue state is stored in JSON so an interrupted list can be inspected or resumed after restarting the Builder.</p>
+<h3 id="request-an-ai-progress-comment">Request an AI Progress Comment</h3>
+<p>In <code>Settings</code>, choose the browser AI service; ChatGPT is the default. While an ORCA output is available, click <code>Ask AI about progress</code>. CrystEngKit reads the complete available <code>.out</code>, removes Cartesian-coordinate lines, absolute Windows paths, common filenames, and obvious credential fields, then builds a short progress-analysis prompt and copies it to the clipboard before opening the selected website. Paste the prompt and submit it in the browser.</p>
+<p>The prompt asks only for the current stage and convergence trend, evidence of looping or failure, the expected remaining stages, a cautious timing forecast, and whether to continue, monitor, or stop. A marker at the end lets the AI detect a truncated paste; successful completeness checks stay out of the report, while missing-marker truncation must be reported. Redaction is a convenience filter, not a guarantee: review the prompt before sending confidential calculations to an external service.</p>
+<h3 id="configure-and-analyze-a-td-dft-job">Configure and Analyze a TD-DFT Job</h3>
+<ol>
+<li>Select <code>TD-DFT / UV-Vis</code> in the Builder and configure TD-DFT or TDA, roots, manifold, and the required vertical/optimization/frequency steps.</li>
+<li>Select <code>Show ORCA Block</code> to validate the settings, synchronize the <code>%tddft</code> block, and return to the complete Builder input preview.</li>
+<li>Run the absorption job. For fluorescence, load the completed absorption output in TD-DFT post-processing and prepare the excited-state optimization and vertical-emission sequence for the selected root.</li>
+<li>Load a completed output to inspect the state table and UV-Vis spectrum. Select a state to generate its analysis package and dominant NTO hole/electron cubes when the matching <code>.gbw</code> and validated Multiwfn executable are available.</li>
+<li>Use the CSV, image, screenshot, and cube export controls; the proposed artifact names can be edited before saving.</li>
 </ol>
 <h3 id="make-figures-after-a-calculation">Make Figures After a Calculation</h3>
 <p>Use the top-panel buttons after the ORCA job finishes:</p>
@@ -524,10 +554,14 @@
 <li>but a later relaxed or thermodynamic follow-up job fails</li>
 </ul>
 <p>In that case, the summary should still preserve the successful interaction terms and report a crash note.</p>
+<h3 id="td-dft-spectrum-or-nto-analysis-is-unavailable">TD-DFT spectrum or NTO analysis is unavailable</h3>
+<p>Check that the selected file is a completed ORCA TD-DFT/TDA <code>.out</code>. Spectrum plotting needs parsed excited-state energies and oscillator strengths. NTO generation additionally needs the matching <code>.gbw</code>, a validated Multiwfn executable, and ORCA output produced with the module&#x27;s NTO defaults. Use <code>Refresh files</code> after copying associated files beside the output. A status marked disabled is intentional when the required files or a release-verified workflow are unavailable.</p>
+<h3 id="ai-progress-prompt-opens-the-wrong-service-or-appears-truncated">AI progress prompt opens the wrong service or appears truncated</h3>
+<p>Choose the service in Builder <code>Settings</code> and save it; older saved Gemini defaults are migrated to ChatGPT. The browser workflow uses the full output file rather than the GUI&#x27;s size-limited monitor buffer. If the AI reports that the completion marker is missing, the paste or provider input was truncated and its diagnosis should not be trusted. Shorten the supplied output manually or use a service with a larger input limit.</p>
 <h2 id="how-to-cite-crystengkit-orca">How to cite CrystEngKit-ORCA</h2>
 <p>If CrystEngKit-ORCA is useful for preparing calculations, analyzing ORCA/Multiwfn results, or making figures for a manuscript or supporting information, please cite the GitHub software repository:</p>
 <p>Torubaev, Y. <em>CrystEngKit-ORCA: practical GUI tools for ORCA and Multiwfn calculations in supramolecular chemistry and crystal engineering</em>, version 1.0; GitHub, 2026. &lt;https://github.com/torubaev/crystengkit-orca-v1.0&gt;</p>
-<p>For EndNote, Zotero, Mendeley, or other bibliography managers, import the RIS file: <a href="crystengkit-orca.ris">docs/crystengkit-orca.ris</a>.</p>
+<p>For EndNote, Zotero, Mendeley, or other bibliography managers, import the RIS file: <a href="docs/crystengkit-orca.ris">docs/crystengkit-orca.ris</a>.</p>
 <h2 id="repository-contents">Repository contents</h2>
 <p>Typical root structure:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>README.md
@@ -541,6 +575,7 @@ benchmark_sets/
 tools/
   images/                       # shared tool icons
   Orca_input/
+  TD_DFT/
   HOMO_LUMO/
   VisMap_5.0/
   NCI_plot/

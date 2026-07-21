@@ -16,6 +16,7 @@ from TD_DFT.td_dft_module import (  # noqa: E402
     validate_tddft_settings,
     parse_orca_tddft_output,
     suggest_wavelength_range_for_states,
+    suggested_tddft_export_path,
     auto_detect_multiwfn_path,
     detect_associated_files,
 )
@@ -24,6 +25,17 @@ from TD_DFT.td_dft_cube_viewer import read_cube  # noqa: E402
 
 
 class TDDFTModuleTests(unittest.TestCase):
+    def test_export_filename_suggestion_uses_loaded_output_without_renaming_it(self):
+        source = Path("calc") / "molecule_CAM-B3LYP_def2-TZVP_CHCl3_TDA.out"
+        self.assertEqual(
+            suggested_tddft_export_path(str(source), "states", ".csv").name,
+            "molecule_CAM-B3LYP_def2-TZVP_CHCl3_TDA_states.csv",
+        )
+        self.assertEqual(
+            suggested_tddft_export_path(str(source), "NTO pair", "png").name,
+            "molecule_CAM-B3LYP_def2-TZVP_CHCl3_TDA_nto-pair.png",
+        )
+
     def test_block_uses_selected_manifold_and_tda(self):
         block = build_tddft_block({"nroots": 12, "root": 1, "td_method": "TDA", "manifold": "Both"})
         self.assertIn("NRoots 12", block)

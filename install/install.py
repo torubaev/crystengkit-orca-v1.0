@@ -699,6 +699,8 @@ def ensure_settings_file(base_dir: Path) -> Dict[str, object]:
         "esp_python_command": sys.executable,
         "nci_python_command": sys.executable,
         "qtaim_python_command": sys.executable,
+        "ai_web_model": "ChatGPT",
+        "ai_web_model_settings_version": 2,
     }
 
     try:

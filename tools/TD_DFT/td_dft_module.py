@@ -520,6 +520,16 @@ def save_spectrum(path: str, states: Sequence[Dict], settings: Dict) -> None:
     ax.legend(); fig.tight_layout(); fig.savefig(path, dpi=220); plt.close(fig)
 
 
+def suggested_tddft_export_path(output_path: str, artifact: str, suffix: str) -> Path:
+    """Suggest a user-facing export name without renaming calculation files."""
+    source = Path(output_path) if output_path else Path.cwd() / "td-dft.out"
+    tag = re.sub(r"[^A-Za-z0-9.-]+", "-", str(artifact or "export").strip()).strip("-.").lower()
+    extension = str(suffix or "")
+    if not extension.startswith("."):
+        extension = "." + extension
+    return source.with_name(f"{source.stem}_{tag or 'export'}{extension.lower()}")
+
+
 def detect_associated_files(output_path: str) -> Dict[str, str]:
     output = Path(output_path).resolve(); result = {}
     for suffix in ASSOCIATED_SUFFIXES:
@@ -1087,7 +1097,8 @@ class TDDFTWindow(tk.Toplevel):
         return self.states
     def _export_table(self):
         def action():
-            states = self._need_states(); path = filedialog.asksaveasfilename(parent=self, defaultextension=".csv", filetypes=[("CSV", "*.csv")]);
+            states = self._need_states(); suggested = suggested_tddft_export_path(self.output_path, "states", ".csv")
+            path = filedialog.asksaveasfilename(parent=self, title="Export excited-state table", defaultextension=".csv", initialdir=str(suggested.parent), initialfile=suggested.name, filetypes=[("CSV", "*.csv")]);
             if not path: return
             with Path(path).open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.writer(handle); writer.writerow(["State", "Energy_eV", "Wavelength_nm", "Oscillator_strength", "From", "To", "Coefficient", "Contribution_percent", "Contribution_source"])
@@ -1114,7 +1125,8 @@ class TDDFTWindow(tk.Toplevel):
         self._guard("Plot spectrum", action)
     def _export_spectrum(self):
         def action():
-            states, data = self._need_states(), self._settings(); path = filedialog.asksaveasfilename(parent=self, defaultextension=".csv", filetypes=[("CSV", "*.csv")]);
+            states, data = self._need_states(), self._settings(); suggested = suggested_tddft_export_path(self.output_path, "uv-vis-spectrum", ".csv")
+            path = filedialog.asksaveasfilename(parent=self, title="Export UV-Vis spectrum", defaultextension=".csv", initialdir=str(suggested.parent), initialfile=suggested.name, filetypes=[("CSV", "*.csv")]);
             if path:
                 curve = build_gaussian_broadened_spectrum(states, data["broadening_ev"], data["wavelength_min_nm"], data["wavelength_max_nm"], data["x_axis"])
                 if data["normalize"]: curve = normalize_spectrum(curve)
@@ -1122,17 +1134,21 @@ class TDDFTWindow(tk.Toplevel):
         self._guard("Export spectrum", action)
     def _save_plot(self, suffix):
         def action():
-            states, data = self._need_states(), self._settings(); path = filedialog.asksaveasfilename(parent=self, defaultextension=suffix, filetypes=[(suffix.upper()[1:], "*" + suffix)]);
+            states, data = self._need_states(), self._settings(); suggested = suggested_tddft_export_path(self.output_path, "uv-vis-spectrum", suffix)
+            path = filedialog.asksaveasfilename(parent=self, title="Save UV-Vis spectrum image", defaultextension=suffix, initialdir=str(suggested.parent), initialfile=suggested.name, filetypes=[(suffix.upper()[1:], "*" + suffix)]);
             if path: save_spectrum(path, states, data)
         self._guard("Save spectrum", action)
 
     def _save_plot_image(self):
         def action():
             states, data = self._need_states(), self._settings()
+            suggested = suggested_tddft_export_path(self.output_path, "uv-vis-spectrum", ".png")
             path = filedialog.asksaveasfilename(
                 parent=self,
                 title="Save spectrum image",
                 defaultextension=".png",
+                initialdir=str(suggested.parent),
+                initialfile=suggested.name,
                 filetypes=[("PNG image", "*.png"), ("SVG vector image", "*.svg")],
             )
             if path:
@@ -1360,7 +1376,8 @@ class TDDFTWindow(tk.Toplevel):
             if self.mode_var.get() == "UV-Vis spectrum": self._save_plot(".png"); return
             files, labels = self._mode_files();
             if not files or any(not Path(path).is_file() for path in files): raise FileNotFoundError("Generate or provide the required cube files first.")
-            path = filedialog.asksaveasfilename(parent=self, defaultextension=".png", filetypes=[("PNG", "*.png")]);
+            suggested = suggested_tddft_export_path(self.output_path, self.mode_var.get(), ".png")
+            path = filedialog.asksaveasfilename(parent=self, title="Save TD-DFT visualization", defaultextension=".png", initialdir=str(suggested.parent), initialfile=suggested.name, filetypes=[("PNG", "*.png")]);
             if path:
                 iso, negative, opacity = self._viewer_options(); SignedCubeViewer().show(files, iso, negative, opacity, self.show_molecule_var.get(), self.show_bonds_var.get(), self.show_labels_var.get(), screenshot=path, labels=labels)
         self._guard("Save screenshot", action)
