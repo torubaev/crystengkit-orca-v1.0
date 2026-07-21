@@ -113,32 +113,6 @@ def _safe_stem(text: str) -> str:
     return value or "emission"
 
 
-def _td_method_filename_tag(td_method: str) -> str:
-    return "tda" if str(td_method or "").strip().upper() == "TDA" else "td-dft"
-
-
-def _td_source_filename_prefix(source_output: PathLike) -> str:
-    """Remove a previous TD workflow suffix while preserving molecule/method metadata."""
-    stem = Path(source_output).stem
-    stem = re.sub(
-        r"_(?:td-?dft|tda)_(?:absorption|excited-state-optimization|excited-state-frequencies|emission(?:-optimization)?)"
-        r"(?:_S\d+)?$",
-        "",
-        stem,
-        flags=re.I,
-    )
-    # Migrate legacy Builder names ending in _sp_td-dft or simply _TDA.
-    stem = re.sub(r"_sp_(?:td-?dft|tda)$", "", stem, flags=re.I)
-    stem = re.sub(r"_(?:td-?dft|tda)$", "", stem, flags=re.I)
-    return _safe_stem(stem)
-
-
-def emission_filename_stem(source_output: PathLike, td_method: str, analysis: str, target_root: int) -> str:
-    prefix = _td_source_filename_prefix(source_output)
-    method = _td_method_filename_tag(td_method)
-    return f"{prefix}_{method}_{analysis}_S{int(target_root)}"
-
-
 PathLike = Union[str, Path]
 
 
@@ -568,11 +542,9 @@ def prepare_emission_sequence(settings: EmissionSequenceSettings, sequence_dir: 
     source_text = _read_text(source_input)
     parse_xyz_from_orca_input(source_text)
     source_output = Path(settings.source_output).resolve()
-    emission_stem = emission_filename_stem(source_output, settings.td_method, "emission", settings.target_root)
-    root = Path(sequence_dir) if sequence_dir else source_output.parent / emission_stem
+    root = Path(sequence_dir) if sequence_dir else source_output.parent / f"{source_output.stem}_fluorescence_S{settings.target_root}"
     root.mkdir(parents=True, exist_ok=True)
-    opt_stem = emission_filename_stem(source_output, settings.td_method, "emission-optimization", settings.target_root)
-    opt_inp = root / f"{opt_stem}.inp"
+    opt_inp = root / f"01_esopt_S{settings.target_root}.inp"
     opt_inp.write_text(build_excited_state_optimization_input(source_text, settings), encoding="utf-8")
     steps = [
         EmissionSequenceStep(
@@ -631,18 +603,10 @@ def advance_after_optimization(sequence_dir: PathLike, optimization_output: Opti
     history = parse_root_following_history(opt_out)
     manifest.final_followed_root = history.get("final_followed_root") or manifest.requested_root
     manifest.warnings.extend(history.get("warnings", []))
-    opt_stem = emission_filename_stem(
-        manifest.source_absorption_output, settings.td_method,
-        "emission-optimization", manifest.requested_root,
-    )
-    final_xyz = Path(sequence_dir) / f"{opt_stem}_final.xyz"
+    final_xyz = Path(sequence_dir) / f"01_esopt_S{manifest.requested_root}_final.xyz"
     write_xyz(final_xyz, atoms, f"Final S{manifest.requested_root} excited-state geometry")
     source_text = _read_text(manifest.source_absorption_input or settings.source_input or "")
-    emission_stem = emission_filename_stem(
-        manifest.source_absorption_output, settings.td_method,
-        "emission", manifest.requested_root,
-    )
-    vert_inp = Path(sequence_dir) / f"{emission_stem}.inp"
+    vert_inp = Path(sequence_dir) / f"02_vertical_emission_S{manifest.requested_root}.inp"
     vert_inp.write_text(build_vertical_emission_input(source_text, atoms, settings), encoding="utf-8")
     opt_step.status = STATUS_COMPLETED
     opt_step.message = f"Final geometry written: {final_xyz.name}"

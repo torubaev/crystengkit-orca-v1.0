@@ -12,7 +12,6 @@ from TD_DFT.td_dft_emission_sequence import (  # noqa: E402
     build_excited_state_optimization_input,
     build_vertical_emission_input,
     finalize_after_vertical,
-    emission_filename_stem,
     prepare_emission_sequence,
 )
 
@@ -188,14 +187,14 @@ H  0.00000000  0.00000000  1.00000000
 
             seq_dir = Path(manifest.steps[0].input_path).parent
             self.assertTrue((seq_dir / "emission_sequence.json").is_file())
-            self.assertTrue((seq_dir / "abs_td-dft_emission-optimization_S1.inp").is_file())
+            self.assertTrue((seq_dir / "01_esopt_S1.inp").is_file())
 
             Path(manifest.steps[0].output_path).write_text(OPT_OUT, encoding="utf-8")
             manifest = advance_after_optimization(seq_dir)
 
-            vertical = seq_dir / "abs_td-dft_emission_S1.inp"
+            vertical = seq_dir / "02_vertical_emission_S1.inp"
             self.assertTrue(vertical.is_file())
-            self.assertTrue((seq_dir / "abs_td-dft_emission-optimization_S1_final.xyz").is_file())
+            self.assertTrue((seq_dir / "01_esopt_S1_final.xyz").is_file())
             self.assertIn("0.10000000", vertical.read_text(encoding="utf-8"))
 
             vertical.with_suffix(".out").write_text(VERT_OUT, encoding="utf-8")
@@ -207,14 +206,6 @@ H  0.00000000  0.00000000  1.00000000
             self.assertTrue((seq_dir / "emission_result.json").is_file())
             self.assertTrue((seq_dir / "emission_spectrum.csv").is_file())
             self.assertTrue((seq_dir / "emission_summary.txt").is_file())
-
-    def test_emission_filename_replaces_absorption_suffix_and_uses_actual_method(self):
-        name = emission_filename_stem(
-            "mol_CAM-B3LYP_def2-TZVP_CHCl3_td-dft_absorption.out",
-            "TDA", "emission", 2,
-        )
-        self.assertEqual(name, "mol_CAM-B3LYP_def2-TZVP_CHCl3_tda_emission_S2")
-
 
 if __name__ == "__main__":
     unittest.main()

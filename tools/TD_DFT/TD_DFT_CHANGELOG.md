@@ -1,12 +1,5 @@
 # TD-DFT module
 
-## TD-DFT filenames
-
-- Builder and emission-sequence files now use
-  `structure_functional_basis_solvent_method_analysis` names.
-- The method component reflects the calculation (`td-dft` or `tda`) instead of
-  using a generic TD-DFT suffix.
-
 ## Default NTO preparation
 
 - Every Builder and standalone TD-DFT/TDA block now includes `DoNTO true` and
