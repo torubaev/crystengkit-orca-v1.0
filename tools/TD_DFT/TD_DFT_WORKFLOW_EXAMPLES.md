@@ -8,8 +8,10 @@ For 10 singlet roots with TD-DFT, **Show ORCA block** generates:
 %tddft
   NRoots 10
   TDA false
-  MaxDim 120
+  MaxDim 5
   MaxIter 300
+  DoNTO true
+  NTOThresh 1e-4
 end
 ```
 
@@ -21,8 +23,10 @@ The module contributes:
 %tddft
   NRoots 10
   TDA false
-  MaxDim 120
+  MaxDim 5
   MaxIter 300
+  DoNTO true
+  NTOThresh 1e-4
   IRoot 1
   IRootMult singlet
 end
@@ -35,3 +39,7 @@ The connected Builder adds `Opt` to its complete ORCA keyword line.
 The TD-DFT fragment is the same targeted block above. The connected Builder
 adds `Opt Freq` to the complete ORCA keyword line, so frequencies are evaluated
 after the excited-state optimization in the same ORCA job.
+
+`DoNTO true` is included in every generated TD-DFT/TDA block. Because
+`NTOStates` is intentionally omitted, ORCA generates NTOs for all calculated
+states. `NTOThresh 1e-4` controls the printed NTO occupation threshold.

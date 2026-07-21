@@ -101,6 +101,28 @@ def safe_read_json(path: Path) -> Optional[Dict]:
     return None
 
 
+def tddft_filename_method(settings: Optional[Dict] = None, block: str = "") -> str:
+    """Return the filename tag for the actual excited-state method."""
+    method = str((settings or {}).get("td_method", "")).strip().upper()
+    if method == "TDA":
+        return "tda"
+    if method == "TDDFT":
+        return "td-dft"
+    if re.search(r"(?im)^\s*TDA\s+true\b", str(block or "")):
+        return "tda"
+    return "td-dft"
+
+
+def tddft_filename_analysis(settings: Optional[Dict] = None) -> str:
+    """Return a stable filename tag for the selected TD-DFT workflow."""
+    data = settings or {}
+    if data.get("excited_state_frequencies"):
+        return "excited-state-frequencies"
+    if data.get("excited_state_optimization"):
+        return "excited-state-optimization"
+    return "absorption"
+
+
 def safe_write_json(path: Path, data: Dict) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -3741,6 +3763,7 @@ class App(tk.Tk):
         except Exception:
             sys.modules.pop(module_name, None)
             raise
+        self._tddft_module = module
         return module
 
     def open_tddft_module(self):
@@ -3836,7 +3859,10 @@ class App(tk.Tk):
         self._start_orca_input(step.input_path, orca_path, self._emission_context(sequence_dir, "01_esopt", orca_path, step.input_path))
 
     def set_tddft_block(self, block: str) -> None:
-        cleaned = str(block or "").strip()
+        module = self.__dict__.get("_tddft_module")
+        if module is None:
+            module = self._load_tddft_module()
+        cleaned = module.normalize_tddft_block(str(block or "").strip())
         markers = re.findall(r"(?im)^\s*%(?:tddft|cis)\b", cleaned)
         if len(markers) != 1:
             raise ValueError("The synchronized TD-DFT fragment must contain exactly one %tddft or %cis block.")
@@ -6526,24 +6552,21 @@ class App(tk.Tk):
             if solvent_cmd:
                 parts.append(solvent_cmd)
 
-        if self.freeze_all_var.get() or self.freeze_heavy_var.get():
+        is_tddft = (
+            self.program_var.get() == "ORCA"
+            and self.job_tddft_var.get()
+            and self.current_tddft_block.strip()
+        )
+        if is_tddft:
+            settings = self.__dict__.get("current_tddft_settings") or {}
+            parts.append(tddft_filename_method(settings, self.current_tddft_block))
+            parts.append(tddft_filename_analysis(settings))
+        elif self.freeze_all_var.get() or self.freeze_heavy_var.get():
             parts.append("constr")
         elif self.job_opt_var.get():
             parts.append("opt")
         else:
             parts.append("sp")
-
-        if (
-            self.program_var.get() == "ORCA"
-            and self.job_tddft_var.get()
-            and self.current_tddft_block.strip()
-        ):
-            normalized_parts = {
-                re.sub(r"[^a-z0-9]+", "", str(part).lower())
-                for part in parts
-            }
-            if "tddft" not in normalized_parts:
-                parts.append("td-dft")
 
         ext = ".inp" if self.program_var.get() == "ORCA" else ".gjf"
         return str(src_path.with_name("_".join(parts) + ext))

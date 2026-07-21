@@ -12,6 +12,7 @@ from TD_DFT.td_dft_emission_sequence import (  # noqa: E402
     build_excited_state_optimization_input,
     build_vertical_emission_input,
     finalize_after_vertical,
+    emission_filename_stem,
     prepare_emission_sequence,
 )
 
@@ -85,7 +86,82 @@ class TDDFTEmissionSequenceTests(unittest.TestCase):
         self.assertIn("TDA false", text)
         self.assertIn("IRoot 1", text)
         self.assertIn("IRootMult singlet", text)
-        self.assertIn("FollowIRoot true", text)
+        self.assertNotIn("FollowIRoot", text)
+
+    def test_excited_state_optimization_input_preserves_tda_method(self):
+        settings = EmissionSequenceSettings(source_output="abs.out", target_root=1, nroots=10, td_method="TDA")
+
+        text = build_excited_state_optimization_input(SOURCE_INP, settings)
+
+        self.assertIn("TDA true", text)
+        self.assertNotIn("TDA false", text)
+
+    def test_vertical_emission_input_preserves_tda_method(self):
+        settings = EmissionSequenceSettings(source_output="abs.out", target_root=1, nroots=10, td_method="TDA")
+        atoms = [("C", 0.1, 0.2, 0.3), ("H", 0.1, 0.2, 1.3)]
+
+        text = build_vertical_emission_input(SOURCE_INP, atoms, settings)
+
+        self.assertIn("TDA true", text)
+        self.assertNotIn("TDA false", text)
+        self.assertIn("C   0.10000000  0.20000000  0.30000000", text)
+        self.assertIn("H   0.10000000  0.20000000  1.30000000", text)
+
+    def test_excited_state_optimization_input_drops_guess_reuse_directives(self):
+        source_input_text = """! CAM-B3LYP def2-TZVP TightSCF SP Guess=Read
+
+%maxcore 8000
+
+%moinp "old.gbw"
+end
+
+* xyz 0 1
+C  0.00000000  0.00000000  0.00000000
+H  0.00000000  0.00000000  1.00000000
+*
+"""
+        settings = EmissionSequenceSettings(source_output="abs.out", target_root=1, nroots=10)
+        text = build_excited_state_optimization_input(source_input_text, settings)
+        self.assertNotIn("Guess=Read", text)
+        self.assertNotIn("%moinp", text)
+        self.assertIn("! CAM-B3LYP def2-TZVP TightSCF Opt", text)
+
+    def test_excited_state_optimization_input_drops_spaced_guess_reuse_syntax(self):
+        source_input_text = """! CAM-B3LYP def2-TZVP TightSCF SP Guess = Read
+
+* xyz 0 1
+C  0.00000000  0.00000000  0.00000000
+H  0.00000000  0.00000000  1.00000000
+*
+"""
+        settings = EmissionSequenceSettings(source_output="abs.out", target_root=1, nroots=10)
+        text = build_excited_state_optimization_input(source_input_text, settings)
+        self.assertNotIn("Guess", text)
+        self.assertNotIn("Read", text)
+        self.assertIn("! CAM-B3LYP def2-TZVP TightSCF Opt", text)
+
+    def test_legacy_tdg_block_in_source_input_is_replaced(self):
+        source_input_text = """! CAM-B3LYP def2-TZVP TightSCF SP
+
+%tdg
+  NRoots 10
+  TDA false
+  MaxDim 5
+  MaxIter 300
+  IRoot 1
+  Mult singlet
+end
+
+* xyz 0 1
+C  0.00000000  0.00000000  0.00000000
+H  0.00000000  0.00000000  1.00000000
+*
+"""
+        settings = EmissionSequenceSettings(source_output="abs.out", target_root=1, nroots=10)
+        text = build_excited_state_optimization_input(source_input_text, settings)
+        self.assertIn("%tddft", text)
+        self.assertIn("IRootMult singlet", text)
+        self.assertNotIn("%tdg", text)
 
     def test_vertical_emission_input_uses_optimized_geometry(self):
         settings = EmissionSequenceSettings(source_output="abs.out", target_root=1, nroots=10)
@@ -112,14 +188,14 @@ class TDDFTEmissionSequenceTests(unittest.TestCase):
 
             seq_dir = Path(manifest.steps[0].input_path).parent
             self.assertTrue((seq_dir / "emission_sequence.json").is_file())
-            self.assertTrue((seq_dir / "01_esopt_S1.inp").is_file())
+            self.assertTrue((seq_dir / "abs_td-dft_emission-optimization_S1.inp").is_file())
 
             Path(manifest.steps[0].output_path).write_text(OPT_OUT, encoding="utf-8")
             manifest = advance_after_optimization(seq_dir)
 
-            vertical = seq_dir / "02_vertical_emission_S1.inp"
+            vertical = seq_dir / "abs_td-dft_emission_S1.inp"
             self.assertTrue(vertical.is_file())
-            self.assertTrue((seq_dir / "01_esopt_S1_final.xyz").is_file())
+            self.assertTrue((seq_dir / "abs_td-dft_emission-optimization_S1_final.xyz").is_file())
             self.assertIn("0.10000000", vertical.read_text(encoding="utf-8"))
 
             vertical.with_suffix(".out").write_text(VERT_OUT, encoding="utf-8")
@@ -131,6 +207,13 @@ class TDDFTEmissionSequenceTests(unittest.TestCase):
             self.assertTrue((seq_dir / "emission_result.json").is_file())
             self.assertTrue((seq_dir / "emission_spectrum.csv").is_file())
             self.assertTrue((seq_dir / "emission_summary.txt").is_file())
+
+    def test_emission_filename_replaces_absorption_suffix_and_uses_actual_method(self):
+        name = emission_filename_stem(
+            "mol_CAM-B3LYP_def2-TZVP_CHCl3_td-dft_absorption.out",
+            "TDA", "emission", 2,
+        )
+        self.assertEqual(name, "mol_CAM-B3LYP_def2-TZVP_CHCl3_tda_emission_S2")
 
 
 if __name__ == "__main__":

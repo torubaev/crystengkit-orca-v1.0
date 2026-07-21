@@ -51,6 +51,7 @@ class EmissionSequenceSettings:
     source_input: Optional[str] = None
     target_root: int = 1
     target_manifold: str = "Singlet"
+    td_method: str = "TDDFT"
     follow_root: bool = True
     nroots: int = 10
     run_frequencies: bool = False
@@ -110,6 +111,32 @@ def _now() -> str:
 def _safe_stem(text: str) -> str:
     value = re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("._")
     return value or "emission"
+
+
+def _td_method_filename_tag(td_method: str) -> str:
+    return "tda" if str(td_method or "").strip().upper() == "TDA" else "td-dft"
+
+
+def _td_source_filename_prefix(source_output: PathLike) -> str:
+    """Remove a previous TD workflow suffix while preserving molecule/method metadata."""
+    stem = Path(source_output).stem
+    stem = re.sub(
+        r"_(?:td-?dft|tda)_(?:absorption|excited-state-optimization|excited-state-frequencies|emission(?:-optimization)?)"
+        r"(?:_S\d+)?$",
+        "",
+        stem,
+        flags=re.I,
+    )
+    # Migrate legacy Builder names ending in _sp_td-dft or simply _TDA.
+    stem = re.sub(r"_sp_(?:td-?dft|tda)$", "", stem, flags=re.I)
+    stem = re.sub(r"_(?:td-?dft|tda)$", "", stem, flags=re.I)
+    return _safe_stem(stem)
+
+
+def emission_filename_stem(source_output: PathLike, td_method: str, analysis: str, target_root: int) -> str:
+    prefix = _td_source_filename_prefix(source_output)
+    method = _td_method_filename_tag(td_method)
+    return f"{prefix}_{method}_{analysis}_S{int(target_root)}"
 
 
 PathLike = Union[str, Path]
@@ -184,7 +211,7 @@ def _replace_xyz_block(inp_text: str, charge: int, multiplicity: int, atoms: Seq
 
 
 def _replace_or_add_tddft_block(inp_text: str, block: str) -> str:
-    pattern = re.compile(r"(?ims)^\s*%(?:tddft|cis)\b.*?^\s*end\s*$")
+    pattern = re.compile(r"(?ims)^\s*%(?:tddft|tdg|cis)\b.*?^\s*end\s*$")
     if pattern.search(inp_text):
         return pattern.sub(block.strip(), inp_text, count=1)
     coord = re.search(r"(?im)^\s*\*\s*xyz\b", inp_text)
@@ -193,7 +220,17 @@ def _replace_or_add_tddft_block(inp_text: str, block: str) -> str:
     return inp_text.rstrip() + "\n\n" + block.strip() + "\n"
 
 
+def _strip_guess_reuse_from_keyword_line(line: str) -> str:
+    if not line.lstrip().startswith("!"):
+        return line
+    cleaned = re.sub(r"\bguess\s*=\s*read\b", " ", line, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(?:moread|moinp)\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
 def _rewrite_simple_keywords(line: str, add: Sequence[str], remove: Sequence[str]) -> str:
+    line = _strip_guess_reuse_from_keyword_line(line)
     if not line.lstrip().startswith("!"):
         return line
     tokens = line.strip().split()
@@ -207,6 +244,8 @@ def _rewrite_simple_keywords(line: str, add: Sequence[str], remove: Sequence[str
             continue
         if norm in seen:
             continue
+        if norm.startswith("guess=") or norm in {"moread", "moinp"}:
+            continue
         kept.append(token)
         seen.add(norm)
     for token in add:
@@ -216,13 +255,41 @@ def _rewrite_simple_keywords(line: str, add: Sequence[str], remove: Sequence[str
     return " ".join(kept)
 
 
+def _strip_guess_reuse(inp_text: str) -> str:
+    text = re.sub(r"(?ims)^\s*%moinp\b.*?^\s*end\s*$", "", inp_text)
+    if "%moinp" in text:
+        text = re.sub(r"(?ims)^\s*%moinp\b.*?$", "", text)
+    lines = text.splitlines()
+    rewritten = []
+    for line in lines:
+        if not line.lstrip().startswith("!"):
+            rewritten.append(line)
+            continue
+        cleaned = _strip_guess_reuse_from_keyword_line(line)
+        if not cleaned.lstrip().startswith("!"):
+            rewritten.append(cleaned)
+            continue
+        tokens = cleaned.strip().split()
+        if not tokens:
+            rewritten.append(cleaned)
+            continue
+        kept = [tokens[0]]
+        for token in tokens[1:]:
+            norm = token.lower()
+            if norm.startswith("guess=") or norm in {"moread", "moinp"}:
+                continue
+            kept.append(token)
+        rewritten.append(" ".join(kept))
+    return "\n".join(rewritten)
+
+
 def build_emission_tddft_settings(settings: EmissionSequenceSettings, optimization: bool) -> Dict:
     manifold = "Triplets" if settings.target_manifold == "Triplet" else "Singlets"
     data = {
         "vertical_excitation": not optimization,
         "excited_state_optimization": optimization,
         "excited_state_frequencies": False,
-        "td_method": "TDDFT",
+        "td_method": getattr(settings, "td_method", "TDDFT") or "TDDFT",
         "nroots": int(settings.nroots),
         "root": int(settings.target_root),
         "manifold": manifold,
@@ -237,17 +304,13 @@ def add_follow_iroot(block: str, follow: bool = True) -> str:
     lines = block.splitlines()
     if any(re.match(r"^\s*FollowIRoot\b", line, re.I) for line in lines):
         return block
-    for idx, line in enumerate(lines):
-        if line.strip().lower() == "end":
-            lines.insert(idx, "  FollowIRoot true")
-            break
-    return "\n".join(lines)
+    return block
 
 
 def build_excited_state_optimization_input(source_input_text: str, settings: EmissionSequenceSettings) -> str:
     block = build_tddft_block(build_emission_tddft_settings(settings, optimization=True))
-    block = add_follow_iroot(block, settings.follow_root)
-    lines = source_input_text.splitlines()
+    text = _strip_guess_reuse(source_input_text)
+    lines = text.splitlines()
     rewritten = [
         _rewrite_simple_keywords(line, add=["Opt"], remove=["SP", "Freq"])
         for line in lines
@@ -263,7 +326,8 @@ def build_vertical_emission_input(
 ) -> str:
     charge, multiplicity, _source_atoms = parse_xyz_from_orca_input(source_input_text)
     block = build_tddft_block(build_emission_tddft_settings(settings, optimization=False))
-    lines = source_input_text.splitlines()
+    text = _strip_guess_reuse(source_input_text)
+    lines = text.splitlines()
     rewritten = [
         _rewrite_simple_keywords(line, add=["SP"], remove=["Opt", "Freq"])
         for line in lines
@@ -504,9 +568,11 @@ def prepare_emission_sequence(settings: EmissionSequenceSettings, sequence_dir: 
     source_text = _read_text(source_input)
     parse_xyz_from_orca_input(source_text)
     source_output = Path(settings.source_output).resolve()
-    root = Path(sequence_dir) if sequence_dir else source_output.parent / f"{source_output.stem}_fluorescence_S{settings.target_root}"
+    emission_stem = emission_filename_stem(source_output, settings.td_method, "emission", settings.target_root)
+    root = Path(sequence_dir) if sequence_dir else source_output.parent / emission_stem
     root.mkdir(parents=True, exist_ok=True)
-    opt_inp = root / f"01_esopt_S{settings.target_root}.inp"
+    opt_stem = emission_filename_stem(source_output, settings.td_method, "emission-optimization", settings.target_root)
+    opt_inp = root / f"{opt_stem}.inp"
     opt_inp.write_text(build_excited_state_optimization_input(source_text, settings), encoding="utf-8")
     steps = [
         EmissionSequenceStep(
@@ -565,10 +631,18 @@ def advance_after_optimization(sequence_dir: PathLike, optimization_output: Opti
     history = parse_root_following_history(opt_out)
     manifest.final_followed_root = history.get("final_followed_root") or manifest.requested_root
     manifest.warnings.extend(history.get("warnings", []))
-    final_xyz = Path(sequence_dir) / f"01_esopt_S{manifest.requested_root}_final.xyz"
+    opt_stem = emission_filename_stem(
+        manifest.source_absorption_output, settings.td_method,
+        "emission-optimization", manifest.requested_root,
+    )
+    final_xyz = Path(sequence_dir) / f"{opt_stem}_final.xyz"
     write_xyz(final_xyz, atoms, f"Final S{manifest.requested_root} excited-state geometry")
     source_text = _read_text(manifest.source_absorption_input or settings.source_input or "")
-    vert_inp = Path(sequence_dir) / f"02_vertical_emission_S{manifest.requested_root}.inp"
+    emission_stem = emission_filename_stem(
+        manifest.source_absorption_output, settings.td_method,
+        "emission", manifest.requested_root,
+    )
+    vert_inp = Path(sequence_dir) / f"{emission_stem}.inp"
     vert_inp.write_text(build_vertical_emission_input(source_text, atoms, settings), encoding="utf-8")
     opt_step.status = STATUS_COMPLETED
     opt_step.message = f"Final geometry written: {final_xyz.name}"

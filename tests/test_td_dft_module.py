@@ -37,7 +37,15 @@ class TDDFTModuleTests(unittest.TestCase):
         block = build_tddft_block({})
         self.assertIn("NRoots 10", block)
         self.assertIn("MaxDim 5", block)
+        self.assertIn("DoNTO true", block)
+        self.assertIn("NTOThresh 1e-4", block)
+        self.assertNotIn("NTOStates", block)
         self.assertNotIn("MaxCore", block)
+
+    def test_nto_generation_cannot_be_disabled_by_legacy_settings(self):
+        settings = validate_tddft_settings({"print_ntos": False})
+        self.assertTrue(settings["print_ntos"])
+        self.assertIn("DoNTO true", build_tddft_block(settings))
 
     def test_maxdim_is_independent_of_nroots(self):
         settings = validate_tddft_settings({"nroots": 10, "maxdim": 5})
@@ -106,8 +114,10 @@ class TDDFTModuleTests(unittest.TestCase):
             "manifold": "Both",
             "target_manifold": "Triplet",
         })
+        self.assertIn("%tddft", block)
         self.assertIn("IRoot 2", block)
         self.assertIn("IRootMult triplet", block)
+        self.assertNotIn("FollowIRoot", block)
 
     def test_excited_state_optimization_does_not_require_standalone_vertical_mode(self):
         block = build_tddft_block({
@@ -216,6 +226,33 @@ ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS
             self.assertTrue(Path(result["metadata_path"]).is_file())
             self.assertTrue((package / "multiwfn.log").is_file())
             self.assertTrue(all(item["status"] == "Unsupported by available input" for item in result["analyses"].values()))
+
+    def test_nto_workflow_exports_dominant_hole_electron_pair(self):
+        class FakeRunner(MultiwfnTDDFTRunner):
+            def __init__(self, workdir):
+                super().__init__("Multiwfn", workdir)
+                self.calls = []
+
+            def _run_batch(self, wavefunction, run_dir, answers, timeout):
+                answers = tuple(answers)
+                self.calls.append((Path(wavefunction), answers))
+                if answers[:2] == (18, 6):
+                    Path(answers[5]).write_text("NTO molden\n" * 20, encoding="utf-8")
+                    return "Orbitals from 1 to 12 are occupied\n"
+                (Path(run_dir) / "orb000012.cub").write_text("hole", encoding="utf-8")
+                (Path(run_dir) / "orb000013.cub").write_text("electron", encoding="utf-8")
+                return "exported"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "job.out"; output.write_text("states", encoding="utf-8")
+            wavefunction = root / "job.molden.input"; wavefunction.write_text("wf", encoding="utf-8")
+            runner = FakeRunner(directory)
+            hole, electron, log = runner._generate_nto_cubes(output, wavefunction, 2, root, 10)
+            self.assertEqual(hole.name, "NTO_hole_00002.cub")
+            self.assertEqual(electron.name, "NTO_electron_00002.cub")
+            self.assertTrue(hole.is_file() and electron.is_file() and log.is_file())
+            self.assertEqual(runner.calls[1][1][2], "12,13")
 
     def test_cube_parser_validates_grid(self):
         cube = """title

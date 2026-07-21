@@ -1,5 +1,19 @@
 # TD-DFT module
 
+## TD-DFT filenames
+
+- Builder and emission-sequence files now use
+  `structure_functional_basis_solvent_method_analysis` names.
+- The method component reflects the calculation (`td-dft` or `tda`) instead of
+  using a generic TD-DFT suffix.
+
+## Default NTO preparation
+
+- Every Builder and standalone TD-DFT/TDA block now includes `DoNTO true` and
+  `NTOThresh 1e-4`; omitting `NTOStates` requests every calculated state.
+- Legacy saved `print_ntos: false` values are migrated to the required enabled
+  behavior.
+
 ## Builder-owned excited-state jobs
 
 - TD-DFT now sends structured calculation-step settings alongside its validated

@@ -294,7 +294,12 @@ $$$$
 
         suggested = Path(app.suggest_input_save_path()).name
 
-        self.assertEqual(suggested, "water_B3LYP_def2-SVP_sp_td-dft.inp")
+        self.assertEqual(suggested, "water_B3LYP_def2-SVP_td-dft_absorption.inp")
+
+        app.current_tddft_settings = {"td_method": "TDA", "excited_state_optimization": True}
+        app.current_tddft_block = "%tddft\n  TDA true\nend"
+        suggested = Path(app.suggest_input_save_path()).name
+        self.assertEqual(suggested, "water_B3LYP_def2-SVP_tda_excited-state-optimization.inp")
 
     def test_tddft_input_save_suggestion_skips_td_dft_tag_without_block(self):
         app = object.__new__(orca_input.App)
