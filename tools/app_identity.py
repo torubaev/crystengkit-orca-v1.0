@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, Sequence
 
 
 TOOLS_ROOT = Path(__file__).resolve().parent
@@ -38,3 +40,42 @@ def apply_tk_icon(window, icon_path: Optional[Path] = None) -> None:
 def configure_tk_window_identity(window, suffix: str = "", icon_path: Optional[Path] = None) -> None:
     set_windows_app_id(suffix)
     apply_tk_icon(window, icon_path)
+
+
+def install_dev_reload_shortcut(
+    window,
+    script_path: Path,
+    *,
+    can_restart: Optional[Callable[[], bool]] = None,
+    argv: Optional[Sequence[str]] = None,
+) -> None:
+    """Install the hidden Ctrl+R developer shortcut on a primary Tk window."""
+    script = Path(script_path).resolve()
+    launch_args = list(sys.argv[1:] if argv is None else argv)
+
+    def restart_tool(_event=None):
+        if can_restart is not None and not can_restart():
+            try:
+                window.bell()
+            except Exception:
+                pass
+            return "break"
+        command = [sys.executable, str(script), *launch_args]
+        kwargs = {"cwd": os.getcwd()}
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            subprocess.Popen(command, **kwargs)
+        except Exception:
+            try:
+                window.bell()
+            except Exception:
+                pass
+            return "break"
+        try:
+            window.after_idle(window.destroy)
+        except Exception:
+            window.destroy()
+        return "break"
+
+    window.bind_all("<Control-r>", restart_tool, add="+")

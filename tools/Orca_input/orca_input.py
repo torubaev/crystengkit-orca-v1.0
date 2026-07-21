@@ -41,7 +41,7 @@ TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
-from app_identity import configure_tk_window_identity, set_windows_app_id
+from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 from orca_job_queue import OrcaJobQueue, OrcaQueueJob
 
 LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
@@ -56,8 +56,9 @@ COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
 CONTACT_EMAIL = "torubaev(at)gmail.com"
 LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
+CHATGPT_ORCA_MONITOR_URL = "https://chatgpt.com/g/g-6a5f33b7e3b881918fa604bb19250b23-orca-job-progress-monitor"
 AI_WEB_MODELS = {
-    "ChatGPT": "https://chatgpt.com/",
+    "ChatGPT": CHATGPT_ORCA_MONITOR_URL,
     "Gemini": "https://gemini.google.com/app",
     "DeepSeek": "https://chat.deepseek.com/",
     "Claude": "https://claude.ai/new",
@@ -66,6 +67,14 @@ AI_WEB_MODELS = {
 DEFAULT_AI_WEB_MODEL = "ChatGPT"
 AI_WEB_MODEL_SETTINGS_VERSION = 2
 ORCA_PROMPT_END_MARKER = "CRYSTENGKIT_ORCA_OUTPUT_COMPLETE_9F4C2A"
+MONITOR_ACTION_BUTTONS = (
+    ("stop", "Stop job", "stop_orca"),
+    ("document", "Open .out", "open_last_output"),
+    ("folder", "Open folder", "open_last_output_folder"),
+    ("summary", "Show summary", "show_project_summary"),
+    ("sparkle", "Ask AI about progress", "open_ai_progress_prompt"),
+    ("clear", "Clear monitor", "clear_monitor"),
+)
 README_LINK_TEXT = "README section: ORCA Input Builder"
 README_ANCHOR = "orca-input-builder"
 CITATION_REFERENCE = (
@@ -113,7 +122,8 @@ def build_orca_progress_prompt(output_text: str) -> str:
     if not output_text:
         raise ValueError("No ORCA output is available for AI analysis.")
     return (
-        "This is a privacy-redacted, possibly incomplete live output from an ORCA "
+        "ORCA Job progress report.\n\n"
+        "The data below are a privacy-redacted, possibly incomplete live output from an ORCA "
         "quantum-chemistry calculation. Act as an expert ORCA job monitor.\n\n"
         "Report only progress-relevant information:\n"
         "1. Current stage, cycle/iteration, and convergence trend.\n"
@@ -137,6 +147,63 @@ def build_orca_progress_prompt(output_text: str) -> str:
         "--- END ORCA OUTPUT ---\n"
         f"{ORCA_PROMPT_END_MARKER}"
     )
+
+
+def build_orca_agent_payload(output_text: str) -> str:
+    """Build the data-only payload for the configured ORCA monitor GPT."""
+    output_text = sanitize_orca_output_for_ai(output_text)
+    if not output_text:
+        raise ValueError("No ORCA output is available for AI analysis.")
+    return (
+        "ORCA Job progress report.\n\n"
+        f"--- BEGIN ORCA OUTPUT ---\n{output_text}\n--- END ORCA OUTPUT ---\n"
+        f"{ORCA_PROMPT_END_MARKER}"
+    )
+
+
+def create_monitor_action_icon(master, kind: str) -> tk.PhotoImage:
+    """Draw a dependency-free 16 px toolbar icon with a transparent background."""
+    image = tk.PhotoImage(master=master, width=16, height=16)
+
+    def rect(color: str, x1: int, y1: int, x2: int, y2: int) -> None:
+        image.put(color, to=(x1, y1, x2, y2))
+
+    if kind == "stop":
+        rect("#b91c1c", 3, 3, 13, 13)
+        rect("#ef4444", 4, 4, 12, 12)
+    elif kind == "document":
+        rect("#64748b", 3, 1, 12, 15)
+        rect("#f8fafc", 4, 2, 11, 14)
+        rect("#2563eb", 5, 7, 10, 8)
+        rect("#2563eb", 5, 10, 10, 11)
+        rect("#94a3b8", 9, 2, 11, 5)
+    elif kind == "folder":
+        rect("#a16207", 1, 4, 15, 14)
+        rect("#facc15", 2, 5, 14, 13)
+        rect("#eab308", 2, 2, 8, 6)
+        rect("#fde047", 3, 3, 7, 5)
+    elif kind == "summary":
+        rect("#64748b", 2, 1, 14, 15)
+        rect("#f8fafc", 3, 2, 13, 14)
+        for y in (5, 8, 11):
+            rect("#2563eb", 5, y, 12, y + 1)
+            rect("#1e3a5f", 3, y, 4, y + 1)
+    elif kind == "sparkle":
+        rect("#7c3aed", 7, 1, 9, 15)
+        rect("#7c3aed", 1, 7, 15, 9)
+        rect("#a78bfa", 4, 4, 12, 12)
+        rect("#ffffff", 6, 6, 10, 10)
+        rect("#7c3aed", 12, 2, 14, 4)
+    elif kind == "clear":
+        rect("#475569", 4, 4, 12, 15)
+        rect("#f8fafc", 5, 5, 11, 14)
+        rect("#ef4444", 6, 7, 7, 12)
+        rect("#ef4444", 9, 7, 10, 12)
+        rect("#475569", 3, 2, 13, 4)
+        rect("#475569", 6, 1, 10, 2)
+    else:
+        raise ValueError(f"Unknown monitor action icon: {kind}")
+    return image
 
 
 def wiki_url() -> str:
@@ -3262,6 +3329,7 @@ class App(tk.Tk):
         self.ai_web_model_var = tk.StringVar(value=DEFAULT_AI_WEB_MODEL)
         self.recent_input_files: List[str] = []
         self.header_images = []
+        self.monitor_action_icons: Dict[str, tk.PhotoImage] = {}
         self.window_icon_image = None
         self.output_mode = "preview"
         self.output_buffers = {"preview": "", "monitor": ""}
@@ -3272,6 +3340,14 @@ class App(tk.Tk):
         self.startup_splash = self._create_startup_splash()
         self._apply_app_icon()
         self._build()
+        install_dev_reload_shortcut(
+            self,
+            Path(__file__),
+            can_restart=lambda: (
+                not self.queue_running
+                and (self.run_process is None or self.run_process.poll() is not None)
+            ),
+        )
         self._load_launcher_settings()
         self.auto_open_output_var.set(True)
         self._use_latest_python_for_tools()
@@ -3673,12 +3749,16 @@ class App(tk.Tk):
         monbtn.grid(row=4, column=0, sticky="ew", pady=(6, 0))
         for i in range(6):
             monbtn.columnconfigure(i, weight=1)
-        ttk.Button(monbtn, text="Stop job", command=self.stop_orca).grid(row=0, column=0, sticky="ew")
-        ttk.Button(monbtn, text="Open .out", command=self.open_last_output).grid(row=0, column=1, sticky="ew", padx=(6, 0))
-        ttk.Button(monbtn, text="Open folder", command=self.open_last_output_folder).grid(row=0, column=2, sticky="ew", padx=(6, 0))
-        ttk.Button(monbtn, text="Show summary", command=self.show_project_summary).grid(row=0, column=3, sticky="ew", padx=(6, 0))
-        ttk.Button(monbtn, text="Ask AI about progress", command=self.open_ai_progress_prompt).grid(row=0, column=4, sticky="ew", padx=(6, 0))
-        ttk.Button(monbtn, text="Clear monitor", command=self.clear_monitor).grid(row=0, column=5, sticky="ew", padx=(6, 0))
+        for column, (icon_name, label, command_name) in enumerate(MONITOR_ACTION_BUTTONS):
+            icon = create_monitor_action_icon(self, icon_name)
+            self.monitor_action_icons[icon_name] = icon
+            ttk.Button(
+                monbtn,
+                text=label,
+                image=icon,
+                compound="left",
+                command=getattr(self, command_name),
+            ).grid(row=0, column=column, sticky="ew", padx=((6 if column else 0), 0))
         self.preview_text = ModeTextProxy(self, "preview")
         self.monitor_text = ModeTextProxy(self, "monitor")
         self._refresh_output_mode_buttons()
@@ -7299,9 +7379,10 @@ class App(tk.Tk):
 
     def open_ai_progress_prompt(self):
         try:
-            prompt = build_orca_progress_prompt(self._orca_output_for_ai())
             model = self.ai_web_model_var.get().strip() or DEFAULT_AI_WEB_MODEL
             url = AI_WEB_MODELS.get(model, AI_WEB_MODELS[DEFAULT_AI_WEB_MODEL])
+            output = self._orca_output_for_ai()
+            prompt = build_orca_agent_payload(output) if model == "ChatGPT" else build_orca_progress_prompt(output)
             self.clipboard_clear()
             self.clipboard_append(prompt)
             self.update_idletasks()

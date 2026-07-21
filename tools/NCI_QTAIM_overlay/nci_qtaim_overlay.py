@@ -44,6 +44,9 @@ except Exception as exc:
 
 TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from app_identity import install_dev_reload_shortcut
 NCI_MODULE_PATH = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 QTAIM_GRAPHICS_SETTINGS_PATH = Path.home() / ".qtaim_graphics_settings.json"
 QTAIM_MODULE_CANDIDATES = [
@@ -1666,6 +1669,7 @@ def run_from_wavefunction(wavefunction_file: Path, args) -> bool:
     root = tk.Tk()
     root.withdraw()
     root._nci_qtaim_auto_root = True
+    install_dev_reload_shortcut(root, Path(__file__))
     try:
         build_kwargs["parent_window"] = root
         build_overlay(**build_kwargs)
@@ -1738,6 +1742,7 @@ def main():
         return
 
     app = OverlayApp(initial_folder=folder)
+    install_dev_reload_shortcut(app, Path(__file__))
     app.mainloop()
 
 

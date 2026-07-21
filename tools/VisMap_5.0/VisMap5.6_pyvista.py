@@ -55,7 +55,7 @@ TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
-from app_identity import configure_tk_window_identity, set_windows_app_id
+from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 
 ESP_ICON_PATH = TOOLS_ROOT / "images" / "tr_ESP_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -2625,6 +2625,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
             pass
 
     root.bind_all("<Control-c>", lambda _event: viewer_copy_to_clipboard())
+    install_dev_reload_shortcut(root, Path(__file__))
     root.after(30, pump_viewer)
     if autorun and initial_inputfile:
         root.after(250, run_clicked)

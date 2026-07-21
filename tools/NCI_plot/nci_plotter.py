@@ -63,7 +63,7 @@ TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
-from app_identity import configure_tk_window_identity, set_windows_app_id
+from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 
 NCI_ICON_PATH = TOOLS_ROOT / "images" / "tr_NCI_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -2237,6 +2237,7 @@ def main() -> None:
     root = tk.Tk()
     configure_tk_window_identity(root, "NCI")
     app = NCIPlotterApp(root, initial_wavefunction_path=initial_wavefunction_path)
+    install_dev_reload_shortcut(root, Path(__file__), can_restart=lambda: not app.generation_lock.locked())
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()
 

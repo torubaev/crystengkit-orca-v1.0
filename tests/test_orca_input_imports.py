@@ -263,6 +263,7 @@ $$$$
             "SCF ITERATION 12 ENERGY -100.0\napi_key=do-not-send\n"
         )
         prompt = orca_input.build_orca_progress_prompt(output)
+        self.assertTrue(prompt.startswith("ORCA Job progress report."))
         self.assertNotIn(r"C:\Users\chemist", prompt)
         self.assertNotIn("private_job", prompt)
         self.assertNotIn("do-not-send", prompt)
@@ -280,6 +281,28 @@ $$$$
     def test_chatgpt_is_default_ai_web_model(self):
         self.assertEqual(orca_input.DEFAULT_AI_WEB_MODEL, "ChatGPT")
         self.assertEqual(next(iter(orca_input.AI_WEB_MODELS)), "ChatGPT")
+        self.assertEqual(orca_input.AI_WEB_MODELS["ChatGPT"], orca_input.CHATGPT_ORCA_MONITOR_URL)
+        self.assertIn("g-6a5f33b7e3b881918fa604bb19250b23", orca_input.CHATGPT_ORCA_MONITOR_URL)
+
+    def test_orca_monitor_agent_payload_contains_data_but_no_analysis_instructions(self):
+        payload = orca_input.build_orca_agent_payload("SCF ITERATION 9\nC 0.0 1.0 2.0")
+        self.assertTrue(payload.startswith("ORCA Job progress report."))
+        self.assertTrue(payload.endswith(orca_input.ORCA_PROMPT_END_MARKER))
+        self.assertIn("SCF ITERATION 9", payload)
+        self.assertNotIn("C 0.0 1.0 2.0", payload)
+        self.assertNotIn("Answer in at most", payload)
+        self.assertNotIn("Act as an expert", payload)
+
+    def test_monitor_actions_have_unique_standard_icons_and_handlers(self):
+        actions = orca_input.MONITOR_ACTION_BUTTONS
+        self.assertEqual(len(actions), 6)
+        self.assertEqual([item[1] for item in actions], [
+            "Stop job", "Open .out", "Open folder", "Show summary",
+            "Ask AI about progress", "Clear monitor",
+        ])
+        self.assertEqual(len({item[0] for item in actions}), len(actions))
+        for _icon, _label, handler in actions:
+            self.assertTrue(callable(getattr(orca_input.App, handler)))
 
     def test_legacy_gemini_default_migrates_but_explicit_new_choice_remains(self):
         self.assertEqual(orca_input.resolve_saved_ai_web_model({"ai_web_model": "Gemini"}), "ChatGPT")

@@ -65,7 +65,7 @@ TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
-from app_identity import configure_tk_window_identity, set_windows_app_id
+from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 
 HOMO_LUMO_ICON_PATH = TOOLS_ROOT / "images" / "tr_homo_lumo_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -3086,6 +3086,12 @@ class App(tk.Tk):
 
 def main() -> None:
     app = App()
+    install_dev_reload_shortcut(
+        app,
+        Path(__file__),
+        can_restart=lambda: not app.mo_surface_rendering
+        and not (app.mo_batch_thread is not None and app.mo_batch_thread.is_alive()),
+    )
     app.mainloop()
 
 

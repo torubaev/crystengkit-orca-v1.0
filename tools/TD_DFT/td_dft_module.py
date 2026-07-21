@@ -26,7 +26,7 @@ TOOLS_ROOT = MODULE_DIR.parent
 APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
-from app_identity import configure_tk_window_identity, set_windows_app_id
+from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 
 try:
     from .td_dft_cube_viewer import SignedCubeViewer
@@ -1423,6 +1423,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     root = tk.Tk()
     root.withdraw()
+    install_dev_reload_shortcut(root, Path(__file__), argv=list(argv) if argv is not None else None)
     window = TDDFTWindow(root, DEFAULT_TDDFT_SETTINGS)
     window.protocol("WM_DELETE_WINDOW", root.destroy)
     if args.output:

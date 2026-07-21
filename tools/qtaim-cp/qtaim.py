@@ -58,7 +58,7 @@ TOOLS_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
-from app_identity import configure_tk_window_identity, set_windows_app_id
+from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 
 QTAIM_ICON_PATH = TOOLS_ROOT / "images" / "qtaim.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -3871,6 +3871,7 @@ class QTAIMGui(tk.Tk):
 def main():
     initial_input_path = sys.argv[1] if len(sys.argv) > 1 else None
     app = QTAIMGui(initial_input_path)
+    install_dev_reload_shortcut(app, Path(__file__), can_restart=lambda: not app.run_in_progress)
     app.mainloop()
 
 
