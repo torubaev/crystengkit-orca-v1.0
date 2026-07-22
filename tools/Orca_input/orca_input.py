@@ -8,6 +8,7 @@ import importlib.util
 import datetime
 import platform
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -68,9 +69,12 @@ AI_WEB_MODELS = {
 DEFAULT_AI_WEB_MODEL = "ChatGPT"
 AI_WEB_MODEL_SETTINGS_VERSION = 2
 ORCA_PROMPT_END_MARKER = "CRYSTENGKIT_ORCA_OUTPUT_COMPLETE_9F4C2A"
-ORCA_AGENT_OUTPUT_MAX_CHARS = 8000
+# Emergency browser-paste ceiling. The semantic selector, rather than this
+# ceiling, should normally determine payload size.
+ORCA_AGENT_OUTPUT_MAX_CHARS = 32000
 MONITOR_ACTION_BUTTONS = (
     ("stop", "Stop job", "stop_orca"),
+    ("link", "Reconnect job", "reconnect_saved_job"),
     ("document", "Open .out", "open_last_output"),
     ("folder", "Open folder", "open_last_output_folder"),
     ("summary", "Show summary", "show_project_summary"),
@@ -174,7 +178,7 @@ def compact_orca_output_for_progress(
     text = str(output_text or "").strip()
     if len(text) <= max_chars:
         return text
-    max_chars = max(6000, int(max_chars))
+    max_chars = max(12000, int(max_chars))
     lines = text.splitlines()
 
     header_pattern = re.compile(
@@ -220,7 +224,7 @@ def compact_orca_output_for_progress(
         matches = matches[:limit] if first else matches[-limit:]
         return [f"L{number}: {line}" for number, line in matches]
 
-    header = selected(header_pattern, 45, first=True)
+    header = selected(header_pattern, 120, first=True)
     critical_patterns = (
         r"geometry optimization cycle",
         r"optimization has converged|optimization did not converge",
@@ -240,9 +244,9 @@ def compact_orca_output_for_progress(
     critical = [f"L{number}: {line}" for number, line in sorted(set(critical_matches))]
     # Append pinned lifecycle markers after repetitive timing evidence so the
     # final size trim cannot discard them.
-    milestones = selected(milestone_pattern, 80) + critical
-    warnings = selected(warning_pattern, 35)
-    recent = selected(recent_pattern, 80)
+    milestones = selected(milestone_pattern, 300) + critical
+    warnings = selected(warning_pattern, 100)
+    recent = selected(recent_pattern, 240)
 
     sections = [
         "[CRYSTENGKIT SEMANTIC EXTRACT]\n"
@@ -284,6 +288,11 @@ def create_monitor_action_icon(master, kind: str) -> tk.PhotoImage:
     if kind == "stop":
         rect("#b91c1c", 3, 3, 13, 13)
         rect("#ef4444", 4, 4, 12, 12)
+    elif kind == "link":
+        rect("#2563eb", 2, 6, 9, 10)
+        rect("#f8fafc", 4, 7, 9, 9)
+        rect("#2563eb", 7, 3, 14, 7)
+        rect("#f8fafc", 7, 4, 12, 6)
     elif kind == "document":
         rect("#64748b", 3, 1, 12, 15)
         rect("#f8fafc", 4, 2, 11, 14)
@@ -339,6 +348,7 @@ def startup_news_cache_dir() -> Path:
 
 STARTUP_NEWS_CACHE_PATH = startup_news_cache_dir() / "startup_news_cache.json"
 STARTUP_NEWS_SETTINGS_PATH = startup_news_cache_dir() / "startup_news_settings.json"
+ACTIVE_ORCA_JOB_STATE_PATH = startup_news_cache_dir() / "active_orca_job.json"
 STARTUP_NEWS_TIMEOUT = 1.8
 STARTUP_NEWS_TITLE_LIMIT = 90
 STARTUP_NEWS_MESSAGE_LIMIT = 520
@@ -374,6 +384,103 @@ def safe_write_json(path: Path, data: Dict) -> None:
         path.write_text(json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8")
     except Exception:
         pass
+
+
+def process_executable_path(pid: int) -> str:
+    """Return the executable for a live PID when the platform exposes it."""
+    try:
+        pid = int(pid)
+        if pid <= 0:
+            return ""
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.QueryFullProcessImageNameW.argtypes = (
+                wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)
+            )
+            kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            if not handle:
+                return ""
+            try:
+                size = wintypes.DWORD(32768)
+                buffer = ctypes.create_unicode_buffer(size.value)
+                if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+                    return buffer.value
+            finally:
+                kernel32.CloseHandle(handle)
+            return ""
+        proc_exe = Path("/proc") / str(pid) / "exe"
+        if proc_exe.exists():
+            return str(proc_exe.resolve())
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "comm="],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            shell=False,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def process_matches_executable(pid: int, expected_executable: str = "") -> bool:
+    """Check that PID is live and, when possible, still belongs to the saved executable."""
+    try:
+        pid = int(pid)
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+            kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return False
+            try:
+                exit_code = wintypes.DWORD()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)) or exit_code.value != 259:
+                    return False
+            finally:
+                kernel32.CloseHandle(handle)
+        else:
+            os.kill(pid, 0)
+        actual = process_executable_path(pid)
+        if expected_executable and actual:
+            return os.path.normcase(os.path.realpath(actual)) == os.path.normcase(os.path.realpath(expected_executable))
+        return True
+    except Exception:
+        return False
+
+
+class AttachedOrcaProcess:
+    """Minimal Popen-compatible handle for an ORCA process started by an earlier Builder."""
+
+    def __init__(self, pid: int, expected_executable: str = ""):
+        self.pid = int(pid)
+        self.expected_executable = str(expected_executable or "")
+
+    def poll(self) -> Optional[int]:
+        return None if process_matches_executable(self.pid, self.expected_executable) else 0
+
+    def terminate(self) -> None:
+        os.kill(self.pid, getattr(signal, "SIGTERM", 15))
+
+    def kill(self) -> None:
+        os.kill(self.pid, getattr(signal, "SIGKILL", 9))
 
 
 def normalize_news_text(value: object, limit: int) -> str:
@@ -3482,6 +3589,8 @@ class App(tk.Tk):
             self.auto_locate_qtaim(silent=True)
         self._report_runtime_environment()
         self.deiconify()
+        self.protocol("WM_DELETE_WINDOW", self._on_builder_close)
+        self.after(STARTUP_SPLASH_MIN_VISIBLE_MS + 500, self._offer_reconnect_saved_job)
         self.after(150, self._finish_startup_splash)
 
 
@@ -3871,7 +3980,7 @@ class App(tk.Tk):
 
         monbtn = ttk.Frame(output_box)
         monbtn.grid(row=4, column=0, sticky="ew", pady=(6, 0))
-        for i in range(6):
+        for i in range(len(MONITOR_ACTION_BUTTONS)):
             monbtn.columnconfigure(i, weight=1)
         for column, (icon_name, label, command_name) in enumerate(MONITOR_ACTION_BUTTONS):
             icon = create_monitor_action_icon(self, icon_name)
@@ -7309,6 +7418,146 @@ class App(tk.Tk):
             "queue_job": True,
         }
 
+    @staticmethod
+    def _json_safe_run_value(value):
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {
+                str(key): safe
+                for key, item in value.items()
+                if (safe := App._json_safe_run_value(item)) is not None
+            }
+        if isinstance(value, (list, tuple)):
+            return [safe for item in value if (safe := App._json_safe_run_value(item)) is not None]
+        return None
+
+    def _save_active_job_state(self, pid: int, inp_path: str, out_path: str, orca_path: str, workdir: str, context: Dict) -> None:
+        payload = {
+            "version": 1,
+            "pid": int(pid),
+            "orca_path": str(Path(orca_path).resolve()),
+            "input_path": str(Path(inp_path).resolve()),
+            "output_path": str(Path(out_path).resolve()),
+            "working_directory": str(Path(workdir).resolve()),
+            "started_at": float(self.monitor_started_at or time.time()),
+            "saved_at": time.time(),
+            "context": self._json_safe_run_value(context) or {},
+            "queue_file": str(self.queue_state_path) if self.queue_state_path else "",
+            "queue_name": self.job_queue.current_queue or self.job_queue.active_queue,
+            "queue_index": self.job_queue.current_index,
+        }
+        safe_write_json(ACTIVE_ORCA_JOB_STATE_PATH, payload)
+
+    @staticmethod
+    def _clear_active_job_state() -> None:
+        try:
+            ACTIVE_ORCA_JOB_STATE_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def _on_builder_close(self) -> None:
+        proc = self.run_process
+        if proc is not None and proc.poll() is None:
+            if not messagebox.askyesno(
+                "ORCA job is running",
+                "Close the Builder and leave the current ORCA process running?\n\n"
+                "You can reconnect after reopening the Builder. A queued workflow will pause "
+                "after the current calculation. Choose No to keep the Builder open.",
+                parent=self,
+            ):
+                return
+        self.destroy()
+
+    def _offer_reconnect_saved_job(self) -> None:
+        state = safe_read_json(ACTIVE_ORCA_JOB_STATE_PATH)
+        if not state:
+            return
+        pid = int(state.get("pid") or 0)
+        orca_path = str(state.get("orca_path") or "")
+        if not process_matches_executable(pid, orca_path):
+            return
+        out_path = str(state.get("output_path") or "")
+        if messagebox.askyesno(
+            "Reconnect ORCA job",
+            f"A previously launched ORCA job is still running.\n\nOutput: {out_path}\n\nReconnect the monitor?",
+            parent=self,
+        ):
+            try:
+                self._attach_saved_job(state)
+            except Exception as exc:
+                messagebox.showerror("Reconnect job", str(exc), parent=self)
+
+    def reconnect_saved_job(self) -> None:
+        if self.run_process is not None and self.run_process.poll() is None:
+            messagebox.showinfo("Reconnect job", "The Builder is already monitoring a running ORCA job.", parent=self)
+            return
+        state = safe_read_json(ACTIVE_ORCA_JOB_STATE_PATH)
+        if not state:
+            messagebox.showinfo("Reconnect job", "No saved ORCA job is available for reconnection.", parent=self)
+            return
+        pid = int(state.get("pid") or 0)
+        orca_path = str(state.get("orca_path") or "")
+        if not process_matches_executable(pid, orca_path):
+            out_path = str(state.get("output_path") or "")
+            output_ok, reason = validate_orca_output_file(out_path) if out_path else (False, "Output file is unavailable")
+            self._clear_active_job_state()
+            messagebox.showinfo(
+                "Reconnect job",
+                ("The saved ORCA process is no longer running.\n\n" +
+                 ("The output finished normally." if output_ok else f"Output status: {reason}")),
+                parent=self,
+            )
+            return
+        try:
+            self._attach_saved_job(state)
+        except Exception as exc:
+            messagebox.showerror("Reconnect job", str(exc), parent=self)
+
+    def _attach_saved_job(self, state: Dict) -> None:
+        pid = int(state["pid"])
+        orca_path = str(state.get("orca_path") or "")
+        inp_path = str(state.get("input_path") or "")
+        out_path = str(state.get("output_path") or "")
+        if not out_path or not Path(out_path).is_file():
+            raise FileNotFoundError(f"Saved ORCA output was not found: {out_path}")
+        self.run_process = AttachedOrcaProcess(pid, orca_path)
+        self.current_input_path = inp_path or None
+        self.last_output_path = out_path
+        self.monitor_started_at = float(state.get("started_at") or time.time())
+        self.monitor_offset = max(0, Path(out_path).stat().st_size - 250000)
+        context = dict(state.get("context") or {})
+        context.update({"input_path": inp_path, "orca_path": orca_path, "reconnected": True})
+        self.active_run_context = context
+        self.queue_running = False
+        self.active_queue_job = None
+        if context.get("queue_job"):
+            queue_file = Path(str(state.get("queue_file") or "")).expanduser()
+            if queue_file.is_file() and queue_file != self.queue_state_path:
+                self.queue_state_path = queue_file
+                self.job_queue = OrcaJobQueue.load(queue_file)
+            queue_name = str(state.get("queue_name") or self.job_queue.active_queue)
+            if queue_name in self.job_queue.queues:
+                self.job_queue.set_active_queue(queue_name)
+                wanted = os.path.normcase(os.path.realpath(inp_path))
+                for index, job in enumerate(self.job_queue.jobs):
+                    if os.path.normcase(os.path.realpath(job.input_path)) == wanted:
+                        job.status = "running"
+                        self.job_queue.current_index = index
+                        self.job_queue.current_queue = queue_name
+                        self.active_queue_job = job
+                        break
+        self.clear_monitor(reset_status=False)
+        self.monitor_offset = max(0, Path(out_path).stat().st_size - 250000)
+        self._show_output_mode("monitor")
+        self.append_monitor(
+            f"Reconnected to ORCA PID {pid}.\nOutput: {out_path}\n"
+            "Showing the latest available output; monitoring has resumed.\n"
+        )
+        self._set_monitor_stage("Reconnected to running ORCA")
+        self.status.configure(text=f"Reconnected to ORCA PID {pid}")
+        self._schedule_monitor_poll(100)
+
     def _start_orca_input(self, inp_path: str, orca_path: str, context: Dict):
         if not os.path.isfile(inp_path):
             raise FileNotFoundError(f"ORCA input file was not found: {inp_path}")
@@ -7348,6 +7597,8 @@ class App(tk.Tk):
             )
         finally:
             fout.close()
+
+        self._save_active_job_state(self.run_process.pid, inp_path, out_path, orca_path, workdir, context)
 
         self.append_monitor(f"$ {' '.join(args)}\nWorking directory: {workdir}\nOutput file: {out_path}\n\n")
         self._set_monitor_progress(5.0)
@@ -7869,6 +8120,7 @@ class App(tk.Tk):
         self.wait_window(win)
 
     def _run_finished(self, code: int, out_path: str):
+        self._clear_active_job_state()
         if self.monitor_job_id:
             try:
                 self.after_cancel(self.monitor_job_id)

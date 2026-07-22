@@ -317,14 +317,26 @@ $$$$
 
     def test_monitor_actions_have_unique_standard_icons_and_handlers(self):
         actions = orca_input.MONITOR_ACTION_BUTTONS
-        self.assertEqual(len(actions), 6)
+        self.assertEqual(len(actions), 7)
         self.assertEqual([item[1] for item in actions], [
-            "Stop job", "Open .out", "Open folder", "Show summary",
+            "Stop job", "Reconnect job", "Open .out", "Open folder", "Show summary",
             "Ask AI about progress", "Clear monitor",
         ])
         self.assertEqual(len({item[0] for item in actions}), len(actions))
         for _icon, _label, handler in actions:
             self.assertTrue(callable(getattr(orca_input.App, handler)))
+
+    def test_attached_process_recognizes_current_live_pid(self):
+        executable = orca_input.process_executable_path(os.getpid())
+        self.assertTrue(executable)
+        attached = orca_input.AttachedOrcaProcess(os.getpid(), executable)
+        self.assertIsNone(attached.poll())
+
+    def test_active_job_state_uses_user_config_location(self):
+        self.assertEqual(
+            orca_input.ACTIVE_ORCA_JOB_STATE_PATH.parent,
+            orca_input.startup_news_cache_dir(),
+        )
 
     def test_orca_completion_summary_is_minimal(self):
         self.assertEqual(

@@ -1092,6 +1092,16 @@ regenerating or replacing it. The monitor action row provides stop, output,
 folder, summary, AI-progress, and clear controls. Named queues are described in
 [Job queues and AI progress assistance](job-queues-ai.md).
 
+## Reconnecting after closing the Builder
+
+The Builder records each active ORCA process in the user's CrystEngKit
+configuration folder. If the Builder is closed while ORCA remains active, the
+next Builder session offers to reconnect after verifying that the saved PID
+still belongs to the same ORCA executable. **Reconnect job** performs this
+check manually and resumes output monitoring without relaunching ORCA. A
+reconnected queue pauses after the current calculation; inspect it before
+starting the remaining jobs.
+
 ## During execution
 
 Watch for:
@@ -1627,7 +1637,7 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ### ORCA Input Builder
 
-![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, existing `.inp` files, or external ORCA/Gaussian `.out` / `.log` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a `Show input` / `Job monitor` switch. During a run, `Show input` displays the exact input being executed without regenerating or replacing it; `Job monitor` shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. The Builder tries to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
+![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, existing `.inp` files, or external ORCA/Gaussian `.out` / `.log` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a `Show input` / `Job monitor` switch. During a run, `Show input` displays the exact input being executed without regenerating or replacing it; `Job monitor` shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. Active jobs are recorded in the user configuration folder: if the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process, and **Reconnect job** provides the same action manually. A reconnected queue pauses after its current calculation. The Builder tries to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
 
 ### TD-DFT Setup, Analysis, and Visualization
 
