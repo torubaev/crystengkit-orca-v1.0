@@ -1,0 +1,37 @@
+{
+  "builder": {
+    "program": "ORCA",
+    "functional": "B3LYP",
+    "basis": "def2-SVP",
+    "charge": 0,
+    "multiplicity": 1,
+    "grid": "DefGrid2",
+    "tight_scf": true,
+    "rijcosx": true,
+    "single_point": true,
+    "browser_ai": "ChatGPT ORCA Job Progress Monitor GPT"
+  },
+  "tddft": {
+    "method_choices": [
+      "TD-DFT",
+      "TDA"
+    ],
+    "nroots_default": 10,
+    "maxdim_default": 10,
+    "maxiter_default": 300,
+    "do_nto": true,
+    "nto_threshold": "1e-4",
+    "nto_states": "all calculated states (NTOStates omitted)",
+    "required_dependencies": [
+      "optimization implies vertical excitation",
+      "excited-state frequencies imply optimization and vertical excitation",
+      "target root must be between 1 and NRoots"
+    ]
+  },
+  "external_programs": {
+    "ORCA": "quantum-chemical calculations",
+    "orca_2aim": "WFN/WFX conversion from matching ORCA output and GBW",
+    "Multiwfn": "ESP, NCI, QTAIM, and validated TD-DFT NTO analysis",
+    "orca_plot": "ORCA molecular-orbital cubes"
+  }
+}

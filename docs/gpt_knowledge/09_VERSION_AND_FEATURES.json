@@ -1,0 +1,28 @@
+{
+  "product": "CrystEngKit-ORCA",
+  "version": "1.0.0",
+  "documentation_schema": 1,
+  "primary_gui": "ORCA Input Builder",
+  "tools": [
+    "ORCA Input Builder",
+    "TD-DFT",
+    "HOMO-LUMO",
+    "ESP/VisMap",
+    "NCI Plotter",
+    "QTAIM",
+    "NCI + QTAIM Overlay"
+  ],
+  "platform_intent": [
+    "Windows",
+    "Linux",
+    "macOS"
+  ],
+  "python": "3.9 or newer",
+  "known_boundaries": [
+    "CrystEngKit does not replace ORCA or Multiwfn",
+    "generated inputs and summaries require expert verification",
+    "normal termination does not establish scientific validity",
+    "unsupported external-program menu sequences remain disabled",
+    "AI output is advisory and external-service redaction is not guaranteed"
+  ]
+}

@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS_DIR))
@@ -22,9 +23,18 @@ from TD_DFT.td_dft_module import (  # noqa: E402
 )
 from TD_DFT.td_dft_multiwfn_runner import MultiwfnTDDFTRunner  # noqa: E402
 from TD_DFT.td_dft_cube_viewer import read_cube  # noqa: E402
+import TD_DFT.td_dft_module as td_dft_module  # noqa: E402
 
 
 class TDDFTModuleTests(unittest.TestCase):
+    def test_embedded_module_tolerates_cached_legacy_app_identity(self):
+        original = td_dft_module._app_identity
+        try:
+            td_dft_module._app_identity = SimpleNamespace()
+            td_dft_module.install_dev_reload_shortcut(None, Path("td_dft_module.py"))
+        finally:
+            td_dft_module._app_identity = original
+
     def test_export_filename_suggestion_uses_loaded_output_without_renaming_it(self):
         source = Path("calc") / "molecule_CAM-B3LYP_def2-TZVP_CHCl3_TDA.out"
         self.assertEqual(
@@ -40,7 +50,7 @@ class TDDFTModuleTests(unittest.TestCase):
         block = build_tddft_block({"nroots": 12, "root": 1, "td_method": "TDA", "manifold": "Both"})
         self.assertIn("NRoots 12", block)
         self.assertIn("TDA true", block)
-        self.assertIn("MaxDim 5", block)
+        self.assertIn("MaxDim 10", block)
         self.assertIn("MaxIter 300", block)
         self.assertIn("Triplets true", block)
         self.assertNotIn("Singlets", block)
@@ -48,7 +58,7 @@ class TDDFTModuleTests(unittest.TestCase):
     def test_default_maxdim_is_safe_small_multiplier(self):
         block = build_tddft_block({})
         self.assertIn("NRoots 10", block)
-        self.assertIn("MaxDim 5", block)
+        self.assertIn("MaxDim 10", block)
         self.assertIn("DoNTO true", block)
         self.assertIn("NTOThresh 1e-4", block)
         self.assertNotIn("NTOStates", block)
@@ -91,7 +101,7 @@ class TDDFTModuleTests(unittest.TestCase):
 
     def test_legacy_maxdim_default_migrates(self):
         migrated, warnings = migrate_legacy_tddft_settings({"maxdim": 120, "nroots": 10})
-        self.assertEqual(migrated["maxdim"], 5)
+        self.assertEqual(migrated["maxdim"], 10)
         self.assertTrue(warnings)
         explicit, warnings = migrate_legacy_tddft_settings({"maxdim": 96, "nroots": 10})
         self.assertEqual(explicit["maxdim"], 96)

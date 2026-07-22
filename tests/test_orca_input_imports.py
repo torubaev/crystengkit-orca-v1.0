@@ -270,10 +270,11 @@ $$$$
         self.assertNotIn("C 0.000 1.000 2.000", prompt)
         self.assertIn("SCF ITERATION 12", prompt)
         self.assertIn("at most 120 words", prompt)
-        self.assertIn("possibly incomplete live output", prompt)
+        self.assertIn("intentionally bounded live extract", prompt)
+        self.assertIn("Never describe the paste as truncated", prompt)
         self.assertTrue(prompt.endswith(orca_input.ORCA_PROMPT_END_MARKER))
-        self.assertIn("perform the check silently", prompt)
-        self.assertIn("Report incompleteness only", prompt)
+        self.assertIn("never refuse analysis", prompt)
+        self.assertIn("unfinished calculation", prompt)
         self.assertIn("likely sequence of remaining stages", prompt)
         self.assertIn("overall remaining time", prompt)
         self.assertNotIn("INPUT_COMPLETE: YES", prompt)
@@ -288,10 +289,31 @@ $$$$
         payload = orca_input.build_orca_agent_payload("SCF ITERATION 9\nC 0.0 1.0 2.0")
         self.assertTrue(payload.startswith("ORCA Job progress report."))
         self.assertTrue(payload.endswith(orca_input.ORCA_PROMPT_END_MARKER))
+        self.assertIn("PAYLOAD STATUS: COMPLETE BOUNDED LIVE EXTRACT", payload)
+        self.assertGreaterEqual(payload.count(orca_input.ORCA_PROMPT_END_MARKER), 2)
         self.assertIn("SCF ITERATION 9", payload)
         self.assertNotIn("C 0.0 1.0 2.0", payload)
         self.assertNotIn("Answer in at most", payload)
         self.assertNotIn("Act as an expert", payload)
+        self.assertIn("COMPLETE PAYLOAD: FINAL MARKER FOLLOWS", payload)
+
+    def test_large_agent_payload_keeps_marker_header_evidence_and_tail(self):
+        source = (
+            "Program Version 6.1.0\n! CAM-B3LYP def2-SVP OPT TIGHTSCF\n"
+            + "routine data\n" * 12000
+            + "SCF ITERATION 77 NOT CONVERGED\n" + "more routine data\n" * 12000
+            + "GEOMETRY OPTIMIZATION CYCLE 12\nTOTAL RUN TIME: 1 hours 2 minutes\n"
+        )
+        payload = orca_input.build_orca_agent_payload(source)
+        self.assertLess(len(payload), orca_input.ORCA_AGENT_OUTPUT_MAX_CHARS + 500)
+        self.assertIn("Program Version 6.1.0", payload)
+        self.assertIn("CAM-B3LYP def2-SVP OPT", payload)
+        self.assertIn("SCF ITERATION 77 NOT CONVERGED", payload)
+        self.assertIn("GEOMETRY OPTIMIZATION CYCLE 12", payload)
+        self.assertIn("TOTAL RUN TIME", payload)
+        self.assertIn("CRYSTENGKIT SEMANTIC EXTRACT", payload)
+        self.assertNotIn("routine data", payload)
+        self.assertTrue(payload.endswith(orca_input.ORCA_PROMPT_END_MARKER))
 
     def test_monitor_actions_have_unique_standard_icons_and_handlers(self):
         actions = orca_input.MONITOR_ACTION_BUTTONS
@@ -303,6 +325,16 @@ $$$$
         self.assertEqual(len({item[0] for item in actions}), len(actions))
         for _icon, _label, handler in actions:
             self.assertTrue(callable(getattr(orca_input.App, handler)))
+
+    def test_orca_completion_summary_is_minimal(self):
+        self.assertEqual(
+            orca_input.orca_completion_summary(r"C:\jobs\water_B3LYP_opt.out", True),
+            ("water_B3LYP_opt", "Finished successfully"),
+        )
+        self.assertEqual(
+            orca_input.orca_completion_summary("failed_job.out", False),
+            ("failed_job", "Failed"),
+        )
 
     def test_legacy_gemini_default_migrates_but_explicit_new_choice_remains(self):
         self.assertEqual(orca_input.resolve_saved_ai_web_model({"ai_web_model": "Gemini"}), "ChatGPT")

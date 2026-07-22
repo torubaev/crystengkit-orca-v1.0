@@ -8,7 +8,7 @@ For 10 singlet roots with TD-DFT, **Show ORCA block** generates:
 %tddft
   NRoots 10
   TDA false
-  MaxDim 5
+  MaxDim 10
   MaxIter 300
   DoNTO true
   NTOThresh 1e-4
@@ -23,7 +23,7 @@ The module contributes:
 %tddft
   NRoots 10
   TDA false
-  MaxDim 5
+  MaxDim 10
   MaxIter 300
   DoNTO true
   NTOThresh 1e-4

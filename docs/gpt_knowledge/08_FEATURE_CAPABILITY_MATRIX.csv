@@ -1,0 +1,12 @@
+feature,inputs,requires,outputs,limitations
+ORCA input and execution,CIF; XYZ; MOL/SDF; ORCA input; ORCA/Gaussian output,ORCA for execution,INP; OUT; ORCA companions; summary,User must validate chemistry and method
+Named job queues,Saved ORCA INP files,ORCA,Sequential outputs; queue JSON status,Does not validate scientific suitability
+AI progress assistance,Available ORCA OUT,Browser; selected external AI service,Short progress and timing comment,Redaction is not guaranteed; AI is advisory
+TD-DFT and UV-Vis,ORCA TD-DFT/TDA OUT,ORCA; Matplotlib,State table; stick/broadened spectrum; CSV; PNG/SVG,Needs parsed excitation energies and oscillator strengths
+TD-DFT NTO,Matching TD-DFT OUT and GBW,Multiwfn; PyVista,Selected-state hole/electron cubes and images,Only release-verified workflow is enabled
+Fluorescence sequence,Completed absorption OUT,ORCA,Excited-state optimization and vertical-emission jobs,Emission interpretation remains user's responsibility
+HOMO-LUMO,ORCA/Gaussian output; ORCA OUT+GBW for surfaces,orca_plot and PyVista for surfaces,Diagram; MO cubes; images; contact sheet,Orbital gap is not generally an optical gap
+ESP/MEP,WFN; WFX; FCHK,Multiwfn; PyVista,Mapped ESP surface; extrema; images,Compare figures using consistent surface and range
+NCI,WFN; WFX,Multiwfn; PyVista,RDG/signrho cubes; NCI surface,"Surface is qualitative, not interaction energy"
+QTAIM,WFN/WFX and Multiwfn CP/path output,Multiwfn; PyVista,Critical points; paths; tables; figures,A BCP does not automatically prove a conventional bond
+Interaction energies,Dimer structure and fragment assignment,ORCA,Raw; BSSE; CP-corrected and optional thermochemical terms,Dimer interaction energy is not lattice energy

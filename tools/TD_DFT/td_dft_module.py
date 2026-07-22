@@ -26,7 +26,17 @@ TOOLS_ROOT = MODULE_DIR.parent
 APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
-from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+import app_identity as _app_identity
+
+configure_tk_window_identity = _app_identity.configure_tk_window_identity
+set_windows_app_id = _app_identity.set_windows_app_id
+
+
+def install_dev_reload_shortcut(window, script_path, **kwargs):
+    """Remain compatible with a Builder that cached an older app_identity module."""
+    installer = getattr(_app_identity, "install_dev_reload_shortcut", None)
+    if installer is not None:
+        installer(window, script_path, **kwargs)
 
 try:
     from .td_dft_cube_viewer import SignedCubeViewer
@@ -42,6 +52,7 @@ ASSOCIATED_SUFFIXES = (".gbw", ".molden.input", ".molden", ".wfn", ".wfx", ".fch
 TD_DFT_ICON_PATH = TOOLS_ROOT / "images" / "tr_homo_lumo_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
+AI_ASSISTANT_URL = "https://chatgpt.com/g/g-6a6063dcc6b88191b88ac7a6c3b9476d-crystengkit-orca-assistant"
 CONTACT_EMAIL = "torubaev(at)gmail.com"
 LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
 README_LINK_TEXT = "README section: TD-DFT / UV-Vis"
@@ -67,7 +78,7 @@ DEFAULT_TDDFT_SETTINGS = {
     "td_method": "TDDFT",
     "nroots": 10,
     "root": 1,
-    "maxdim": 5,
+    "maxdim": 10,
     "maxiter": 300,
     "manifold": "Singlets",
     "target_manifold": "Singlet",
@@ -83,7 +94,7 @@ DEFAULT_TDDFT_SETTINGS = {
 }
 
 LEGACY_ERRONEOUS_MAXDIM_DEFAULT = 120
-SAFE_DEFAULT_MAXDIM = 5
+SAFE_DEFAULT_MAXDIM = 10
 MAXDIM_STRONG_WARNING_THRESHOLD = 20
 EXPANSION_WARNING_THRESHOLD = 300
 
@@ -104,7 +115,7 @@ def migrate_legacy_tddft_settings(settings: Dict) -> Tuple[Dict, List[str]]:
     if maxdim == LEGACY_ERRONEOUS_MAXDIM_DEFAULT:
         data["maxdim"] = SAFE_DEFAULT_MAXDIM
         warnings.append(
-            "The legacy TD-DFT MaxDim default of 120 was corrected to 5 "
+            "The legacy TD-DFT MaxDim default of 120 was corrected to 10 "
             "to reduce excessive TD-DFT expansion-space memory use."
         )
     return data, warnings
@@ -125,7 +136,7 @@ def tddft_memory_risk_warnings(settings: Dict, context: Optional[Dict] = None) -
             f"Estimated maximum expansion space: approximately {expansion} vectors.\n\n"
             "Large MaxDim values can require excessive memory and may cause ORCA to fail with:\n\n"
             "Not a single batch is possible with the present MaxCore.\n\n"
-            "A typical MaxDim value is approximately 5."
+            "A typical MaxDim value is approximately 10."
         )
     maxcore = context.get("maxcore_mb")
     basis_functions = context.get("basis_functions")
@@ -143,7 +154,7 @@ def tddft_memory_risk_warnings(settings: Dict, context: Optional[Dict] = None) -
             f"Global MaxCore: {maxcore_value} MB per process\n"
             f"Basis functions: {basis_count if basis_count is not None else 'not known'}\n\n"
             "This setup may be memory-limited for TD-DFT. Consider increasing MaxCore "
-            "according to available physical RAM and reducing MaxDim to approximately 5."
+            "according to available physical RAM and reducing MaxDim to approximately 10."
         )
     return warnings
 
@@ -160,7 +171,7 @@ def classify_orca_tddft_failure_text(text: str) -> Dict:
                 "within the available MaxCore memory."
             ),
             "recommendations": [
-                "Reduce MaxDim to approximately 5.",
+                "Reduce MaxDim to approximately 10.",
                 "Increase MaxCore according to available physical RAM.",
                 "Check NRoots.",
                 "Check the number of ORCA processes.",
@@ -729,7 +740,7 @@ class TDDFTWindow(tk.Toplevel):
         ttk.Entry(parameters, textvariable=self.vars["maxiter"], width=10).grid(row=7, column=1, sticky="ew", pady=2)
         ttk.Label(
             parameters,
-            text="Approximate maximum iterative expansion: NRoots x MaxDim. Typical MaxDim: 5.",
+            text="Approximate maximum iterative expansion: NRoots x MaxDim. Typical MaxDim: 10.",
             style="Muted.TLabel",
             wraplength=330,
             justify="left",
@@ -877,26 +888,29 @@ class TDDFTWindow(tk.Toplevel):
         ttk.Label(box, text="TD-DFT", font=("Segoe UI", 12, "bold")).grid(row=0, column=1, sticky="w")
         ttk.Label(box, text=ABOUT_PURPOSE, justify="left", wraplength=380).grid(row=1, column=1, sticky="w", pady=(8, 0))
         ttk.Separator(box, orient="horizontal").grid(row=2, column=1, sticky="ew", pady=(12, 8))
-        ttk.Label(box, text="GitHub", justify="left").grid(row=3, column=1, sticky="w")
+        ttk.Label(box, text="GitHub", justify="left", font=("Segoe UI", 9, "bold")).grid(row=3, column=1, sticky="w")
         github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
         github_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
         github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL, new=2))
-        ttk.Label(box, text="Documentation", justify="left").grid(row=5, column=1, sticky="w", pady=(8, 0))
+        ttk.Label(box, text="Documentation", justify="left", font=("Segoe UI", 9, "bold")).grid(row=5, column=1, sticky="w", pady=(8, 0))
         wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
         wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
         wiki_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL + "#readme", new=2))
+        ai_link = ttk.Label(box, text="AI assistant", foreground="#1d4ed8", cursor="hand2", justify="left")
+        ai_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
+        ai_link.bind("<Button-1>", lambda _event: webbrowser.open(AI_ASSISTANT_URL, new=2))
         citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
-        citation_label.grid(row=7, column=1, sticky="w", pady=(10, 0))
+        citation_label.grid(row=8, column=1, sticky="w", pady=(10, 0))
         citation_label.bind("<Button-1>", lambda _event: self._copy_about_citation(win, citation_label))
-        ttk.Separator(box, orient="horizontal").grid(row=8, column=1, sticky="ew", pady=(12, 8))
-        ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=9, column=1, sticky="w")
+        ttk.Separator(box, orient="horizontal").grid(row=9, column=1, sticky="ew", pady=(12, 8))
+        ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=10, column=1, sticky="w")
         contact = ttk.Frame(box)
-        contact.grid(row=10, column=1, sticky="w", pady=(7, 0))
+        contact.grid(row=11, column=1, sticky="w", pady=(7, 0))
         ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
         linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
         linkedin_icon.grid(row=0, column=1, padx=(10, 0))
         linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL, new=2))
-        ttk.Button(box, text="Close", command=win.destroy).grid(row=11, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        ttk.Button(box, text="Close", command=win.destroy).grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
 
         win.update_idletasks()
         screen_width = max(1, win.winfo_screenwidth())

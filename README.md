@@ -497,6 +497,8 @@ Typical root structure:
 README.md
 LICENSE
 docs/
+  build_gpt_knowledge.py         # rebuilds the custom-GPT knowledge bundle
+  gpt_knowledge/                 # upload-ready user-assistant reference files
 images/                         # README/wiki screenshots and figures
 install/
 examples/                       # reserved for future examples
