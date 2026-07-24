@@ -5,6 +5,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,90 @@ class ImportHelperTests(unittest.TestCase):
             orca_input.validate_xyz_text("2\nbad\nO 0 0 nan\nH 0 0 1\n")
         with self.assertRaises(ValueError):
             orca_input.validate_xyz_text("3\nbad\nO 0 0 0\n")
+
+    @unittest.skipIf(orca_input.gemmi is None, "Gemmi is not installed")
+    def test_cif_symmetry_completes_inversion_generated_molecule(self):
+        cif = """data_inversion
+_cell_length_a 10
+_cell_length_b 10
+_cell_length_c 10
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_symmetry_space_group_name_H-M 'P -1'
+loop_
+_symmetry_equiv_pos_as_xyz
+'x,y,z'
+'-x,-y,-z'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+C1 C .45 .5 .5
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "inversion.cif"
+            path.write_text(cif, encoding="utf-8")
+            structure = orca_input.StructureParser.parse(str(path))
+        self.assertEqual([atom[0] for atom in structure.atoms], ["C", "C"])
+        self.assertAlmostEqual(orca_input.distance(*structure.atoms), 1.0, places=6)
+
+    @unittest.skipIf(orca_input.gemmi is None, "Gemmi is not installed")
+    def test_cif_without_generated_symmetry_keeps_existing_coordinates(self):
+        cif = """data_boundary
+_cell_length_a 10
+_cell_length_b 10
+_cell_length_c 10
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+_symmetry_space_group_name_H-M 'P 1'
+loop_
+_symmetry_equiv_pos_as_xyz
+'x,y,z'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+C1 C .98 .5 .5
+C2 C .08 .5 .5
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "boundary.cif"
+            path.write_text(cif, encoding="utf-8")
+            structure = orca_input.StructureParser.parse(str(path))
+        self.assertEqual(len(structure.atoms), 2)
+        self.assertAlmostEqual(orca_input.distance(*structure.atoms), 9.0, places=6)
+
+    def test_cif_fallback_does_not_silently_return_asymmetric_unit(self):
+        cif = """data_half
+_cell_length_a 10
+_cell_length_b 10
+_cell_length_c 10
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+loop_
+_space_group_symop_operation_xyz
+'x,y,z'
+'-x,-y,-z'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+C1 C .45 .5 .5
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "half.cif"
+            path.write_text(cif, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Gemmi"):
+                orca_input.StructureParser.parse_cif_fallback(str(path))
 
     def test_2d_detection(self):
         flat = orca_input.Structure([("C", 0.0, 0.0, 0.0), ("O", 1.2, 0.0, 0.0)])
@@ -319,7 +404,7 @@ $$$$
         actions = orca_input.MONITOR_ACTION_BUTTONS
         self.assertEqual(len(actions), 7)
         self.assertEqual([item[1] for item in actions], [
-            "Stop job", "Reconnect job", "Open .out", "Open folder", "Show summary",
+            "Stop job", "Reconnect", "Open .out", "Open folder", "Show summary",
             "Ask AI about progress", "Clear monitor",
         ])
         self.assertEqual(len({item[0] for item in actions}), len(actions))
@@ -337,6 +422,90 @@ $$$$
             orca_input.ACTIVE_ORCA_JOB_STATE_PATH.parent,
             orca_input.startup_news_cache_dir(),
         )
+
+    def test_completed_output_rerun_suggests_and_creates_safe_alternative(self):
+        app = object.__new__(orca_input.App)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inp_path = Path(tmpdir) / "finished.inp"
+            out_path = Path(tmpdir) / "finished.out"
+            inp_path.write_text("! B3LYP\n* xyz 0 1\n*\n", encoding="utf-8")
+            out_path.write_text("Program ORCA\nORCA TERMINATED NORMALLY\n", encoding="utf-8")
+            with mock.patch.object(orca_input.messagebox, "askyesnocancel", return_value=True) as confirm, \
+                    mock.patch.object(
+                        orca_input.filedialog, "asksaveasfilename",
+                        return_value=str(Path(tmpdir) / "finished_custom.inp"),
+                    ) as save_as:
+                selected = app._resolve_completed_job_rerun_path(str(inp_path))
+            self.assertEqual(selected, str(Path(tmpdir) / "finished_custom.inp"))
+            self.assertEqual(Path(selected).read_text(encoding="utf-8"), inp_path.read_text(encoding="utf-8"))
+        self.assertEqual(confirm.call_args.kwargs["icon"], "warning")
+        self.assertEqual(confirm.call_args.kwargs["default"], orca_input.messagebox.YES)
+        self.assertIn("finished_01.inp", confirm.call_args.args[1])
+        self.assertEqual(save_as.call_args.kwargs["initialfile"], "finished_01.inp")
+
+    def test_rerun_alternative_suffix_skips_existing_job_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inp_path = Path(tmpdir) / "job.inp"
+            inp_path.write_text("input", encoding="utf-8")
+            (Path(tmpdir) / "job_01.gbw").write_text("existing", encoding="utf-8")
+            self.assertEqual(
+                orca_input.App._suggest_rerun_input_path(str(inp_path)),
+                str(Path(tmpdir) / "job_02.inp"),
+            )
+
+    def test_overwrite_choice_requires_second_attention_confirmation(self):
+        app = object.__new__(orca_input.App)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inp_path = Path(tmpdir) / "finished.inp"
+            out_path = Path(tmpdir) / "finished.out"
+            inp_path.write_text("input", encoding="utf-8")
+            out_path.write_text("Program ORCA\nORCA TERMINATED NORMALLY\n", encoding="utf-8")
+            with mock.patch.object(
+                orca_input.messagebox, "askyesnocancel", side_effect=[False, True]
+            ) as confirm:
+                self.assertEqual(app._resolve_completed_job_rerun_path(str(inp_path)), str(inp_path))
+        self.assertEqual(confirm.call_count, 2)
+        self.assertIn("ARE YOU SURE?", confirm.call_args_list[1].args[1])
+        self.assertEqual(confirm.call_args_list[1].kwargs["default"], orca_input.messagebox.NO)
+
+    def test_no_on_second_overwrite_warning_uses_safe_alternative(self):
+        app = object.__new__(orca_input.App)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inp_path = Path(tmpdir) / "finished.inp"
+            out_path = Path(tmpdir) / "finished.out"
+            inp_path.write_text("input", encoding="utf-8")
+            out_path.write_text("Program ORCA\nORCA TERMINATED NORMALLY\n", encoding="utf-8")
+            with mock.patch.object(
+                orca_input.messagebox, "askyesnocancel", side_effect=[False, False]
+            ), mock.patch.object(
+                orca_input.filedialog, "asksaveasfilename",
+                return_value=str(Path(tmpdir) / "finished_01.inp"),
+            ):
+                selected = app._resolve_completed_job_rerun_path(str(inp_path))
+            self.assertEqual(selected, str(Path(tmpdir) / "finished_01.inp"))
+            self.assertTrue(Path(selected).is_file())
+
+    def test_cancelling_rerun_save_as_cancels_run(self):
+        app = object.__new__(orca_input.App)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inp_path = Path(tmpdir) / "finished.inp"
+            out_path = Path(tmpdir) / "finished.out"
+            inp_path.write_text("input", encoding="utf-8")
+            out_path.write_text("Program ORCA\nORCA TERMINATED NORMALLY\n", encoding="utf-8")
+            with mock.patch.object(orca_input.messagebox, "askyesnocancel", return_value=True), \
+                    mock.patch.object(orca_input.filedialog, "asksaveasfilename", return_value=""):
+                self.assertIsNone(app._resolve_completed_job_rerun_path(str(inp_path)))
+
+    def test_incomplete_output_does_not_prompt_before_rerun(self):
+        app = object.__new__(orca_input.App)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / "unfinished.out"
+            out_path.write_text("Program ORCA\nSCF ITERATION 4\n", encoding="utf-8")
+            inp_path = Path(tmpdir) / "unfinished.inp"
+            inp_path.write_text("input", encoding="utf-8")
+            with mock.patch.object(orca_input.messagebox, "askyesnocancel") as confirm:
+                self.assertEqual(app._resolve_completed_job_rerun_path(str(inp_path)), str(inp_path))
+                confirm.assert_not_called()
 
     def test_orca_completion_summary_is_minimal(self):
         self.assertEqual(

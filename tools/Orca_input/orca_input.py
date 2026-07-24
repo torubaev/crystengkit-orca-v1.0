@@ -74,7 +74,7 @@ ORCA_PROMPT_END_MARKER = "CRYSTENGKIT_ORCA_OUTPUT_COMPLETE_9F4C2A"
 ORCA_AGENT_OUTPUT_MAX_CHARS = 32000
 MONITOR_ACTION_BUTTONS = (
     ("stop", "Stop job", "stop_orca"),
-    ("link", "Reconnect job", "reconnect_saved_job"),
+    ("link", "Reconnect", "reconnect_saved_job"),
     ("document", "Open .out", "open_last_output"),
     ("folder", "Open folder", "open_last_output_folder"),
     ("summary", "Show summary", "show_project_summary"),
@@ -2800,18 +2800,134 @@ class StructureParser:
         doc = gemmi.cif.read_file(path)
         block = doc.sole_block()
         st = gemmi.make_small_structure_from_block(block)
-        atoms = []
-        for site in st.sites:
-            pos = st.cell.orthogonalize(site.fract)
-            atoms.append((clean_symbol(site.element.name), float(pos.x), float(pos.y), float(pos.z)))
-        if not atoms:
+        if not st.sites:
             raise ValueError("No atoms extracted from CIF.")
-        return Structure(atoms, title=f"{os.path.basename(path)} (gemmi)")
+
+        # Gemmi's ``st.sites`` is the asymmetric unit.  Expand it first, then
+        # traverse covalent bonds through neighbouring unit cells.  The latter
+        # is essential for molecules that straddle a unit-cell boundary.
+        unit_sites = []
+        for site in st.get_all_unit_cell_sites():
+            symbol = clean_symbol(site.element.name)
+            fract = np.array((float(site.fract.x), float(site.fract.y), float(site.fract.z)), dtype=float)
+            fract -= np.floor(fract)
+
+            duplicate = False
+            for old_symbol, old_fract in unit_sites:
+                if old_symbol != symbol:
+                    continue
+                delta = fract - old_fract
+                delta -= np.rint(delta)
+                cart = st.cell.orthogonalize(gemmi.Fractional(*delta))
+                if math.sqrt(cart.x * cart.x + cart.y * cart.y + cart.z * cart.z) < 1.0e-3:
+                    duplicate = True
+                    break
+            if not duplicate:
+                unit_sites.append((symbol, fract))
+
+        if not unit_sites:
+            raise ValueError("No atoms extracted from CIF after symmetry expansion.")
+
+        # Preserve the established CIF path byte-for-byte in intent for P1 and
+        # other files where symmetry creates no additional atomic positions.
+        if len(unit_sites) == len(st.sites):
+            atoms = []
+            for site in st.sites:
+                pos = st.cell.orthogonalize(site.fract)
+                atoms.append((clean_symbol(site.element.name), float(pos.x), float(pos.y), float(pos.z)))
+            return Structure(atoms, title=f"{os.path.basename(path)} (gemmi)")
+
+        adjacency = [set() for _ in unit_sites]
+        translations = tuple(
+            (tx, ty, tz)
+            for tx in (-1, 0, 1)
+            for ty in (-1, 0, 1)
+            for tz in (-1, 0, 1)
+        )
+        for i, (symbol_i, fract_i) in enumerate(unit_sites):
+            for j, (symbol_j, fract_j) in enumerate(unit_sites):
+                cutoff = 1.20 * (covalent_radius(symbol_i) + covalent_radius(symbol_j))
+                for shift in translations:
+                    if i == j and shift == (0, 0, 0):
+                        continue
+                    delta = fract_j + np.asarray(shift, dtype=float) - fract_i
+                    cart = st.cell.orthogonalize(gemmi.Fractional(*delta))
+                    bond_length = math.sqrt(cart.x * cart.x + cart.y * cart.y + cart.z * cart.z)
+                    if 0.1 < bond_length <= cutoff:
+                        adjacency[i].add((j, shift))
+
+        # Each asymmetric-unit atom is a seed.  A connected traversal supplies
+        # its missing symmetry mates, without returning every symmetry-related
+        # copy of an already complete molecule in the unit cell.
+        seeds = []
+        for site in st.sites:
+            symbol = clean_symbol(site.element.name)
+            raw = np.array((float(site.fract.x), float(site.fract.y), float(site.fract.z)), dtype=float)
+            normalized = raw - np.floor(raw)
+            best = None
+            for idx, (candidate_symbol, candidate_fract) in enumerate(unit_sites):
+                if candidate_symbol != symbol:
+                    continue
+                delta = normalized - candidate_fract
+                delta -= np.rint(delta)
+                cart = st.cell.orthogonalize(gemmi.Fractional(*delta))
+                metric = cart.x * cart.x + cart.y * cart.y + cart.z * cart.z
+                if best is None or metric < best[0]:
+                    best = (metric, idx)
+            if best is None or best[0] > 1.0e-4:
+                raise ValueError(f"Could not map CIF atom {site.label!r} after symmetry expansion.")
+            idx = best[1]
+            image = tuple(int(round(value)) for value in (raw - unit_sites[idx][1]))
+            seeds.append((idx, image))
+
+        atoms = []
+        covered_base_indices = set()
+        traversal_limit = max(5000, len(unit_sites) * 20)
+        for seed in seeds:
+            if seed[0] in covered_base_indices:
+                continue
+            component = set()
+            stack = [seed]
+            while stack:
+                node = stack.pop()
+                if node in component:
+                    continue
+                component.add(node)
+                if len(component) > traversal_limit:
+                    raise ValueError(
+                        "CIF symmetry expansion found an extended covalent network rather than an isolated "
+                        "molecule. Select or export a finite molecular cluster before creating an ORCA input."
+                    )
+                base_idx, image = node
+                for neighbour_idx, offset in adjacency[base_idx]:
+                    neighbour_image = tuple(image[k] + offset[k] for k in range(3))
+                    neighbour = (neighbour_idx, neighbour_image)
+                    if neighbour not in component:
+                        stack.append(neighbour)
+
+            covered_base_indices.update(base_idx for base_idx, _image in component)
+            for base_idx, image in sorted(component, key=lambda item: (item[1], item[0])):
+                symbol, fract = unit_sites[base_idx]
+                position = st.cell.orthogonalize(gemmi.Fractional(*(fract + np.asarray(image, dtype=float))))
+                atoms.append((symbol, float(position.x), float(position.y), float(position.z)))
+
+        if not atoms:
+            raise ValueError("No molecular atoms reconstructed from CIF.")
+        return Structure(atoms, title=f"{os.path.basename(path)} (symmetry-completed CIF)")
 
     @staticmethod
     def parse_cif_fallback(path: str) -> Structure:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             lines = [line.rstrip("\n") for line in f]
+
+        # The fallback reads atom-site coordinates only; it cannot safely
+        # reconstruct an asymmetric unit.  Never silently show half a molecule.
+        lowered = "\n".join(lines).lower()
+        if any(tag in lowered for tag in ("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz")):
+            raise ValueError(
+                "This CIF contains crystallographic symmetry, but the active Python does not have Gemmi. "
+                "Launch the Builder with the project .venv (or install Gemmi) to reconstruct the complete molecule."
+            )
 
         cell_keys = {
             "_cell_length_a": None,
@@ -7558,12 +7674,109 @@ class App(tk.Tk):
         self.status.configure(text=f"Reconnected to ORCA PID {pid}")
         self._schedule_monitor_poll(100)
 
-    def _start_orca_input(self, inp_path: str, orca_path: str, context: Dict):
+    @staticmethod
+    def _suggest_rerun_input_path(inp_path: str) -> str:
+        source = Path(inp_path)
+        for number in range(1, 10000):
+            candidate = source.with_name(f"{source.stem}_{number:02d}{source.suffix}")
+            if not any(source.parent.glob(f"{candidate.stem}.*")):
+                return str(candidate)
+        raise RuntimeError("Could not find an unused alternative job filename.")
+
+    def _save_rerun_input_as(self, inp_path: str, suggested_path: str) -> Optional[str]:
+        source = Path(inp_path).resolve()
+        suggestion = Path(suggested_path)
+        while True:
+            selected = filedialog.asksaveasfilename(
+                title="Save rerun input as",
+                defaultextension=".inp",
+                initialdir=str(suggestion.parent),
+                initialfile=suggestion.name,
+                filetypes=[("ORCA input files", "*.inp"), ("All files", "*.*")],
+                parent=self,
+            )
+            if not selected:
+                return None
+            destination = Path(selected).expanduser()
+            if destination.suffix.lower() != ".inp":
+                destination = destination.with_suffix(".inp")
+            if destination.resolve() == source:
+                messagebox.showwarning(
+                    "Choose an alternative filename",
+                    "The new input must use a different filename so the completed job is preserved.",
+                    parent=self,
+                )
+                continue
+            existing_output = str(destination.with_suffix(".out"))
+            output_ok, _reason = validate_orca_output_file(existing_output)
+            if output_ok:
+                messagebox.showwarning(
+                    "Choose an unused filename",
+                    "That filename also belongs to a completed ORCA job. Choose another name.",
+                    parent=self,
+                )
+                suggestion = Path(self._suggest_rerun_input_path(str(destination)))
+                continue
+            shutil.copy2(source, destination)
+            return str(destination)
+
+    def _resolve_completed_job_rerun_path(self, inp_path: str) -> Optional[str]:
+        out_path = str(Path(inp_path).with_suffix(".out"))
+        output_ok, _reason = validate_orca_output_file(out_path)
+        if not output_ok:
+            return inp_path
+        alternative = self._suggest_rerun_input_path(inp_path)
+        choice = messagebox.askyesnocancel(
+            "Attention: completed ORCA job",
+            "\u26a0\ufe0f  ATTENTION  \u26a0\ufe0f\n\n"
+            "A successfully finished ORCA job already uses this filename:\n\n"
+            f"{out_path}\n\n"
+            "Rerunning with the same name will overwrite its .out, .gbw, .xyz, .opt, "
+            "and other result files.\n\n"
+            f"YES — use the safe alternative name (recommended):\n{alternative}\n\n"
+            "NO — overwrite the existing completed job\n\n"
+            "CANCEL — do not run",
+            icon="warning",
+            default=messagebox.YES,
+            parent=self,
+        )
+        if choice is None:
+            return None
+        if choice is False:
+            overwrite = messagebox.askyesnocancel(
+                "ATTENTION — Are you sure?",
+                "\u26a0\ufe0f  ATTENTION  \u26a0\ufe0f\n\n"
+                "ARE YOU SURE?\n\n"
+                "This will permanently overwrite files from the successfully "
+                "completed ORCA job, including its .out and .gbw files.\n\n"
+                "YES — overwrite the completed job\n\n"
+                f"NO — use the safe alternative instead:\n{alternative}\n\n"
+                "CANCEL — do not run",
+                icon="warning",
+                default=messagebox.NO,
+                parent=self,
+            )
+            if overwrite is None:
+                return None
+            if overwrite is True:
+                return inp_path
+        return self._save_rerun_input_as(inp_path, alternative)
+
+    def _start_orca_input(self, inp_path: str, orca_path: str, context: Dict) -> bool:
         if not os.path.isfile(inp_path):
             raise FileNotFoundError(f"ORCA input file was not found: {inp_path}")
         if Path(inp_path).suffix.lower() != ".inp":
             raise ValueError(f"Queued ORCA jobs must be .inp files: {inp_path}")
+        original_inp_path = inp_path
+        inp_path = self._resolve_completed_job_rerun_path(inp_path)
+        if not inp_path:
+            self.status.configure(text="Rerun cancelled; completed ORCA output was preserved.")
+            return False
         out_path = str(Path(inp_path).with_suffix(".out"))
+        if inp_path != original_inp_path:
+            context = dict(context)
+            context["input_path"] = inp_path
+            context["rerun_original_input_path"] = original_inp_path
         self.current_input_path = inp_path
         self.last_output_path = out_path
         args = [orca_path, os.path.basename(inp_path)]
@@ -7603,6 +7816,7 @@ class App(tk.Tk):
         self.append_monitor(f"$ {' '.join(args)}\nWorking directory: {workdir}\nOutput file: {out_path}\n\n")
         self._set_monitor_progress(5.0)
         self._schedule_monitor_poll()
+        return True
 
     def _start_job_queue(self, orca_path: str):
         if not self._has_queued_jobs():
@@ -7631,7 +7845,15 @@ class App(tk.Tk):
             return
         try:
             context = self._context_for_queued_input(job.input_path, orca_path)
-            self._start_orca_input(job.input_path, orca_path, context)
+            if not self._start_orca_input(job.input_path, orca_path, context):
+                self.job_queue.mark_current("stopped", "Rerun cancelled; completed output preserved.")
+                self.active_queue_job = None
+                self.queue_running = False
+                self._save_job_queue()
+                self._refresh_queue_tree()
+                self.append_monitor(
+                    "Queue paused: rerun cancelled and completed output preserved.\n"
+                )
         except Exception as exc:
             self.job_queue.mark_current("failed", str(exc))
             self.active_queue_job = None
