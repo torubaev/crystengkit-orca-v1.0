@@ -4,3 +4,4 @@ matplotlib
 periodictable
 gemmi
 Pillow
+PyYAML

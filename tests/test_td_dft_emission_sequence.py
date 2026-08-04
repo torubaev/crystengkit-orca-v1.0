@@ -187,15 +187,16 @@ H  0.00000000  0.00000000  1.00000000
             manifest = prepare_emission_sequence(settings)
 
             seq_dir = Path(manifest.steps[0].input_path).parent
+            prefix = "abs_CAM-B3LYP_def2-TZVP_CHLOROFORM_td-dft"
             self.assertTrue((seq_dir / "emission_sequence.json").is_file())
-            self.assertTrue((seq_dir / "abs_td-dft_emission-optimization_S1.inp").is_file())
+            self.assertTrue((seq_dir / f"{prefix}_emission-optimization_S1.inp").is_file())
 
             Path(manifest.steps[0].output_path).write_text(OPT_OUT, encoding="utf-8")
             manifest = advance_after_optimization(seq_dir)
 
-            vertical = seq_dir / "abs_td-dft_emission_S1.inp"
+            vertical = seq_dir / f"{prefix}_emission_S1.inp"
             self.assertTrue(vertical.is_file())
-            self.assertTrue((seq_dir / "abs_td-dft_emission-optimization_S1_final.xyz").is_file())
+            self.assertTrue((seq_dir / f"{prefix}_emission-optimization_S1_final.xyz").is_file())
             self.assertIn("0.10000000", vertical.read_text(encoding="utf-8"))
 
             vertical.with_suffix(".out").write_text(VERT_OUT, encoding="utf-8")
@@ -204,9 +205,9 @@ H  0.00000000  0.00000000  1.00000000
             self.assertAlmostEqual(result.emission_energy_ev, 2.25, places=4)
             self.assertAlmostEqual(result.emission_wavelength_nm, 1239.841984 / result.emission_energy_ev)
             self.assertAlmostEqual(result.stokes_shift_ev, 0.25, places=4)
-            self.assertTrue((seq_dir / "emission_result.json").is_file())
-            self.assertTrue((seq_dir / "emission_spectrum.csv").is_file())
-            self.assertTrue((seq_dir / "emission_summary.txt").is_file())
+            self.assertTrue((seq_dir / f"{prefix}_emission_S1_result.json").is_file())
+            self.assertTrue((seq_dir / f"{prefix}_emission_S1_spectrum.csv").is_file())
+            self.assertTrue((seq_dir / f"{prefix}_emission_S1_summary.txt").is_file())
 
     def test_emission_filename_replaces_absorption_suffix_and_uses_actual_method(self):
         self.assertEqual(

@@ -24,6 +24,7 @@ try:
         normalize_spectrum,
         parse_orca_tddft_output,
     )
+    from .td_dft_naming import identified_output_stem
 except ImportError:  # direct execution from tools/TD_DFT
     from td_dft_module import (  # type: ignore
         HC_EV_NM,
@@ -32,6 +33,7 @@ except ImportError:  # direct execution from tools/TD_DFT
         normalize_spectrum,
         parse_orca_tddft_output,
     )
+    from td_dft_naming import identified_output_stem  # type: ignore
 
 
 SCHEMA_VERSION = 1
@@ -118,7 +120,7 @@ def _td_method_filename_tag(td_method: str) -> str:
 
 
 def _td_source_filename_prefix(source_output: PathLike) -> str:
-    stem = Path(source_output).stem
+    stem = identified_output_stem(str(source_output))
     stem = re.sub(r"_(?:td-?dft|tda)_(?:absorption|excited-state-optimization|excited-state-frequencies|emission(?:-optimization)?)(?:_S\d+)?$", "", stem, flags=re.I)
     stem = re.sub(r"_sp_(?:td-?dft|tda)$", "", stem, flags=re.I)
     stem = re.sub(r"_(?:td-?dft|tda)$", "", stem, flags=re.I)
@@ -457,11 +459,12 @@ def build_emission_broadened_spectrum(result: EmissionResult, settings: Emission
 def write_emission_outputs(sequence_dir: PathLike, result: EmissionResult, settings: EmissionSequenceSettings) -> Dict[str, str]:
     root = Path(sequence_dir)
     root.mkdir(parents=True, exist_ok=True)
+    prefix = emission_filename_stem(settings.source_output, settings.td_method, "emission", settings.target_root)
     paths = {
-        "state_csv": root / "emission_state.csv",
-        "spectrum_csv": root / "emission_spectrum.csv",
-        "result_json": root / "emission_result.json",
-        "summary_txt": root / "emission_summary.txt",
+        "state_csv": root / f"{prefix}_state.csv",
+        "spectrum_csv": root / f"{prefix}_spectrum.csv",
+        "result_json": root / f"{prefix}_result.json",
+        "summary_txt": root / f"{prefix}_summary.txt",
     }
     with paths["state_csv"].open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -493,7 +496,7 @@ def write_emission_outputs(sequence_dir: PathLike, result: EmissionResult, setti
             ax.set_ylabel("Relative intensity")
             ax.set_title("Simulated vertical fluorescence band")
             fig.tight_layout()
-            plot_path = root / f"emission_spectrum.{suffix}"
+            plot_path = root / f"{prefix}_spectrum.{suffix}"
             fig.savefig(plot_path, dpi=220)
             plt.close(fig)
             paths[f"spectrum_{suffix}"] = plot_path

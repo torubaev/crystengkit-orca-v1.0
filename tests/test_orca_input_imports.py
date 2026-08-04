@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,29 @@ spec.loader.exec_module(orca_input)
 
 
 class ImportHelperTests(unittest.TestCase):
+    def test_tddft_builder_context_exposes_existing_method_and_geometry_controls(self):
+        app = object.__new__(orca_input.App)
+        value = lambda item: SimpleNamespace(get=lambda: item)
+        app.functional_var = value("CAM-B3LYP")
+        app.basis_var = value("def2-SVP")
+        app.dispersion_var = value("D3BJ")
+        app.grid_var = value("DefGrid2")
+        app.ri_jcosx_var = value(True)
+        app.tight_scf_var = value(True)
+        app.solvent_var = value("Chloroform")
+        app.charge_var = value(0); app.mult_var = value(1)
+        app.multiwfn_path_var = value(""); app.orca_path_var = value("C:/ORCA/orca.exe")
+        app.freeze_heavy_var = value(False); app.freeze_all_var = value(False)
+        app.job_freq_var = value(True)
+        app.structure_source_path = "molecule.xyz"
+        app.structure = orca_input.Structure([("H", 0.0, 0.0, 0.0)], "molecule")
+        app._available_output_path = lambda: ""
+        context = app.get_tddft_global_context()
+        self.assertEqual(context["dispersion"], "D3BJ")
+        self.assertEqual(context["grid"], "DefGrid2")
+        self.assertTrue(context["ri_jcosx"])
+        self.assertEqual(context["atoms"][0][0], "H")
+        self.assertTrue(context["job_freq"])
     class _Var:
         def __init__(self, value):
             self.value = value

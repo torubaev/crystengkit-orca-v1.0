@@ -127,11 +127,78 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ### TD-DFT Setup, Analysis, and Visualization
 
-The TD-DFT module configures ORCA TD-DFT or TDA vertical excitations, singlet/triplet manifolds, target roots, excited-state optimization, excited-state frequencies, and absorption-to-emission sequences. When opened from the Builder, validated settings are synchronized into exactly one `%tddft` block while the Builder retains ownership of the functional, basis set, solvent, charge, multiplicity, and complete ORCA input.
+The TD-DFT window can prepare one calculation or run a complete absorption-to-emission workflow. In Builder-connected mode it reuses the current molecular structure, functional, basis set, dispersion correction, solvent, charge, multiplicity, constraints, and ORCA executable. The TD-DFT window supplies the TD-DFT/TDA choice, number of roots, target state, and solver settings.
 
-Every generated TD-DFT/TDA block requests natural transition orbitals with `DoNTO true` and `NTOThresh 1e-4`. Post-processing can parse excited states and oscillator strengths, plot stick or Gaussian-broadened UV-Vis spectra, export tables and images, generate selected-state NTO hole/electron cubes through a validated Multiwfn workflow, and display signed cubes with molecule, bond, label, isovalue, opacity, screenshot, and cube-export controls. Associated `.gbw`, `.wfn`, `.wfx`, Molden, and cube files are detected beside the ORCA output where applicable.
+The complete workflow runs one required calculation at a time:
 
-TD-DFT input and emission-sequence filenames encode the structure, functional, basis, optional solvent, actual `td-dft`/`tda` method, and analysis step. CSV, spectrum, and screenshot dialogs suggest descriptive filenames while remaining editable.
+```text
+Starting molecular structure
+    -> S0 geometry optimization
+    -> optional S0 frequency check
+    -> vertical absorption at the optimized S0 geometry
+    -> optimization of the selected S1/Sn state
+    -> vertical emission at the optimized excited-state geometry
+    -> results and provenance report
+```
+
+Select **Run complete workflow...**, choose a project directory, review the summary, and confirm. A later stage starts only after the preceding stage terminates normally and produces its required geometry and `.gbw` wavefunction. A failed optimization, missing file, important imaginary frequency, or inconsistent method stops the sequence instead of launching downstream jobs.
+
+Every generated TD-DFT/TDA job requests natural transition orbitals. After absorption or emission finishes, load its `.out` in **Post-processing**, select a state, and use **Generate all analyses** to prepare the NTO hole/electron cubes and the other supported density analyses. Spectrum tables and plots do not require Multiwfn; NTO cube generation requires the matching `.gbw` and a validated Multiwfn executable.
+
+<details>
+<summary><strong>More details: inputs, outputs, continuation, and safeguards</strong></summary>
+
+#### Starting inputs
+
+For a new workflow, first load and inspect a molecular `.cif`, `.xyz`, or another supported structure in the Builder. The complete workflow reads the current Builder geometry and method directly; it does not require a second copy of those settings in TD-DFT.
+
+Complete TD-DFT workflows always start from the molecular geometry currently loaded in Builder (`.cif`, `.xyz`, or another accepted geometry source) and write every stage into the newly selected project folder. Drop-in continuation from an external `.out` is disabled to prevent another molecule, geometry, or wavefunction from being mixed into the project. Existing `.out` files can still be loaded in **Post-processing** for analysis, but they cannot become a workflow starting stage.
+
+#### Calculation sequence
+
+- `01_S0_opt`: optimizes the electronic ground-state geometry.
+- `02_S0_freq`: optionally checks that the optimized S0 structure is a minimum. A substantial imaginary frequency changes the workflow to `NEEDS_REVIEW`.
+- `03_absorption`: calculates vertical excited states at the optimized S0 geometry without `Opt`.
+- `04_S1_opt`: optimizes the selected excited-state root starting from the optimized S0 geometry. For another selected root, the same stage represents Sn rather than necessarily S1.
+- `05_emission`: calculates vertical emission at the optimized excited-state geometry without reusing the S0 geometry.
+
+All principal stages use one consistent functional, basis set, auxiliary basis, dispersion correction, RIJCOSX choice, solvent treatment, grid, SCF setting, and TD-DFT/TDA choice where applicable. Geometry and wavefunction handoffs are explicit: S0 products feed absorption and excited-state optimization, and excited-state products feed emission.
+
+#### Project outputs
+
+Each numbered directory contains its stage-specific `.inp`, `.out`, `.gbw`, and extracted geometry where applicable. The project also contains:
+
+```text
+config.yaml
+workflow_status.json
+input/initial_geometry.xyz
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_absorption-states.csv
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_emission-summary.csv
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_workflow-summary.json
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_workflow-summary.csv
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_provenance.json
+restarts/
+```
+
+`workflow_status.json` records `NOT_STARTED`, `RUNNING`, `COMPLETED`, `FAILED`, or `NEEDS_REVIEW` states. Completed calculations are not silently overwritten. Failed or interrupted artifacts are preserved under `restarts/` before regeneration.
+
+#### Processes and memory
+
+Workflow stages are always sequential, but each individual ORCA job may use several processes. `Processes = 1` runs serially and does not require an MPI launcher. Values above 1 require a working ORCA-compatible `mpiexec` installation. `MaxCore` is specified in MB per process, so the approximate requested memory increases with the number of processes.
+
+#### Analysis outputs
+
+Post-processing reads excitation energies, wavelengths, oscillator strengths, and printed orbital contributions from a completed TD-DFT/TDA output. It can export state tables, broadened spectra, images, NTO hole/electron cubes, difference and transition densities, attachment/detachment results, and screenshots when their required source files and external tools are available.
+
+TD-DFT calculation and analysis filenames carry the calculation identity:
+
+```text
+<compound>_<functional>_<basis>_[solvent]_<tda-or-td-dft>_<calculation-or-artifact>.<extension>
+```
+
+For example: `B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption.out`, `B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption_uv-vis-spectrum.png`, and `B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption_NTO-pair.png`. The solvent part is omitted for gas-phase calculations. Export dialogs suggest these traceable names but still allow them to be edited before saving.
+
+</details>
 
 ### HOMO-LUMO Plotter
 
@@ -204,11 +271,18 @@ The prompt asks only for the current stage and convergence trend, evidence of lo
 
 ### Configure and Analyze a TD-DFT Job
 
-1. Select `TD-DFT / UV-Vis` in the Builder and configure TD-DFT or TDA, roots, manifold, and the required vertical/optimization/frequency steps.
-2. Select `Show ORCA Block` to validate the settings, synchronize the `%tddft` block, and return to the complete Builder input preview.
-3. Run the absorption job. For fluorescence, load the completed absorption output in TD-DFT post-processing and prepare the excited-state optimization and vertical-emission sequence for the selected root.
-4. Load a completed output to inspect the state table and UV-Vis spectrum. Select a state to generate its analysis package and dominant NTO hole/electron cubes when the matching `.gbw` and validated Multiwfn executable are available.
-5. Use the CSV, image, screenshot, and cube export controls; the proposed artifact names can be edited before saving.
+#### Complete workflow: short version
+
+1. Load the starting structure in the Builder and verify the molecule with **Structure preview**.
+2. Set the functional, basis, dispersion, solvent, charge, multiplicity, grid, TightSCF, and RIJCOSX options in the Builder.
+3. Enable **TD-DFT / UV-Vis** and open its setup window.
+4. Choose TD-DFT or TDA, the number of roots, and the target state/root. NTO preparation is enabled automatically.
+5. Choose whether to validate S0 with a separate frequency calculation. Set `Processes = 1` for a serial ORCA installation, or use more processes only when MPI is configured.
+6. Click **Run complete workflow...**, choose a project directory, review the summary, and confirm.
+7. Let the program run S0 optimization, optional frequencies, absorption, excited-state optimization, and emission sequentially. If a required stage fails or needs review, the workflow stops.
+8. Load the completed absorption or emission `.out` in **Post-processing** to plot the spectrum, export states, and generate NTO or density analyses.
+
+For a single manually configured TD-DFT job instead of the full sequence, use **Show ORCA Block** to synchronize exactly one `%tddft` block with the Builder and run it normally.
 
 ### Make Figures After a Calculation
 

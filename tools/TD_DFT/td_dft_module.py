@@ -27,6 +27,10 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 import app_identity as _app_identity
+try:
+    from .td_dft_naming import identified_output_stem
+except ImportError:
+    from td_dft_naming import identified_output_stem  # type: ignore
 
 configure_tk_window_identity = _app_identity.configure_tk_window_identity
 set_windows_app_id = _app_identity.set_windows_app_id
@@ -601,7 +605,7 @@ def suggested_tddft_export_path(output_path: str, artifact: str, suffix: str) ->
     extension = str(suffix or "")
     if not extension.startswith("."):
         extension = "." + extension
-    return source.with_name(f"{source.stem}_{tag or 'export'}{extension.lower()}")
+    return source.with_name(f"{identified_output_stem(str(source))}_{tag or 'export'}{extension.lower()}")
 
 
 def detect_associated_files(output_path: str) -> Dict[str, str]:
@@ -674,7 +678,7 @@ def auto_detect_multiwfn_path(saved: str = "") -> str:
 
 
 class TDDFTWindow(tk.Toplevel):
-    def __init__(self, parent, settings: Dict, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None):
+    def __init__(self, parent, settings: Dict, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None, on_run_strict_workflow=None):
         super().__init__(parent)
         configure_tk_window_identity(self, "TDDFT")
         self.title("TD-DFT setup, analysis, and visualization")
@@ -688,6 +692,7 @@ class TDDFTWindow(tk.Toplevel):
         self.minsize(min(640, window_width), min(560, window_height))
         configure_builder_ui_style(self)
         self.on_apply, self.on_close, self.on_run_emission_sequence = on_apply, on_close, on_run_emission_sequence
+        self.on_run_strict_workflow = on_run_strict_workflow
         self.states, self.output_path = [], ""
         self.builder_enabled = bool(on_apply)
         self.builder_context: Dict = {}
@@ -721,6 +726,11 @@ class TDDFTWindow(tk.Toplevel):
         self.excited_state_freq_var = self.vars["excited_state_frequencies"]
         self.workflow_var = tk.StringVar(value=self._workflow_from_settings())
         self.workflow_summary_var = tk.StringVar()
+        self.strict_s0_frequency_var = tk.BooleanVar(value=True)
+        self.strict_imaginary_threshold_var = tk.StringVar(value="-30")
+        self.strict_nprocs_var = tk.StringVar(value=str((builder_context or {}).get("nprocs") or 1))
+        self.strict_maxcore_var = tk.StringVar(value=str((builder_context or {}).get("maxcore_mb") or 4000))
+        self.strict_status_var = tk.StringVar(value="Uses the current Builder geometry/method and the TD-DFT settings above.")
         self.workflow_var.trace_add("write", lambda *_args: self._apply_workflow_selection())
         for key in ("nroots", "root", "td_method", "manifold", "maxdim"):
             self.vars[key].trace_add("write", lambda *_args: self._sync_calculation_dependencies())
@@ -813,6 +823,19 @@ class TDDFTWindow(tk.Toplevel):
         apply_box = ttk.Frame(setup); apply_box.grid(row=2, column=1, sticky="e")
         ttk.Label(apply_box, text="NTO generation: enabled for all calculated states", style="Muted.TLabel").pack(anchor="e", pady=(0, 3))
         ttk.Button(apply_box, text="Show ORCA Block", command=self._apply, style="Primary.TButton").pack(anchor="e")
+
+        strict = ttk.LabelFrame(setup, text="Complete sequential workflow", padding=8)
+        strict.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(9, 0))
+        ttk.Checkbutton(strict, text="Validate optimized S0 with a separate frequency calculation", variable=self.strict_s0_frequency_var).grid(row=0, column=0, columnspan=7, sticky="w")
+        ttk.Label(strict, text="Imaginary threshold / cm⁻¹").grid(row=1, column=0, sticky="w", pady=(5, 0))
+        ttk.Entry(strict, textvariable=self.strict_imaginary_threshold_var, width=8).grid(row=1, column=1, sticky="w", padx=(5, 12), pady=(5, 0))
+        ttk.Label(strict, text="Processes").grid(row=1, column=2, sticky="w", pady=(5, 0))
+        ttk.Entry(strict, textvariable=self.strict_nprocs_var, width=7).grid(row=1, column=3, sticky="w", padx=(5, 12), pady=(5, 0))
+        ttk.Label(strict, text="MaxCore / MB per process").grid(row=1, column=4, sticky="w", pady=(5, 0))
+        ttk.Entry(strict, textvariable=self.strict_maxcore_var, width=8).grid(row=1, column=5, sticky="w", padx=(5, 12), pady=(5, 0))
+        ttk.Button(strict, text="Run complete workflow...", command=self._run_strict_workflow, style="Primary.TButton").grid(row=1, column=6, sticky="e", pady=(5, 0))
+        strict.columnconfigure(6, weight=1)
+        ttk.Label(strict, textvariable=self.strict_status_var, style="Muted.TLabel", wraplength=650, justify="left").grid(row=2, column=0, columnspan=7, sticky="w", pady=(6, 0))
 
         spectrum = ttk.LabelFrame(root, text="Spectrum options", padding=10); spectrum.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         spectrum.columnconfigure(0, weight=1); spectrum.columnconfigure(1, weight=1); spectrum.columnconfigure(2, weight=1); spectrum.columnconfigure(3, weight=1)
@@ -1152,9 +1175,11 @@ class TDDFTWindow(tk.Toplevel):
     def _apply(self):
         def action():
             data = self._settings()
-            source_gbw = self.associated_files.get(".gbw", "") if self.output_path else ""
-            data["source_absorption_output"] = str(self.output_path or "")
-            data["source_absorption_gbw"] = str(source_gbw or "")
+            # A loaded output belongs to Post-processing only. Never leak its
+            # geometry or wavefunction into a newly generated Builder input.
+            source_gbw = ""
+            data["source_absorption_output"] = ""
+            data["source_absorption_gbw"] = ""
             block = build_tddft_orca_fragment(data, source_gbw)
             self._confirm_tddft_memory_risk(data)
             self.clipboard_clear(); self.clipboard_append(block)
@@ -1167,6 +1192,126 @@ class TDDFTWindow(tk.Toplevel):
                 self.connection_status_var.set("TD-DFT block generated. No ORCA Builder is connected.")
                 messagebox.showinfo("ORCA TD-DFT block", block + "\n\nCopied to the clipboard.\n\nNo ORCA Builder is connected.", parent=self)
         self._guard("TD-DFT settings", action)
+
+    def _run_strict_workflow(self):
+        def action():
+            data = self._settings()
+            source_output = ""
+            # Loaded outputs are for post-processing only, never workflow input.
+            if False and self.output_path:
+                use_loaded = messagebox.askyesnocancel(
+                    "Workflow starting point",
+                    f"A completed ORCA output is loaded:\n{self.output_path}\n\n"
+                    "YES — inspect it and continue from that completed stage\n\n"
+                    "NO — start from the current Builder geometry\n\n"
+                    "CANCEL — do not start",
+                    parent=self,
+                )
+                if use_loaded is None:
+                    return
+                if use_loaded:
+                    source_output = self.output_path
+            if not self.on_run_strict_workflow:
+                raise ValueError(
+                    "Complete workflows must start from a geometry loaded in ORCA Input Builder. "
+                    "External .out drop-in continuation is disabled to prevent cross-project contamination."
+                )
+            options = {
+                "frequency_enabled": bool(self.strict_s0_frequency_var.get()),
+                "imaginary_threshold_cm1": float(self.strict_imaginary_threshold_var.get()),
+                "nprocs": int(self.strict_nprocs_var.get()),
+                "maxcore_mb": int(self.strict_maxcore_var.get()),
+                "td_method": data["td_method"],
+                "nroots": data["nroots"],
+                "target_root": data["root"],
+                "target_manifold": data["target_manifold"],
+                "maxdim": data["maxdim"],
+                "maxiter": data["maxiter"],
+                "source_output": source_output,
+            }
+            if options["nprocs"] < 1 or options["maxcore_mb"] < 1:
+                raise ValueError("Processes and MaxCore must be positive integers.")
+            project = filedialog.askdirectory(parent=self, title="Choose or create the complete TD-DFT workflow directory", mustexist=False)
+            if not project:
+                return
+            summary = (
+                "Starting source: current ORCA Builder geometry and method\n"
+                "External .out reuse: disabled\n"
+                f"Excited states: {options['td_method']}, {options['nroots']} roots, target "
+                f"{options['target_manifold']} {options['target_root']}\n"
+                f"S0 frequency validation: {'yes' if options['frequency_enabled'] else 'no'}\n"
+                f"Resources: {options['nprocs']} processes, {options['maxcore_mb']} MB MaxCore\n\n"
+                "Run the complete sequential workflow now?"
+            )
+            if not messagebox.askokcancel("Complete TD-DFT workflow", summary, parent=self):
+                return
+            if self.on_run_strict_workflow:
+                result = self.on_run_strict_workflow(project, options)
+                self.strict_status_var.set(str(result or "Complete workflow started."))
+            else:
+                self._run_external_workflow_standalone(project, options)
+        self._guard("Complete TD-DFT workflow", action)
+
+    def _run_external_workflow_standalone(self, project_dir: str, options: Dict) -> None:
+        raise ValueError(
+            "External .out drop-in continuation is disabled. Load a CIF, XYZ, or another accepted geometry "
+            "in ORCA Input Builder and start a fresh workflow in the selected project folder."
+        )
+        source_output = str(options.get("source_output", "") or "").strip()
+        if not source_output:
+            raise ValueError("Standalone continuation requires a loaded completed ORCA output.")
+        orca_path = str(self.builder_context.get("orca_path", "") or "").strip().strip('"')
+        if not orca_path or not Path(orca_path).is_file():
+            orca_path = filedialog.askopenfilename(
+                parent=self, title="Select the ORCA executable",
+                filetypes=[("ORCA executable", "orca.exe orca"), ("All files", "*.*")],
+            )
+        if not orca_path:
+            return
+        from .workflow import WorkflowEngine, inspect_external_workflow_source, save_config
+        from .workflow.orca import extract_geometry
+
+        project = Path(project_dir).expanduser().resolve()
+        source = inspect_external_workflow_source(
+            source_output, orca_executable=orca_path, target_root=int(options["target_root"]),
+            nprocs=int(options["nprocs"]), maxcore_mb=int(options["maxcore_mb"]),
+            frequency_enabled=bool(options["frequency_enabled"]),
+            imaginary_threshold_cm1=float(options["imaginary_threshold_cm1"]),
+        )
+        initial = project / "input" / "initial_geometry.xyz"
+        initial.parent.mkdir(parents=True, exist_ok=True)
+        extract_geometry(Path(source.output_path), initial, f"Geometry adopted from external {source.stage}")
+        source.config.system.initial_xyz = str(initial)
+        if source.stage != "es_opt":
+            source.config.excited_states.target_multiplicity = str(options["target_manifold"]).lower()
+        save_config(source.config, str(project / "config.yaml"))
+        engine = WorkflowEngine(source.config, str(project))
+        engine.import_completed_stage(source.stage, source.output_path, source.input_path, source.gbw_path)
+        next_stage = engine.next_stage_after(source.stage)
+        if next_stage is None:
+            engine.write_reports()
+            self.strict_status_var.set(f"Loaded stage is complete. Reports: {engine.results_dir}")
+            return
+        self.strict_status_var.set(f"Validated external {source.stage}; starting {next_stage}...")
+
+        def worker():
+            try:
+                start = engine.stages.index(next_stage)
+                for stage in engine.stages[start:]:
+                    self.after(0, lambda name=stage: self.strict_status_var.set(f"Running {name}..."))
+                    engine.run_stage(stage)
+                    if engine.records[stage].status.value != "COMPLETED":
+                        raise RuntimeError(f"Workflow paused after {stage}: {engine.records[stage].message}")
+                engine.write_reports()
+                message = f"Complete workflow finished. Results: {engine.results_dir}"
+                self.after(0, lambda: self.strict_status_var.set(message))
+                self.after(0, lambda: messagebox.showinfo("Complete TD-DFT workflow", message, parent=self))
+            except Exception as exc:
+                message = str(exc)
+                self.after(0, lambda: self.strict_status_var.set(f"Workflow stopped: {message}"))
+                self.after(0, lambda: messagebox.showerror("Complete TD-DFT workflow", message, parent=self))
+
+        threading.Thread(target=worker, daemon=True).start()
     def _load(self):
         def action():
             path = filedialog.askopenfilename(parent=self, filetypes=[("ORCA output", "*.out"), ("All files", "*.*")]);
@@ -1244,6 +1389,10 @@ class TDDFTWindow(tk.Toplevel):
         return emission
 
     def _prepare_emission_sequence_manifest(self, run_automatically: bool = False):
+        raise ValueError(
+            "Drop-in emission continuation from a loaded .out is disabled to prevent cross-project contamination. "
+            "Start the complete workflow from the geometry currently loaded in ORCA Input Builder."
+        )
         if not self.output_path:
             raise ValueError("Load a completed absorption TD-DFT output first.")
         emission = self._emission_module()
@@ -1321,7 +1470,17 @@ class TDDFTWindow(tk.Toplevel):
         self.update_progress(10, "Reading ORCA TD-DFT output...")
         inspection = inspect_tddft_absorption_source(str(path))
         if not inspection["verified"]:
-            raise ValueError(inspection["message"])
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+            if "ORCA TERMINATED NORMALLY" not in text.upper():
+                raise ValueError(inspection["message"])
+            self.states = []
+            self.output_path = str(Path(path).resolve())
+            self.tree.delete(*self.tree.get_children())
+            self.output_label.configure(text=f"{self.output_path}\nCompleted ORCA output loaded for workflow continuation.")
+            self.workdir_var.set(str(Path(self.output_path).parent))
+            self._detect_files()
+            self.update_progress(100, "Completed ORCA output loaded for workflow continuation.", "darkgreen")
+            return
         self.states = parse_orca_tddft_output(str(path))
         self.output_path = str(Path(path).resolve())
         try:
@@ -1478,8 +1637,9 @@ class TDDFTWindow(tk.Toplevel):
             directory = filedialog.askdirectory(parent=self, title="Export generated cube files");
             if not directory: return
             for source in files:
-                target = Path(directory) / source.name; counter = 1
-                while target.exists(): target = Path(directory) / f"{source.stem}_{counter}{source.suffix}"; counter += 1
+                suggested = suggested_tddft_export_path(self.output_path, source.stem, source.suffix)
+                target = Path(directory) / suggested.name; counter = 1
+                while target.exists(): target = Path(directory) / f"{suggested.stem}_{counter}{source.suffix}"; counter += 1
                 shutil.copy2(source, target)
         self._guard("Export cubes", action)
 
@@ -1492,7 +1652,7 @@ class TDDFTWindow(tk.Toplevel):
         self._guard("Open analysis directory", action)
 
 
-def open_tddft_window(parent=None, initial_settings=None, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None) -> TDDFTWindow:
+def open_tddft_window(parent=None, initial_settings=None, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None, on_run_strict_workflow=None) -> TDDFTWindow:
     """Open one Builder-connected TD-DFT ``Toplevel`` without creating a new Tk root."""
     if parent is None:
         raise ValueError("A Tk parent is required when embedding the TD-DFT window.")
@@ -1503,7 +1663,20 @@ def open_tddft_window(parent=None, initial_settings=None, on_apply=None, on_clos
         on_close=on_close,
         builder_context=builder_context,
         on_run_emission_sequence=on_run_emission_sequence,
+        on_run_strict_workflow=on_run_strict_workflow,
     )
+
+
+def prepare_strict_tddft_workflow(config_path: str, project_dir: str, *, generate_slurm: bool = False):
+    """Stable programmatic bridge from the TD-DFT module to the strict engine.
+
+    Preparation only writes project artifacts. It never launches ORCA or
+    submits scheduler jobs implicitly.
+    """
+    from .workflow import WorkflowEngine, load_config
+
+    engine = WorkflowEngine(load_config(config_path), project_dir)
+    return engine.generate_slurm() if generate_slurm else (engine.prepare() or str(engine.project))
 
 
 def main(argv=None):

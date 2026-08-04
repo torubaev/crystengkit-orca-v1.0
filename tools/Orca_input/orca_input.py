@@ -4289,6 +4289,7 @@ class App(tk.Tk):
             on_close=self._on_tddft_window_closed,
             builder_context=self.get_tddft_global_context(),
             on_run_emission_sequence=self.run_tddft_emission_sequence,
+            on_run_strict_workflow=self.run_strict_tddft_workflow,
         )
         self.tddft_window.set_builder_enabled(bool(self.job_tddft_var.get()), bool(self.current_tddft_block))
         self.tddft_window.lift(self); self.tddft_window.focus_force()
@@ -4321,6 +4322,10 @@ class App(tk.Tk):
         return {
             "functional": self.functional_var.get().strip(),
             "basis": self.basis_var.get().strip(),
+            "dispersion": self.dispersion_var.get().strip(),
+            "grid": self.grid_var.get().strip(),
+            "ri_jcosx": bool(self.ri_jcosx_var.get()),
+            "tight_scf": bool(self.tight_scf_var.get()),
             "solvent": self.solvent_var.get().strip(),
             "charge": int(self.charge_var.get()),
             "multiplicity": int(self.mult_var.get()),
@@ -4331,6 +4336,13 @@ class App(tk.Tk):
             "maxcore_mb": "",
             "nprocs": 1,
             "basis_functions": basis_functions,
+            "orca_path": self.orca_path_var.get().strip().strip('"'),
+            "structure_source_path": self.structure_source_path,
+            "structure_title": getattr(self.structure, "title", "molecule") if self.structure else "molecule",
+            "atoms": list(self.structure.atoms) if self.structure else [],
+            "freeze_heavy": bool(self.freeze_heavy_var.get()),
+            "freeze_all": bool(self.freeze_all_var.get()),
+            "job_freq": bool(self.job_freq_var.get()),
         }
 
     def _refresh_open_tddft_absorption_source(self, out_path: str) -> None:
@@ -4352,6 +4364,120 @@ class App(tk.Tk):
         if tools_root not in sys.path:
             sys.path.insert(0, tools_root)
         return importlib.import_module("TD_DFT.td_dft_emission_sequence")
+
+    def _strict_workflow_context(self, project_dir: str, stage: str, orca_path: str, inp_path: str) -> Dict:
+        return {
+            "input_path": inp_path,
+            "orca_path": orca_path,
+            "data": self._data_from_orca_input_file(inp_path),
+            "post_processing": {},
+            "strict_tddft_workflow": True,
+            "strict_workflow_dir": str(project_dir),
+            "strict_workflow_stage": stage,
+            "skip_wfn_wfx": True,
+            "suppress_success_dialog": True,
+            "skip_project_summary": True,
+        }
+
+    def run_strict_tddft_workflow(self, project_dir: str, options: Dict):
+        if self.program_var.get() != "ORCA":
+            raise ValueError("The complete TD-DFT workflow requires Program = ORCA.")
+        if self.run_process and self.run_process.poll() is None:
+            raise ValueError("An ORCA calculation is already running.")
+        from TD_DFT.workflow.config import (
+            ExcitedStatesConfig, FrequencyConfig, GeometryConfig, MethodConfig,
+            OrcaConfig, ResourcesConfig, SolventConfig, SystemConfig,
+            WorkflowConfig, save_config,
+        )
+        from TD_DFT.workflow.engine import WorkflowEngine
+        from TD_DFT.workflow.importer import inspect_external_workflow_source
+        from TD_DFT.workflow.orca import extract_geometry, write_xyz
+
+        project = Path(project_dir).expanduser().resolve()
+        orca_path = self._validated_orca_path()
+        source_output = str(options.get("source_output", "") or "").strip()
+        if source_output:
+            raise ValueError(
+                "External .out drop-in continuation is disabled to prevent cross-project contamination. "
+                "Load the starting geometry in Builder and create a fresh workflow."
+            )
+        if False and source_output:
+            source = inspect_external_workflow_source(
+                source_output, orca_executable=orca_path, target_root=int(options["target_root"]),
+                nprocs=int(options["nprocs"]), maxcore_mb=int(options["maxcore_mb"]),
+                frequency_enabled=bool(options["frequency_enabled"]),
+                imaginary_threshold_cm1=float(options["imaginary_threshold_cm1"]),
+            )
+            initial = project / "input" / "initial_geometry.xyz"
+            initial.parent.mkdir(parents=True, exist_ok=True)
+            extract_geometry(Path(source.output_path), initial, f"Geometry adopted from external {source.stage}")
+            source.config.system.initial_xyz = str(initial)
+            if source.stage != "es_opt":
+                source.config.excited_states.target_multiplicity = str(options["target_manifold"]).lower()
+            save_config(source.config, str(project / "config.yaml"))
+            engine = WorkflowEngine(source.config, str(project))
+            engine.import_completed_stage(source.stage, source.output_path, source.input_path, source.gbw_path)
+            first = engine.next_stage_after(source.stage)
+            if first is None:
+                engine.write_reports()
+                return f"External {source.stage} is already the final workflow stage; reports written to {engine.results_dir}"
+            inp_path = str(engine.stage_input(first))
+            self.append_monitor(
+                f"=== Continued TD-DFT workflow ===\nSource: {source.output_path}\nDetected: {source.stage}\nStarting: {first}\n",
+                clear=True,
+            )
+            self._start_orca_input(
+                inp_path, orca_path, self._strict_workflow_context(str(project), first, orca_path, inp_path),
+                recalculation_requested=True,
+            )
+            return f"Validated external {source.stage}; continuing with {first} in {project}"
+        if self.structure is None or not self.structure.atoms:
+            raise ValueError("Load and inspect the starting molecular structure in the Builder first.")
+        initial = project / "input" / "initial_geometry.xyz"
+        initial.parent.mkdir(parents=True, exist_ok=True)
+        write_xyz(initial, self.structure.atoms, self.structure.title)
+        solvent_text = self.solvent_var.get().strip()
+        resolved_solvent = resolve_solvent(solvent_text) if solvent_text else None
+        if solvent_text and not resolved_solvent:
+            raise ValueError(f"The Builder solvent is not supported by ORCA SMD: {solvent_text}")
+        source = Path(self.structure_source_path) if self.structure_source_path else Path(self.structure.title)
+        system_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", source.stem).strip("._") or "molecule"
+        use_ri = bool(self.ri_jcosx_var.get()) and basis_supports_orca_rijcosx(self.basis_var.get())
+        config = WorkflowConfig(
+            system=SystemConfig(system_name, int(self.charge_var.get()), int(self.mult_var.get()), str(initial)),
+            orca=OrcaConfig(orca_path, ""),
+            method=MethodConfig(
+                functional=self.functional_var.get().strip(), basis=self.basis_var.get().strip(),
+                auxiliary_basis="def2/J" if use_ri else "", dispersion=self.dispersion_var.get().strip(),
+                rijcosx=use_ri, grid=self.grid_var.get().strip() or "DefGrid2",
+                scf_convergence="TightSCF" if self.tight_scf_var.get() else "NormalSCF",
+            ),
+            excited_states=ExcitedStatesConfig(
+                use_tda=str(options["td_method"]).upper() == "TDA", nroots=int(options["nroots"]),
+                target_root=int(options["target_root"]),
+                target_multiplicity=str(options["target_manifold"]).lower(), request_nto=True,
+                maxdim=int(options["maxdim"]), maxiter=int(options["maxiter"]),
+                selection_rule="user_selected_in_tddft_module",
+            ),
+            solvent=SolventConfig(
+                enabled=bool(resolved_solvent), model="SMD", name=resolved_solvent["orca"] if resolved_solvent else "", smd=bool(resolved_solvent),
+            ),
+            frequency=FrequencyConfig(
+                enabled=bool(self.job_freq_var.get()), reject_large_imaginary_modes=True,
+                imaginary_frequency_threshold_cm1=float(options["imaginary_threshold_cm1"]),
+            ),
+            resources=ResourcesConfig(nprocs=int(options["nprocs"]), maxcore_mb=int(options["maxcore_mb"])),
+            geometry=GeometryConfig(freeze_heavy=bool(self.freeze_heavy_var.get()), freeze_all=bool(self.freeze_all_var.get())),
+        )
+        save_config(config, str(project / "config.yaml"))
+        engine = WorkflowEngine(config, str(project)); engine.prepare()
+        first = engine.stages[0]; inp_path = str(engine.stage_input(first))
+        self.append_monitor(f"=== Complete TD-DFT workflow ===\nProject: {project}\nStarting: {first}\n", clear=True)
+        self._start_orca_input(
+            inp_path, orca_path, self._strict_workflow_context(str(project), first, orca_path, inp_path),
+            recalculation_requested=True,
+        )
+        return f"Complete workflow started in {project}"
 
     def _emission_context(self, sequence_dir: str, step_id: str, orca_path: str, inp_path: str) -> Dict:
         return {
@@ -8357,6 +8483,49 @@ class App(tk.Tk):
             messagebox.showinfo("Fluorescence emission finished", summary)
         return False
 
+    def _handle_strict_tddft_workflow_success(self, context: Dict, out_path: str) -> bool:
+        project = Path(str(context.get("strict_workflow_dir", ""))).resolve()
+        stage = str(context.get("strict_workflow_stage", ""))
+        if not project.is_dir() or not stage:
+            return False
+        from TD_DFT.workflow import WorkflowEngine, load_config
+
+        engine = WorkflowEngine(load_config(str(project / "config.yaml")), str(project))
+        engine.validate_stage(stage, 0)
+        record = engine.records[stage]
+        if record.status.value != "COMPLETED":
+            message = f"Complete workflow paused after {stage}: {record.message}"
+            self.append_monitor("\n" + message + "\n")
+            if self.tddft_window is not None and self.tddft_window.winfo_exists():
+                self.tddft_window.strict_status_var.set(message)
+            messagebox.showwarning("TD-DFT workflow needs review", message, parent=self)
+            self.active_run_context = None
+            return True
+        index = engine.stages.index(stage)
+        if index + 1 < len(engine.stages):
+            next_stage = engine.stages[index + 1]
+            engine._check_dependency(next_stage)
+            next_input = str(engine.stage_input(next_stage))
+            orca_path = str(context.get("orca_path", "")).strip() or self._validated_orca_path()
+            self.append_monitor(
+                f"\nValidated {stage}.\nStarting dependent stage: {next_stage}\nInput: {next_input}\n"
+            )
+            self._start_orca_input(
+                next_input, orca_path,
+                self._strict_workflow_context(str(project), next_stage, orca_path, next_input),
+                recalculation_requested=True,
+            )
+            return True
+        engine.write_reports()
+        message = f"Complete TD-DFT workflow finished successfully.\n\nProject: {project}\nResults: {engine.results_dir}"
+        self.append_monitor("\n=== Complete TD-DFT workflow finished ===\n" + message + "\n")
+        self.status.configure(text="Complete TD-DFT workflow finished successfully.")
+        if self.tddft_window is not None and self.tddft_window.winfo_exists():
+            self.tddft_window.strict_status_var.set(message)
+        self.active_run_context = None
+        messagebox.showinfo("Complete TD-DFT workflow", message, parent=self)
+        return True
+
     def _show_orca_completion_dialog(self, out_path: str, succeeded: bool) -> None:
         job_name, result = orca_completion_summary(out_path, succeeded)
         win = tk.Toplevel(self)
@@ -8507,6 +8676,13 @@ class App(tk.Tk):
                 self._refresh_open_tddft_absorption_source(out_path)
             except Exception as exc:
                 self.append_monitor(f"TD-DFT absorption source was not refreshed automatically: {exc}\n")
+            if context.get("strict_tddft_workflow"):
+                try:
+                    if self._handle_strict_tddft_workflow_success(context, out_path):
+                        return
+                except Exception as exc:
+                    self.append_monitor(f"Complete TD-DFT workflow failed after {context.get('strict_workflow_stage')}: {exc}\n")
+                    messagebox.showerror("Complete TD-DFT workflow", str(exc), parent=self)
             if context.get("emission_sequence"):
                 try:
                     if self._handle_tddft_emission_sequence_success(context, out_path):
@@ -8544,6 +8720,18 @@ class App(tk.Tk):
                     )
                 except Exception:
                     pass
+            if context.get("strict_tddft_workflow"):
+                try:
+                    from TD_DFT.workflow import WorkflowEngine, load_config
+                    project = Path(str(context.get("strict_workflow_dir", ""))).resolve()
+                    engine = WorkflowEngine(load_config(str(project / "config.yaml")), str(project))
+                    engine.validate_stage(str(context.get("strict_workflow_stage", "")), code if code else 1)
+                except Exception:
+                    pass
+                if self.tddft_window is not None and self.tddft_window.winfo_exists():
+                    self.tddft_window.strict_status_var.set(
+                        f"Workflow stopped at {context.get('strict_workflow_stage')}. Existing results were preserved."
+                    )
             if not queue_job:
                 self._show_orca_completion_dialog(out_path, succeeded=False)
         self.active_run_context = None
