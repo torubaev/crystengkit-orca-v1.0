@@ -383,6 +383,28 @@ def build_tddft_block(settings: Dict) -> str:
     return normalize_tddft_block("\n".join(lines))
 
 
+def build_tddft_orca_fragment(settings: Dict, source_gbw: str = "") -> str:
+    """Build the synchronized ORCA fragment, including optional orbital reuse.
+
+    Excited-state optimization/frequency jobs can reuse the converged orbitals
+    from the preceding vertical-absorption calculation.  ``! MOREAD`` is a
+    placement marker for the Builder: it is merged into the main simple-input
+    line when the complete ORCA input is assembled.
+    """
+    data = validate_tddft_settings(settings)
+    block = build_tddft_block(data)
+    if not bool(data["excited_state_optimization"] or data["excited_state_frequencies"]):
+        return block
+    gbw_text = str(source_gbw or "").strip().strip('"')
+    if not gbw_text:
+        return block
+    gbw = Path(gbw_text).expanduser().resolve()
+    if not gbw.is_file():
+        return block
+    escaped = str(gbw).replace('"', '\\"')
+    return f'! MOREAD\n%moinp "{escaped}"\n\n{block}'
+
+
 def _state_label(index: int, multiplicity: str = "S") -> str:
     return f"{multiplicity}{index}"
 
@@ -458,6 +480,47 @@ def parse_orca_tddft_output(out_path: str) -> List[Dict]:
     result = [state for _, state in sorted(states.items()) if state.get("energy_ev", 0) > 0]
     if not result:
         raise ValueError("No ORCA TD-DFT excited states were found in this output.")
+    return result
+
+
+def inspect_tddft_absorption_source(out_path: str) -> Dict:
+    """Verify a completed TD-DFT output and its reusable same-basename GBW."""
+    path = Path(str(out_path or "")).expanduser()
+    result = {
+        "verified": False,
+        "reusable": False,
+        "output_path": str(path),
+        "gbw_path": "",
+        "state_count": 0,
+        "message": "",
+    }
+    if not path.is_file() or path.suffix.lower() != ".out":
+        result["message"] = "TD-DFT source output was not found."
+        return result
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if "ORCA TERMINATED NORMALLY" not in text.upper():
+        result["message"] = "TD-DFT source output did not terminate normally."
+        return result
+    try:
+        states = parse_orca_tddft_output(str(path))
+    except Exception as exc:
+        result["message"] = str(exc)
+        return result
+    gbw = path.with_suffix(".gbw")
+    result.update({
+        "verified": True,
+        "output_path": str(path.resolve()),
+        "state_count": len(states),
+        "message": f"Verified completed TD-DFT source with {len(states)} excited states.",
+    })
+    if gbw.is_file():
+        result.update({
+            "reusable": True,
+            "gbw_path": str(gbw.resolve()),
+            "message": f"Verified completed TD-DFT source with {len(states)} excited states and matching GBW.",
+        })
+    else:
+        result["message"] += " Matching GBW was not found; geometry reuse remains available, but MOREAD is disabled."
     return result
 
 
@@ -1088,7 +1151,11 @@ class TDDFTWindow(tk.Toplevel):
 
     def _apply(self):
         def action():
-            data = self._settings(); block = build_tddft_block(data)
+            data = self._settings()
+            source_gbw = self.associated_files.get(".gbw", "") if self.output_path else ""
+            data["source_absorption_output"] = str(self.output_path or "")
+            data["source_absorption_gbw"] = str(source_gbw or "")
+            block = build_tddft_orca_fragment(data, source_gbw)
             self._confirm_tddft_memory_risk(data)
             self.clipboard_clear(); self.clipboard_append(block)
             if self.on_apply:
@@ -1252,7 +1319,11 @@ class TDDFTWindow(tk.Toplevel):
     def _set_loaded_output(self, path):
         self._set_ui_mode("post")
         self.update_progress(10, "Reading ORCA TD-DFT output...")
-        self.states, self.output_path = parse_orca_tddft_output(str(path)), str(Path(path).resolve())
+        inspection = inspect_tddft_absorption_source(str(path))
+        if not inspection["verified"]:
+            raise ValueError(inspection["message"])
+        self.states = parse_orca_tddft_output(str(path))
+        self.output_path = str(Path(path).resolve())
         try:
             current_min = float(self.vars["wavelength_min_nm"].get())
             current_max = float(self.vars["wavelength_max_nm"].get())
@@ -1268,7 +1339,11 @@ class TDDFTWindow(tk.Toplevel):
             trans = max(state["transitions"], key=lambda x: x["contribution_percent"], default=None)
             self.tree.insert("", "end", iid=str(state["state_index"]), values=(state["state"], f"{state['energy_ev']:.4f}", f"{state['wavelength_nm']:.2f}", f"{state['oscillator_strength']:.6g}", f"{trans['from']} -> {trans['to']}" if trans else "", f"{trans['contribution_percent']:.1f}" if trans else ""))
         self.update_progress(65, "Detecting associated files...")
-        self.output_label.configure(text=self.output_path); self.workdir_var.set(str(Path(self.output_path).parent)); self._detect_files()
+        source_text = (
+            f"{self.output_path}\n"
+            f"{inspection['message']}"
+        )
+        self.output_label.configure(text=source_text); self.workdir_var.set(str(Path(self.output_path).parent)); self._detect_files()
         if self.tree.get_children(): self.tree.selection_set(self.tree.get_children()[0])
         self.update_progress(80, "Writing spectrum package...")
         self._write_shared_spectrum_package()

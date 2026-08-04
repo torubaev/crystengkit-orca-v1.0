@@ -107,7 +107,15 @@ class SignedCubeViewer:
                 plotter.add_mesh(grid.contour([-negative], scalars="values"), color=negative_color, opacity=opacity, label=(labels[index] if labels else cube.path.stem) + " (-)")
         if show_molecule:
             _add_molecule(plotter, cubes[0], show_bonds, show_labels)
-        plotter.add_legend(); plotter.add_axes(); plotter.reset_camera()
+        plotter.add_legend()
+        # TD-DFT figures intentionally omit the PyVista XYZ orientation triad.
+        # This shared viewer covers NTO, transition/difference density, and
+        # hole/electron displays, so the presentation stays consistent.
+        try:
+            plotter.hide_axes()
+        except Exception:
+            pass
+        plotter.reset_camera()
         if screenshot:
             plotter.show(screenshot=screenshot, auto_close=True)
         else:

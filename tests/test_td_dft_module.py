@@ -10,6 +10,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 from TD_DFT.td_dft_module import (  # noqa: E402
     build_gaussian_broadened_spectrum,
     build_tddft_block,
+    build_tddft_orca_fragment,
     classify_orca_tddft_failure_text,
     estimate_tddft_expansion_vectors,
     migrate_legacy_tddft_settings,
@@ -20,6 +21,7 @@ from TD_DFT.td_dft_module import (  # noqa: E402
     suggested_tddft_export_path,
     auto_detect_multiwfn_path,
     detect_associated_files,
+    inspect_tddft_absorption_source,
 )
 from TD_DFT.td_dft_multiwfn_runner import MultiwfnTDDFTRunner  # noqa: E402
 from TD_DFT.td_dft_cube_viewer import read_cube  # noqa: E402
@@ -150,6 +152,28 @@ class TDDFTModuleTests(unittest.TestCase):
         })
         self.assertIn("IRoot 1", block)
 
+    def test_excited_state_fragment_reuses_matching_absorption_gbw(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gbw = Path(directory) / "absorption.gbw"
+            gbw.write_bytes(b"gbw")
+            fragment = build_tddft_orca_fragment({
+                "vertical_excitation": False,
+                "excited_state_optimization": True,
+                "root": 1,
+            }, str(gbw))
+        self.assertTrue(fragment.startswith("! MOREAD\n%moinp"))
+        self.assertIn(str(gbw.resolve()), fragment)
+        self.assertIn("%tddft", fragment)
+        self.assertIn("IRoot 1", fragment)
+
+    def test_vertical_absorption_fragment_does_not_add_moread(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gbw = Path(directory) / "absorption.gbw"
+            gbw.write_bytes(b"gbw")
+            fragment = build_tddft_orca_fragment({"vertical_excitation": True}, str(gbw))
+        self.assertNotIn("MOREAD", fragment)
+        self.assertNotIn("%moinp", fragment)
+
     def test_saved_all_true_workflow_is_normalized(self):
         settings = validate_tddft_settings({
             "vertical_excitation": True,
@@ -240,6 +264,30 @@ ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS
             found = detect_associated_files(str(output))
         self.assertEqual(Path(found[".wfx"]).name, expected.name)
 
+    def test_completed_absorption_source_is_verified_with_matching_gbw(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "absorption.out"
+            output.write_text(
+                "STATE 1: E = 0.100 au 3.500 eV 354.24 nm f=0.20\n"
+                "ORCA TERMINATED NORMALLY\n",
+                encoding="utf-8",
+            )
+            gbw = root / "absorption.gbw"; gbw.write_bytes(b"gbw")
+            result = inspect_tddft_absorption_source(str(output))
+        self.assertTrue(result["verified"])
+        self.assertTrue(result["reusable"])
+        self.assertEqual(result["state_count"], 1)
+        self.assertEqual(Path(result["gbw_path"]).name, gbw.name)
+
+    def test_incomplete_or_non_tddft_output_is_not_auto_selected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "ground_state.out"
+            output.write_text("SCF CONVERGED\nORCA TERMINATED NORMALLY\n", encoding="utf-8")
+            result = inspect_tddft_absorption_source(str(output))
+        self.assertFalse(result["verified"])
+        self.assertFalse(result["reusable"])
+
     def test_runner_reports_unsupported_without_wavefunction_and_writes_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); output = root / "job.out"; output.write_text("result", encoding="utf-8")
@@ -275,6 +323,44 @@ ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS
             self.assertEqual(electron.name, "NTO_electron_00002.cub")
             self.assertTrue(hole.is_file() and electron.is_file() and log.is_file())
             self.assertEqual(runner.calls[1][1][2], "12,13")
+
+    def test_generated_state_cube_detector_accepts_multiwfn_filenames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            expected = {
+                "hole": root / "hole_00001.cub",
+                "electron": root / "electron_00001.cub",
+                "transdens": root / "transdens_00001.cub",
+                "cdd": root / "CDD_00001.cub",
+            }
+            for path in expected.values():
+                path.write_text("cube", encoding="utf-8")
+            found = MultiwfnTDDFTRunner("Multiwfn", directory)._find_generated_cube_files(root, 1)
+        self.assertEqual(found, expected)
+
+    def test_orca_2mkl_reuses_existing_matching_molden_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gbw = root / "job.gbw"; gbw.write_bytes(b"gbw")
+            molden = root / "job.molden.input"; molden.write_bytes(b"m" * 256)
+            runner = MultiwfnTDDFTRunner("Multiwfn", directory)
+            self.assertEqual(runner._run_orca_2mkl(gbw, str(root / "missing_orca_2mkl")), molden)
+
+    def test_nto_failure_writes_diagnostic_log(self):
+        class FailingRunner(MultiwfnTDDFTRunner):
+            def _run_batch(self, wavefunction, run_dir, answers, timeout):
+                raise RuntimeError("menu sequence rejected")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "job.out"; output.write_text("states", encoding="utf-8")
+            wavefunction = root / "job.molden.input"; wavefunction.write_text("wf", encoding="utf-8")
+            runner = FailingRunner("Multiwfn", directory)
+            with self.assertRaisesRegex(RuntimeError, "See"):
+                runner._generate_nto_cubes(output, wavefunction, 1, root, 10)
+            log = root / "multiwfn_nto_state_001.log"
+            self.assertTrue(log.is_file())
+            self.assertIn("menu sequence rejected", log.read_text(encoding="utf-8"))
 
     def test_cube_parser_validates_grid(self):
         cube = """title

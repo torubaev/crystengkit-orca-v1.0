@@ -328,6 +328,16 @@ $$$$
         self.assertIn(" Opt", excited_state_job.splitlines()[0])
         self.assertIn(" Freq", excited_state_job.splitlines()[0])
 
+        data["tddft_block"] = (
+            '! MOREAD\n%moinp "C:/calc/absorption.gbw"\n\n'
+            "%tddft\n  NRoots 11\n  TDA true\n  IRoot 1\nend"
+        )
+        reused_orbitals_job = orca_input.generate_orca(data, structure, None)
+        self.assertIn(" MOREAD", reused_orbitals_job.splitlines()[0])
+        self.assertEqual(reused_orbitals_job.upper().count("MOREAD"), 1)
+        self.assertIn('%moinp "C:/calc/absorption.gbw"', reused_orbitals_job)
+        self.assertEqual(reused_orbitals_job.lower().count("%tddft"), 1)
+
     def test_tddft_rpa_convergence_failure_is_reported_specifically(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             out_path = Path(tmpdir) / "failed.out"
@@ -506,6 +516,20 @@ $$$$
             with mock.patch.object(orca_input.messagebox, "askyesnocancel") as confirm:
                 self.assertEqual(app._resolve_completed_job_rerun_path(str(inp_path)), str(inp_path))
                 confirm.assert_not_called()
+
+    def test_loading_path_does_not_invoke_recalculation_guard(self):
+        app = object.__new__(orca_input.App)
+        with mock.patch.object(app, "_resolve_completed_job_rerun_path") as guard:
+            self.assertEqual(app._guard_recalculation_path("finished.inp", False), "finished.inp")
+            guard.assert_not_called()
+
+    def test_explicit_recalculation_invokes_completed_output_guard(self):
+        app = object.__new__(orca_input.App)
+        with mock.patch.object(
+            app, "_resolve_completed_job_rerun_path", return_value="finished_01.inp"
+        ) as guard:
+            self.assertEqual(app._guard_recalculation_path("finished.inp", True), "finished_01.inp")
+            guard.assert_called_once_with("finished.inp")
 
     def test_orca_completion_summary_is_minimal(self):
         self.assertEqual(

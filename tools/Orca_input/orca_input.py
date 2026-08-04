@@ -3132,6 +3132,16 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
     tddft_frequencies = bool(data.get("job_tddft") and tddft_settings.get("excited_state_frequencies"))
     effective_opt = bool(data["job_opt"] or tddft_optimization)
     effective_freq = bool(data["job_freq"] or tddft_frequencies)
+    tddft_fragment = str(data.get("tddft_block", "") or "").strip()
+    tddft_moread = bool(
+        data.get("job_tddft")
+        and re.search(r"(?im)^\s*!\s+MOREAD\s*$", tddft_fragment)
+    )
+    if tddft_moread:
+        # MOREAD is a simple-input keyword.  The TD-DFT module emits it as a
+        # placement marker; merge it into the Builder-owned main keyword line.
+        tddft_fragment = re.sub(r"(?im)^\s*!\s+MOREAD\s*\r?\n?", "", tddft_fragment).strip()
+
     kw = [data["functional"], data["basis"]]
     if disp_kw:
         kw.append(disp_kw)
@@ -3151,6 +3161,8 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
         kw.append("Opt")
     if effective_freq:
         kw.append("Freq")
+    if tddft_moread:
+        kw.append("MOREAD")
     if data["job_density"] or data["job_esp"]:
         kw.append("KeepDens")
     if data["job_sp"] and not data["job_opt"] and not data["job_freq"] and not data["job_tddft"] and not data["job_nmr"]:
@@ -3174,8 +3186,8 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
             lines += ["  end", "end"]
 
 
-    if data["job_tddft"] and data.get("tddft_block", "").strip():
-        lines += ["", data["tddft_block"].strip()]
+    if data["job_tddft"] and tddft_fragment:
+        lines += ["", tddft_fragment]
 
     if data["job_nmr"]:
         lines += ["", "%eprnmr", "  NMR true", "end"]
@@ -4284,12 +4296,19 @@ class App(tk.Tk):
 
     def get_tddft_global_context(self) -> Dict:
         output_path = ""
+        absorption_gbw = ""
+        absorption_state_count = 0
         basis_functions = None
         try:
             candidate = self._available_output_path()
             ok, _reason = validate_orca_output_file(candidate)
             if ok:
-                output_path = candidate
+                module = self.__dict__.get("_tddft_module") or self._load_tddft_module()
+                inspection = module.inspect_tddft_absorption_source(candidate)
+                if inspection.get("verified"):
+                    output_path = str(inspection["output_path"])
+                    absorption_gbw = str(inspection.get("gbw_path", ""))
+                    absorption_state_count = int(inspection.get("state_count", 0))
                 try:
                     text = Path(candidate).read_text(encoding="utf-8", errors="replace")
                     match = re.search(r"(?im)^\s*(?:Number of basis functions|Basis dimension)\s+.*?(\d+)\s*$", text)
@@ -4307,10 +4326,22 @@ class App(tk.Tk):
             "multiplicity": int(self.mult_var.get()),
             "multiwfn_path": self.multiwfn_path_var.get().strip(),
             "output_path": output_path,
+            "absorption_gbw": absorption_gbw,
+            "absorption_state_count": absorption_state_count,
             "maxcore_mb": "",
             "nprocs": 1,
             "basis_functions": basis_functions,
         }
+
+    def _refresh_open_tddft_absorption_source(self, out_path: str) -> None:
+        """Load a newly completed TD-DFT source into an already-open module."""
+        window = self.tddft_window
+        if window is None or not window.winfo_exists():
+            return
+        module = self.__dict__.get("_tddft_module") or self._load_tddft_module()
+        inspection = module.inspect_tddft_absorption_source(out_path)
+        if inspection.get("verified"):
+            window.set_builder_context(self.get_tddft_global_context())
 
     def _on_tddft_window_closed(self, window):
         if self.tddft_window is window:
@@ -4352,7 +4383,12 @@ class App(tk.Tk):
             clear=True,
         )
         self.status.configure(text="Starting TD-DFT fluorescence emission sequence...")
-        self._start_orca_input(step.input_path, orca_path, self._emission_context(sequence_dir, "01_esopt", orca_path, step.input_path))
+        self._start_orca_input(
+            step.input_path,
+            orca_path,
+            self._emission_context(sequence_dir, "01_esopt", orca_path, step.input_path),
+            recalculation_requested=True,
+        )
 
     def set_tddft_block(self, block: str) -> None:
         module = self.__dict__.get("_tddft_module")
@@ -4388,13 +4424,35 @@ class App(tk.Tk):
             raise ValueError("TD-DFT is disabled in ORCA Input Builder.")
         old_block = self.current_tddft_block
         old_settings = dict(self.current_tddft_settings)
+        old_structure = self.structure
+        old_structure_source_path = self.structure_source_path
+        old_selected_path = self.path_var.get()
+        old_current_input_path = self.current_input_path
         try:
             self.set_tddft_block(block)
             self.current_tddft_settings = dict(settings)
+            reuses_absorption_geometry = bool(
+                settings.get("excited_state_optimization")
+                or settings.get("excited_state_frequencies")
+            )
+            source_output = str(settings.get("source_absorption_output", "") or "").strip()
+            if reuses_absorption_geometry and source_output:
+                source = Path(source_output).expanduser().resolve()
+                if not source.is_file():
+                    raise FileNotFoundError(f"Source absorption output was not found: {source}")
+                source_structure = StructureParser.parse_output_geometry(str(source))
+                self.structure = source_structure
+                self.structure_source_path = str(source)
+                self.path_var.set(str(source))
+                self.current_input_path = None
             text = self.refresh_full_orca_input()
         except Exception:
             self.current_tddft_block = old_block
             self.current_tddft_settings = old_settings
+            self.structure = old_structure
+            self.structure_source_path = old_structure_source_path
+            self.path_var.set(old_selected_path)
+            self.current_input_path = old_current_input_path
             raise
         self.tddft_sync_status_var.set("TD-DFT: Synchronized")
         self.show_full_orca_input(text)
@@ -7481,7 +7539,7 @@ class App(tk.Tk):
             if not inp_path:
                 return
             context = self._context_for_current_input(inp_path, orca_path)
-            self._start_orca_input(inp_path, orca_path, context)
+            self._start_orca_input(inp_path, orca_path, context, recalculation_requested=True)
         except Exception as exc:
             self.active_run_context = None
             messagebox.showerror("Run error", str(exc))
@@ -7727,9 +7785,10 @@ class App(tk.Tk):
             return inp_path
         alternative = self._suggest_rerun_input_path(inp_path)
         choice = messagebox.askyesnocancel(
-            "Attention: completed ORCA job",
+            "Attention: recalculation of completed ORCA output",
             "\u26a0\ufe0f  ATTENTION  \u26a0\ufe0f\n\n"
-            "A successfully finished ORCA job already uses this filename:\n\n"
+            "RECALCULATION DETECTED\n\n"
+            "ORCA is about to start, and a successfully finished output already uses this filename:\n\n"
             f"{out_path}\n\n"
             "Rerunning with the same name will overwrite its .out, .gbw, .xyz, .opt, "
             "and other result files.\n\n"
@@ -7762,15 +7821,28 @@ class App(tk.Tk):
                 return inp_path
         return self._save_rerun_input_as(inp_path, alternative)
 
-    def _start_orca_input(self, inp_path: str, orca_path: str, context: Dict) -> bool:
+    def _guard_recalculation_path(self, inp_path: str, recalculation_requested: bool) -> Optional[str]:
+        """Apply overwrite protection only at an explicit ORCA recalculation boundary."""
+        if not recalculation_requested:
+            return inp_path
+        return self._resolve_completed_job_rerun_path(inp_path)
+
+    def _start_orca_input(
+        self,
+        inp_path: str,
+        orca_path: str,
+        context: Dict,
+        *,
+        recalculation_requested: bool = False,
+    ) -> bool:
         if not os.path.isfile(inp_path):
             raise FileNotFoundError(f"ORCA input file was not found: {inp_path}")
         if Path(inp_path).suffix.lower() != ".inp":
             raise ValueError(f"Queued ORCA jobs must be .inp files: {inp_path}")
         original_inp_path = inp_path
-        inp_path = self._resolve_completed_job_rerun_path(inp_path)
+        inp_path = self._guard_recalculation_path(inp_path, recalculation_requested)
         if not inp_path:
-            self.status.configure(text="Rerun cancelled; completed ORCA output was preserved.")
+            self.status.configure(text="Recalculation cancelled; completed ORCA output was preserved.")
             return False
         out_path = str(Path(inp_path).with_suffix(".out"))
         if inp_path != original_inp_path:
@@ -7845,7 +7917,12 @@ class App(tk.Tk):
             return
         try:
             context = self._context_for_queued_input(job.input_path, orca_path)
-            if not self._start_orca_input(job.input_path, orca_path, context):
+            if not self._start_orca_input(
+                job.input_path,
+                orca_path,
+                context,
+                recalculation_requested=True,
+            ):
                 self.job_queue.mark_current("stopped", "Rerun cancelled; completed output preserved.")
                 self.active_queue_job = None
                 self.queue_running = False
@@ -8255,6 +8332,7 @@ class App(tk.Tk):
                 next_step.input_path,
                 orca_path,
                 self._emission_context(sequence_dir, "02_vertical_emission", orca_path, next_step.input_path),
+                recalculation_requested=True,
             )
             return True
         if step_id == "02_vertical_emission":
@@ -8425,6 +8503,10 @@ class App(tk.Tk):
             if post_messages:
                 status += " | " + " ".join(post_messages)
             self.status.configure(text=status)
+            try:
+                self._refresh_open_tddft_absorption_source(out_path)
+            except Exception as exc:
+                self.append_monitor(f"TD-DFT absorption source was not refreshed automatically: {exc}\n")
             if context.get("emission_sequence"):
                 try:
                     if self._handle_tddft_emission_sequence_success(context, out_path):

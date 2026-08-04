@@ -617,6 +617,13 @@ class MultiwfnTDDFTRunner:
     def _run_orca_2mkl(self, gbw_file: Path, orca_2mkl_path: Optional[str] = None) -> Path:
         gbw_dir = gbw_file.parent
         basename = gbw_file.stem
+        # Reuse a conversion made earlier in the same analysis.  Running
+        # orca_2mkl again against an existing Molden output may stop for an
+        # overwrite prompt or fail, which previously prevented the NTO stage.
+        for existing in (gbw_dir / f"{basename}.molden.input", gbw_dir / f"{basename}.molden"):
+            if (existing.is_file() and existing.stat().st_size > 128
+                    and existing.stat().st_mtime >= gbw_file.stat().st_mtime):
+                return existing
         orca_2mkl_exec = orca_2mkl_path or self._find_orca_2mkl()
         command = [orca_2mkl_exec, basename, "-molden"]
         result = subprocess.run(
@@ -759,10 +766,10 @@ class MultiwfnTDDFTRunner:
 
     def _find_generated_cube_files(self, run_dir: Path, state_index: int) -> Dict[str, Optional[Path]]:
         patterns = {
-            "hole": re.compile(rf"(^|[_-.])hole[_-.]*0*{state_index}\.cub$", re.I),
-            "electron": re.compile(rf"(^|[_-.])electron[_-.]*0*{state_index}\.cub$", re.I),
-            "transdens": re.compile(rf"(^|[_-.])transdens?[_-.]*0*{state_index}\.cub$", re.I),
-            "cdd": re.compile(rf"(^|[_-.])cdd[_-.]*0*{state_index}\.cub$", re.I),
+            "hole": re.compile(rf"(^|[_.-])hole[_.-]*0*{state_index}\.cub$", re.I),
+            "electron": re.compile(rf"(^|[_.-])electron[_.-]*0*{state_index}\.cub$", re.I),
+            "transdens": re.compile(rf"(^|[_.-])transdens?[_.-]*0*{state_index}\.cub$", re.I),
+            "cdd": re.compile(rf"(^|[_.-])cdd[_.-]*0*{state_index}\.cub$", re.I),
         }
         found = {key: None for key in patterns}
         for path in run_dir.glob("*.cub"):
@@ -855,12 +862,16 @@ class MultiwfnTDDFTRunner:
         """Generate the dominant NTO hole/electron pair for one excited state."""
         nto_molden = output_dir / f"NTO_state_{state_index:03d}.molden"
         nto_log = output_dir / f"multiwfn_nto_state_{state_index:03d}.log"
-        generation_log = self._run_batch(
-            wavefunction,
-            output_dir,
-            (18, 6, str(orca_output), state_index, 1, str(nto_molden), 0, "q"),
-            timeout,
-        )
+        try:
+            generation_log = self._run_batch(
+                wavefunction,
+                output_dir,
+                (18, 6, str(orca_output), state_index, 1, str(nto_molden), 0, "q"),
+                timeout,
+            )
+        except Exception as exc:
+            nto_log.write_text(f"NTO generation failed before Molden export:\n{exc}\n", encoding="utf-8")
+            raise RuntimeError(f"Multiwfn NTO generation failed. See {nto_log}") from exc
         nto_log.write_text(generation_log, encoding="utf-8")
         if not nto_molden.is_file() or nto_molden.stat().st_size < 128:
             raise RuntimeError("Multiwfn did not create the state-specific NTO Molden file.")
@@ -870,12 +881,17 @@ class MultiwfnTDDFTRunner:
             raise RuntimeError("Could not identify the dominant NTO hole/electron orbital indices.")
         hole_index = int(occupied.group(1))
         electron_index = hole_index + 1
-        export_log = self._run_batch(
-            nto_molden,
-            output_dir,
-            (200, 3, f"{hole_index},{electron_index}", DEFAULT_MULTIWFN_GRID_QUALITY, 1, 0, "q"),
-            timeout,
-        )
+        try:
+            export_log = self._run_batch(
+                nto_molden,
+                output_dir,
+                (200, 3, f"{hole_index},{electron_index}", DEFAULT_MULTIWFN_GRID_QUALITY, 1, 0, "q"),
+                timeout,
+            )
+        except Exception as exc:
+            with nto_log.open("a", encoding="utf-8") as handle:
+                handle.write(f"\n\nNTO cube export failed:\n{exc}\n")
+            raise RuntimeError(f"Multiwfn NTO cube export failed. See {nto_log}") from exc
         with nto_log.open("a", encoding="utf-8") as handle:
             handle.write("\n\n=== NTO cube export ===\n" + export_log)
 
