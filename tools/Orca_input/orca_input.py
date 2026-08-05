@@ -8493,12 +8493,20 @@ class App(tk.Tk):
         engine = WorkflowEngine(load_config(str(project / "config.yaml")), str(project))
         engine.validate_stage(stage, 0)
         record = engine.records[stage]
+        dialog_parent = self
+        if self.tddft_window is not None and self.tddft_window.winfo_exists():
+            dialog_parent = self.tddft_window
+            try:
+                dialog_parent.deiconify()
+                dialog_parent.lift()
+            except Exception:
+                pass
         if record.status.value != "COMPLETED":
             message = f"Complete workflow paused after {stage}: {record.message}"
             self.append_monitor("\n" + message + "\n")
             if self.tddft_window is not None and self.tddft_window.winfo_exists():
                 self.tddft_window.strict_status_var.set(message)
-            messagebox.showwarning("TD-DFT workflow needs review", message, parent=self)
+            messagebox.showwarning("TD-DFT workflow needs review", message, parent=dialog_parent)
             self.active_run_context = None
             return True
         index = engine.stages.index(stage)
@@ -8523,7 +8531,7 @@ class App(tk.Tk):
         if self.tddft_window is not None and self.tddft_window.winfo_exists():
             self.tddft_window.strict_status_var.set(message)
         self.active_run_context = None
-        messagebox.showinfo("Complete TD-DFT workflow", message, parent=self)
+        messagebox.showinfo("Complete TD-DFT workflow", message, parent=dialog_parent)
         return True
 
     def _show_orca_completion_dialog(self, out_path: str, succeeded: bool) -> None:
