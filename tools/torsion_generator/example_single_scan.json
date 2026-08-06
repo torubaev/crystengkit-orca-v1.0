@@ -1,0 +1,19 @@
+{
+  "mode": "single",
+  "rotations": [
+    {
+      "name": "ring_1",
+      "axis_atoms": [12, 13],
+      "rotating_atoms": [13, 14, 15, 16, 17, 18],
+      "angles_deg": [-15, -10, -5, 0, 5, 10, 15]
+    }
+  ],
+  "charge": 0,
+  "multiplicity": 1,
+  "max_structures": 100,
+  "validation": {
+    "collision_threshold_angstrom": 0.8,
+    "maximum_displacement_angstrom": 5.0,
+    "strict": false
+  }
+}

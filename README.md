@@ -125,6 +125,16 @@ The analysis tools can be opened from the top panel of the Builder after a calcu
 
 ![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, existing `.inp` files, or external ORCA/Gaussian `.out` / `.log` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a `Show input` / `Job monitor` switch. During a run, `Show input` displays the exact input being executed without regenerating or replacing it; `Job monitor` shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. Active jobs are recorded in the user configuration folder: if the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process, and **Reconnect** provides the same action manually. A reconnected queue pauses after its current calculation. Before rerunning a successfully completed job, the Builder warns that all same-basename result files may be overwritten and recommends a next unused name, such as `filename_01.inp` or `filename_02.inp`. Accepting the recommendation opens a Save As dialog prefilled with that name; ORCA starts only after the user saves the copied input under the suggested or another unused name. Choosing overwrite opens a second **ATTENTION — Are you sure?** confirmation. The Builder tries to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
 
+### Torsion Generator
+
+`tools/torsion_generator/torsion_generator.py` generates reproducible single,
+independent, collective, alternating, combinatorial, or seeded-random torsional
+distortions from an XYZ structure. It preserves atom order, validates axes and
+connectivity, writes a CSV audit table, and can prepare ORCA TD-DFT inputs
+without launching ORCA. From Builder, open the **TD-DFT** module and select
+**Torsion scan** in its header. See `tools/torsion_generator/README.md` and the two
+generic JSON examples in that directory.
+
 ### TD-DFT Setup, Analysis, and Visualization
 
 The TD-DFT window can prepare one calculation or run a complete absorption-to-emission workflow. In Builder-connected mode it reuses the current molecular structure, functional, basis set, dispersion correction, solvent, charge, multiplicity, constraints, and ORCA executable. The TD-DFT window supplies the TD-DFT/TDA choice, number of roots, target state, and solver settings.

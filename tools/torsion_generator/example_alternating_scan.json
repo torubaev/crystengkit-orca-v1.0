@@ -1,0 +1,31 @@
+{
+  "mode": "alternating",
+  "angles_deg": [-15, -10, -5, 0, 5, 10, 15],
+  "rotations": [
+    {
+      "name": "ring_1",
+      "axis_atoms": [12, 13],
+      "rotating_atoms": [13, 14, 15, 16, 17, 18],
+      "angles_deg": [0]
+    },
+    {
+      "name": "ring_2",
+      "axis_atoms": [24, 25],
+      "rotating_atoms": [25, 26, 27, 28, 29, 30],
+      "angles_deg": [0]
+    },
+    {
+      "name": "ring_3",
+      "axis_atoms": [36, 37],
+      "rotating_atoms": [37, 38, 39, 40, 41, 42],
+      "angles_deg": [0]
+    }
+  ],
+  "charge": 0,
+  "multiplicity": 1,
+  "max_structures": 100,
+  "validation": {
+    "collision_threshold_angstrom": 0.8,
+    "strict": false
+  }
+}

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import argparse
+import importlib
 import json
 import math
 import os
@@ -696,6 +697,7 @@ class TDDFTWindow(tk.Toplevel):
         self.states, self.output_path = [], ""
         self.builder_enabled = bool(on_apply)
         self.builder_context: Dict = {}
+        self.torsion_generator_window = None
         self.ui_mode = "input"
         self._pending_builder_output_path = ""
         self.connection_status_var = tk.StringVar(value="Connected to ORCA Input Builder" if on_apply else "Standalone mode - no ORCA Builder connected")
@@ -752,8 +754,11 @@ class TDDFTWindow(tk.Toplevel):
         ttk.Label(header, text="TD-DFT", style="HeaderTitle.TLabel").grid(row=0, column=1, sticky="w")
         ttk.Label(header, text="Excited-State Setup, Analysis and Visualization", style="HeaderSub.TLabel").grid(row=1, column=1, sticky="w")
         header.columnconfigure(2, weight=1)
+        torsion_link = ttk.Label(header, text="Torsion scan", style="HeaderLink.TLabel", cursor="hand2")
+        torsion_link.grid(row=0, column=3, rowspan=2, sticky="e", padx=(0, 16))
+        torsion_link.bind("<Button-1>", lambda _event: self.open_torsion_generator())
         about_link = ttk.Label(header, text="About", style="HeaderLink.TLabel", cursor="hand2")
-        about_link.grid(row=0, column=3, rowspan=2, sticky="e")
+        about_link.grid(row=0, column=4, rowspan=2, sticky="e")
         about_link.bind("<Button-1>", lambda _event: self.open_about_window())
 
         mode_bar = ttk.Frame(self, style="Panel.TFrame", padding=(10, 8, 10, 0))
@@ -953,6 +958,28 @@ class TDDFTWindow(tk.Toplevel):
             self.after_idle(lambda: self.body_canvas.configure(scrollregion=self.body_canvas.bbox("all")))
         except Exception:
             pass
+
+    def open_torsion_generator(self):
+        """Open torsion scanning from the Builder geometry carried by TD-DFT."""
+        try:
+            atoms = list(self.builder_context.get("atoms") or [])
+            if not atoms:
+                raise ValueError(
+                    "No Builder geometry is available. Open TD-DFT from Builder after loading and inspecting a CIF, XYZ, or another supported structure."
+                )
+            module = importlib.import_module("torsion_generator.torsion_generator_gui")
+            self.torsion_generator_window = module.open_torsion_generator_window(
+                self,
+                atoms,
+                title=str(self.builder_context.get("structure_title") or "molecule"),
+                source_path=str(self.builder_context.get("structure_source_path") or ""),
+                charge=int(self.builder_context.get("charge", 0)),
+                multiplicity=int(self.builder_context.get("multiplicity", 1)),
+                existing=self.torsion_generator_window,
+            )
+            self.torsion_generator_window.lift(self)
+        except Exception as exc:
+            messagebox.showerror("Torsion generator", str(exc), parent=self)
 
     def open_about_window(self):
         win = tk.Toplevel(self)
