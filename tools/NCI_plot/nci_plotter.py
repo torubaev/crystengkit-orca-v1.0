@@ -64,6 +64,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from shared.window_layout import compute_visualization_layout, place_visualization_windows
 
 NCI_ICON_PATH = TOOLS_ROOT / "images" / "tr_NCI_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -766,47 +767,6 @@ def set_scalar_bar_text_color(plotter, text_color: str, title: str | None = None
         pass
 
 
-def hex_to_rgb01(color: str) -> tuple[float, float, float]:
-    color = color.lstrip("#")
-    return tuple(int(color[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
-
-
-def configure_molecule_renderer_lights(pv_module, renderer, extent: float) -> None:
-    try:
-        renderer.RemoveAllLights()
-    except Exception:
-        pass
-
-    try:
-        extent = max(float(extent), 1.0)
-    except Exception:
-        extent = 1.0
-
-    light_specs = [
-        ("headlight", None, 0.72),
-        ("camera light", None, 0.34),
-        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
-        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
-        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
-    ]
-
-    for light_type, position, intensity in light_specs:
-        try:
-            if light_type in {"headlight", "camera light"}:
-                light = pv_module.Light(light_type=light_type)
-            else:
-                light = pv_module.Light(
-                    position=position,
-                    focal_point=(0.0, 0.0, 0.0),
-                    color="white",
-                    light_type="scene light",
-                )
-            light.intensity = intensity
-            renderer.AddLight(light)
-        except Exception:
-            pass
-
-
 @dataclass
 class CubeData:
     path: Path
@@ -1031,6 +991,8 @@ class NCIPlotterApp:
         self.progress_bar: Optional[ttk.Progressbar] = None
 
         self.plotter = None
+        self.live_update_after_id = None
+        self.plot_update_in_progress = False
         self.header_icon: Optional[tk.PhotoImage] = None
         self.viewer_controls_window: Optional[tk.Toplevel] = None
 
@@ -1093,6 +1055,22 @@ class NCIPlotterApp:
             win.focus_force()
         except tk.TclError:
             pass
+
+    def schedule_live_plot_update(self, *_args) -> None:
+        """Debounce control changes and refresh an already-open NCI scene."""
+        if not self.is_plotter_alive() or self.rdg_cube is None or self.signrho_cube is None:
+            return
+        if self.live_update_after_id is not None:
+            try:
+                self.root.after_cancel(self.live_update_after_id)
+            except tk.TclError:
+                pass
+        self.live_update_after_id = self.root.after(220, self._run_live_plot_update)
+
+    def _run_live_plot_update(self) -> None:
+        self.live_update_after_id = None
+        if not self.plot_update_in_progress:
+            self.update_plot(live=True)
 
     def recent_wavefunction_files(self) -> list[str]:
         values = self.config.get("recent_wavefunction_files", [])
@@ -1362,6 +1340,19 @@ class NCIPlotterApp:
         ttk.Button(button_row, text="Update plot", command=self.update_plot).grid(row=0, column=0, sticky="ew")
         ttk.Button(button_row, text="Reset view", command=self.reset_view).grid(row=1, column=0, sticky="ew", pady=(6, 0))
         ttk.Button(button_row, text="Save image", command=self.save_image).grid(row=2, column=0, sticky="ew", pady=(6, 0))
+
+        for variable in (
+            self.rdg_isovalue,
+            self.opacity,
+            self.color_min,
+            self.color_max,
+            self.colormap,
+            self.show_molecule,
+            self.show_bonds,
+            self.show_scalar_bar,
+            self.background,
+        ):
+            variable.trace_add("write", self.schedule_live_plot_update)
 
         log_frame = ttk.LabelFrame(main, text="Status / log", padding=8)
         log_frame.pack(fill="both", expand=True)
@@ -1884,15 +1875,20 @@ class NCIPlotterApp:
 
         self.plotter = None
 
-    def update_plot(self) -> None:
+    def update_plot(self, live: bool = False) -> None:
+        if self.plot_update_in_progress:
+            return
+        self.plot_update_in_progress = True
         try:
             import pyvista as pv
         except Exception as exc:
-            messagebox.showerror(
-                "PyVista missing",
-                "PyVista/VTK is not installed.\n\nInstall with:\npy -3.12 -m pip install pyvista",
-            )
+            if not live:
+                messagebox.showerror(
+                    "PyVista missing",
+                    "PyVista/VTK is not installed.\n\nInstall with:\npy -3.12 -m pip install pyvista",
+                )
             self.log(f"ERROR: PyVista/VTK not installed: {exc}")
+            self.plot_update_in_progress = False
             return
 
         try:
@@ -1938,10 +1934,28 @@ class NCIPlotterApp:
                     "Try a different RDG isovalue."
                 )
 
-            self.close_dead_plotter_reference()
+            reuse_plotter = self.is_plotter_alive()
+            camera_position = None
+            if reuse_plotter:
+                try:
+                    camera_position = self.plotter.camera_position
+                except Exception:
+                    camera_position = None
+                self.plotter.clear()
+            else:
+                self.close_dead_plotter_reference()
+
             bounds = sampled.bounds
             extent = float(np.linalg.norm([bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]]))
-            self.plotter = pv.Plotter(window_size=(1200, self.window_height))
+            tiled_layout = None
+            if not reuse_plotter:
+                tiled_layout = compute_visualization_layout(
+                    self.root,
+                    control_width=370,
+                    control_height=650,
+                )
+                self.plotter = pv.Plotter(window_size=tiled_layout.viewer_size)
+                place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout)
             bg_color = self.background.get()
             text_color = contrast_text_color(bg_color)
             try:
@@ -1956,20 +1970,6 @@ class NCIPlotterApp:
                 self.plotter.renderer.SetTwoSidedLighting(True)
             except Exception:
                 pass
-
-            molecule_renderer = None
-            if opacity < 0.999:
-                try:
-                    self.plotter.ren_win.SetNumberOfLayers(2)
-                    molecule_renderer = pv._vtk.vtkRenderer()
-                    molecule_renderer.SetLayer(1)
-                    molecule_renderer.InteractiveOff()
-                    molecule_renderer.SetViewport(0.0, 0.0, 1.0, 1.0)
-                    molecule_renderer.SetActiveCamera(self.plotter.renderer.GetActiveCamera())
-                    configure_molecule_renderer_lights(pv, molecule_renderer, extent)
-                    self.plotter.ren_win.AddRenderer(molecule_renderer)
-                except Exception:
-                    molecule_renderer = None
 
             scalar_bar_args = {
                 "title": NCI_SCALAR_BAR_TITLE,
@@ -1997,33 +1997,44 @@ class NCIPlotterApp:
                 set_scalar_bar_text_color(self.plotter, text_color, NCI_SCALAR_BAR_TITLE)
 
             if self.show_molecule.get():
-                self.add_molecule_to_plotter(self.plotter, molecule_renderer)
+                # Molecule actors stay fully opaque in the main scene.  The
+                # opacity setting belongs only to the NCI surface actor above.
+                self.add_molecule_to_plotter(self.plotter)
 
-            self.plotter.reset_camera()
-            if molecule_renderer is not None:
+            if camera_position is None:
+                self.plotter.reset_camera()
+            else:
                 try:
-                    molecule_renderer.SetActiveCamera(self.plotter.renderer.GetActiveCamera())
+                    self.plotter.camera_position = camera_position
                 except Exception:
-                    pass
-                try:
-                    self.plotter.add_on_render_callback(
-                        lambda plotter: molecule_renderer.SetActiveCamera(plotter.renderer.GetActiveCamera()),
-                        render_event=True,
-                    )
-                except Exception:
-                    pass
-            bring_pyvista_window_to_front(self.plotter)
-            self.plotter.show(interactive_update=True, auto_close=False)
-            bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
-            self.root.after(180, self.show_viewer_controls)
+                    self.plotter.reset_camera()
+            if reuse_plotter:
+                self.plotter.render()
+            else:
+                place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout)
+                bring_pyvista_window_to_front(self.plotter)
+                self.plotter.show(interactive_update=True, auto_close=False)
+                place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout)
+                bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
+                self.root.after(
+                    120,
+                    lambda: place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout),
+                )
+                self.root.after(180, self.show_viewer_controls)
 
-            self.log("Plot updated.")
+            if not live:
+                self.log("Plot updated.")
 
         except Exception as exc:
-            self.log(f"ERROR: {exc}")
-            messagebox.showerror("Plot update failed", str(exc))
+            if live:
+                self.log(f"Live plot update skipped: {exc}")
+            else:
+                self.log(f"ERROR: {exc}")
+                messagebox.showerror("Plot update failed", str(exc))
+        finally:
+            self.plot_update_in_progress = False
 
-    def add_molecule_to_plotter(self, plotter, molecule_renderer=None) -> None:
+    def add_molecule_to_plotter(self, plotter) -> None:
         try:
             import pyvista as pv
         except Exception:
@@ -2065,7 +2076,7 @@ class NCIPlotterApp:
                         resolution=HQ_BOND_RESOLUTION,
                         capping=True,
                     )
-                    self.add_molecule_mesh(plotter, cylinder, color, molecule_renderer)
+                    self.add_molecule_mesh(plotter, cylinder, color)
 
         for number, coord in zip(numbers, atoms):
             radius = self.atom_display_radius(number)
@@ -2075,37 +2086,10 @@ class NCIPlotterApp:
                 theta_resolution=HQ_ATOM_RESOLUTION,
                 phi_resolution=HQ_ATOM_RESOLUTION,
             )
-            self.add_molecule_mesh(plotter, sphere, self.atom_color(number), molecule_renderer)
+            self.add_molecule_mesh(plotter, sphere, self.atom_color(number))
 
-    def add_molecule_mesh(self, plotter, mesh, color: str, molecule_renderer=None) -> None:
-        if molecule_renderer is None:
-            add_mesh_safe(plotter, mesh, color=color, **molecule_material_parameters())
-            return
-
-        try:
-            import pyvista as pv
-            mapper = pv._vtk.vtkPolyDataMapper()
-            mapper.SetInputData(mesh)
-            actor = pv._vtk.vtkActor()
-        except Exception:
-            add_mesh_safe(plotter, mesh, color=color, **molecule_material_parameters())
-            return
-
-        actor.SetMapper(mapper)
-        prop = actor.GetProperty()
-        rgb = hex_to_rgb01(color)
-        prop.SetColor(float(rgb[0]), float(rgb[1]), float(rgb[2]))
-        material = molecule_material_parameters()
-        try:
-            prop.LightingOn()
-            prop.SetInterpolationToPhong()
-            prop.SetAmbient(float(material["ambient"]))
-            prop.SetDiffuse(float(material["diffuse"]))
-            prop.SetSpecular(float(material["specular"]))
-            prop.SetSpecularPower(float(material["specular_power"]))
-        except Exception:
-            pass
-        molecule_renderer.AddActor(actor)
+    def add_molecule_mesh(self, plotter, mesh, color: str) -> None:
+        add_mesh_safe(plotter, mesh, color=color, opacity=1.0, **molecule_material_parameters())
 
     def atom_display_radius(self, atomic_number: int) -> float:
         radius = self.covalent_radius(atomic_number) * 0.42

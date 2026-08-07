@@ -56,6 +56,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from shared.window_layout import compute_visualization_layout, place_visualization_windows
 
 ESP_ICON_PATH = TOOLS_ROOT / "images" / "tr_ESP_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -1673,7 +1674,14 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         "overlay_bond_actors": [],
     }
 
-    viewer_width, viewer_height = _viewer_window_size()
+    root = APP_STATE.get("root")
+    control_window = getattr(root, "viewer_controls_window", None) if root is not None else None
+    tiled_layout = compute_visualization_layout(
+        root,
+        control_width=370,
+        control_height=720,
+    ) if root is not None else None
+    viewer_width, viewer_height = tiled_layout.viewer_size if tiled_layout is not None else _viewer_window_size()
     bounds_extent = float(np.linalg.norm([xx.max() - xx.min(), yy.max() - yy.min(), zz.max() - zz.min()]))
     plotter = pv.Plotter(window_size=(viewer_width, viewer_height))
     main_renderer = plotter.renderer
@@ -1695,18 +1703,9 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         overlay_renderer = None
 
     def _position_viewer_window():
-        root = APP_STATE.get("root")
-        if root is None:
+        if tiled_layout is None or control_window is None:
             return
-        try:
-            root.update_idletasks()
-            viewer_x = int(root.winfo_rootx() + root.winfo_width() + 12)
-            viewer_y = int(root.winfo_rooty())
-            ren_win = getattr(plotter, "ren_win", None)
-            if ren_win is not None:
-                ren_win.SetPosition(viewer_x, viewer_y)
-        except Exception:
-            pass
+        place_visualization_windows(control_window, plotter, tiled_layout)
     def _sync_overlay_camera():
         if overlay_renderer is None:
             return

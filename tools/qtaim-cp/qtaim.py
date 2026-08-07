@@ -59,6 +59,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from shared.window_layout import compute_visualization_layout, place_visualization_windows
 
 QTAIM_ICON_PATH = TOOLS_ROOT / "images" / "qtaim.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -2700,6 +2701,9 @@ class QTAIMGui(ttk.Frame):
         self.bond_path_color = tk.StringVar(value=DEFAULT_BOND_PATH_COLOR)
         self.multiwfn_commands = DEFAULT_MULTIWFN_COMMANDS
         self._graphics_save_job = None
+        self.live_plot_job = None
+        self.plot_update_in_progress = False
+        self.viewer_controls_window: Optional[tk.Toplevel] = None
         self.apply_graphics_settings(load_graphics_settings())
         self.bind_graphics_setting_traces()
         self.settings_window: Optional[tk.Toplevel] = None
@@ -2841,6 +2845,35 @@ class QTAIMGui(ttk.Frame):
             except Exception:
                 pass
         self._graphics_save_job = self.after(150, self._run_graphics_settings_save)
+        self.schedule_live_plot_update()
+
+    def schedule_live_plot_update(self) -> None:
+        """Debounce visual-setting changes for an already-open PyVista scene."""
+        if self.plot_update_in_progress or not self.is_plotter_alive():
+            return
+        if self.live_plot_job is not None:
+            try:
+                self.after_cancel(self.live_plot_job)
+            except Exception:
+                pass
+        self.live_plot_job = self.after(220, self._run_live_plot_update)
+
+    def _run_live_plot_update(self) -> None:
+        self.live_plot_job = None
+        if not self.plot_update_in_progress and self.is_plotter_alive():
+            self.update_plot(live=True)
+
+    def show_viewer_controls(self) -> None:
+        win = self.viewer_controls_window
+        if win is None:
+            return
+        try:
+            win.deiconify()
+            win.attributes("-topmost", True)
+            win.lift()
+            win.focus_force()
+        except tk.TclError:
+            pass
 
     def _run_graphics_settings_save(self) -> None:
         self._graphics_save_job = None
@@ -3024,7 +3057,7 @@ class QTAIMGui(ttk.Frame):
             file_frame,
             textvariable=self.input_path,
             values=self.recent_input_files,
-            width=37 if self.embedded else 46,
+            width=72 if self.embedded else 82,
         )
         keep_entry_end_visible(self.input_combo, self.input_path)
         self.input_combo.grid(row=1, column=1, sticky="ew", padx=5)
@@ -3039,8 +3072,10 @@ class QTAIMGui(ttk.Frame):
                 style="HeaderCTA.TButton",
             ).grid(row=1, column=4, sticky="e", padx=(18, 0))
 
-        file_frame.columnconfigure(1, weight=0)
-        file_frame.columnconfigure(4, weight=1)
+        # Give spare horizontal space to the path field, while the action
+        # buttons retain their natural widths at the right side of the row.
+        file_frame.columnconfigure(1, weight=1)
+        file_frame.columnconfigure(4, weight=0)
 
         progress_frame = ttk.Frame(root, style="Panel.TFrame")
         progress_frame.pack(fill="x", pady=(0, 8))
@@ -3056,69 +3091,94 @@ class QTAIMGui(ttk.Frame):
         self.progress_bar.grid(row=0, column=0, sticky="ew")
         ttk.Label(progress_frame, textvariable=self.progress_text, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(2, 0))
 
-        settings = ttk.LabelFrame(root, text="Visualization settings", padding=10)
-        settings.pack(fill="x", pady=(0, 8))
+        self.viewer_controls_window = tk.Toplevel(self)
+        self.viewer_controls_window.title("QTAIM Viewer Controls")
+        self.viewer_controls_window.geometry("390x720")
+        self.viewer_controls_window.minsize(350, 560)
+        configure_builder_ui_style(self.viewer_controls_window)
+        self.viewer_controls_window.attributes("-topmost", True)
+        self.viewer_controls_window.protocol("WM_DELETE_WINDOW", self.viewer_controls_window.withdraw)
+        self.viewer_controls_window.withdraw()
+
+        control_host = ttk.Frame(self.viewer_controls_window, style="Panel.TFrame")
+        control_host.pack(fill="both", expand=True)
+        control_canvas = tk.Canvas(control_host, bg="#f4f6f9", highlightthickness=0)
+        control_scroll = ttk.Scrollbar(control_host, orient="vertical", command=control_canvas.yview)
+        control_canvas.configure(yscrollcommand=control_scroll.set)
+        control_canvas.pack(side="left", fill="both", expand=True)
+        control_scroll.pack(side="right", fill="y")
+        settings = ttk.Frame(control_canvas, style="Panel.TFrame", padding=10)
+        settings_window = control_canvas.create_window((0, 0), window=settings, anchor="nw")
+        settings.bind("<Configure>", lambda _e: control_canvas.configure(scrollregion=control_canvas.bbox("all")))
+        control_canvas.bind("<Configure>", lambda e: control_canvas.itemconfigure(settings_window, width=e.width))
+        bind_mousewheel_to_canvas(control_canvas, settings)
+
+        ttk.Button(
+            root,
+            text="Viewer controls...",
+            command=self.show_viewer_controls,
+            style="Primary.TButton",
+        ).pack(anchor="w", pady=(0, 8))
+
+        cp_frame = ttk.LabelFrame(settings, text="Critical points", padding=8)
+        cp_frame.pack(fill="x", pady=(0, 8))
 
         cp_items = [
-            ("NCP (3,-3)", self.show_ncp, "nuclei", self.cp_color_vars["(3,-3)"], 0, 0),
-            ("Strong interaction CPs", self.show_covalent_bcp, "shared/intermediate", self.cp_color_vars["(3,-1)"], 0, 3),
-            ("Weak interaction CPs", self.show_non_covalent_bcp, "closed-shell/weak", self.cp_color_vars["(3,-1)"], 0, 6),
-            ("RCP (3,+1)", self.show_rcp, "ring", self.cp_color_vars["(3,+1)"], 1, 0),
-            ("CCP (3,+3)", self.show_ccp, "cage", self.cp_color_vars["(3,+3)"], 1, 3),
-            ("Unknown CPs", self.show_unknown, "unclassified", self.cp_color_vars["unknown"], 1, 6),
-            ("Labels", self.show_labels, "names", None, 2, 0),
+            ("NCP (3,-3)", self.show_ncp, self.cp_color_vars["(3,-3)"]),
+            ("Strong interaction CPs", self.show_covalent_bcp, self.cp_color_vars["(3,-1)"]),
+            ("Weak interaction CPs", self.show_non_covalent_bcp, self.cp_color_vars["(3,-1)"]),
+            ("RCP (3,+1)", self.show_rcp, self.cp_color_vars["(3,+1)"]),
+            ("CCP (3,+3)", self.show_ccp, self.cp_color_vars["(3,+3)"]),
+            ("Unknown CPs", self.show_unknown, self.cp_color_vars["unknown"]),
         ]
-        for text, var, note, color_var, row, col in cp_items:
-            cp_wrap = ttk.Frame(settings, style="Panel.TFrame")
-            cp_wrap.grid(row=row, column=col, columnspan=3, sticky="w", padx=(0, 14), pady=(0 if row == 0 else 6, 0))
+        for row, (text, var, color_var) in enumerate(cp_items):
+            cp_wrap = ttk.Frame(cp_frame, style="Panel.TFrame")
+            cp_wrap.grid(row=row, column=0, sticky="w", pady=(0 if row == 0 else 4, 0))
             ttk.Checkbutton(cp_wrap, text=text, variable=var).pack(side="left")
-            if color_var is not None:
-                self.make_color_swatch(cp_wrap, color_var, f"Select {text} color").pack(side="left", padx=(3, 2))
-            ttk.Label(cp_wrap, text=note, style="Muted.TLabel", anchor="w").pack(side="left", padx=(0, 0))
+            self.make_color_swatch(cp_wrap, color_var, f"Select {text} color").pack(side="left", padx=(4, 2))
 
-        ttk.Checkbutton(settings, text="Molecule", variable=self.show_molecule).grid(row=3, column=0, sticky="w", pady=(8, 0))
-        ttk.Checkbutton(settings, text="Covalent bonds", variable=self.show_covalent_bonds).grid(row=3, column=3, sticky="w", pady=(8, 0))
-        path_wrap = ttk.Frame(settings, style="Panel.TFrame")
-        path_wrap.grid(row=3, column=6, columnspan=3, sticky="w", pady=(8, 0))
+        display_frame = ttk.LabelFrame(settings, text="Display", padding=8)
+        display_frame.pack(fill="x", pady=(0, 8))
+        ttk.Checkbutton(display_frame, text="Labels", variable=self.show_labels).pack(anchor="w")
+        ttk.Checkbutton(display_frame, text="Molecule", variable=self.show_molecule).pack(anchor="w", pady=(4, 0))
+        ttk.Checkbutton(display_frame, text="Covalent bonds", variable=self.show_covalent_bonds).pack(anchor="w", pady=(4, 0))
+        path_wrap = ttk.Frame(display_frame, style="Panel.TFrame")
+        path_wrap.pack(anchor="w", pady=(4, 0))
         ttk.Checkbutton(path_wrap, text="QTAIM paths", variable=self.show_bond_paths).pack(side="left")
         self.make_color_swatch(path_wrap, self.bond_path_color, "Select QTAIM path color").pack(side="left", padx=(4, 2))
 
-        ttk.Label(settings, text="Atom size").grid(row=4, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(settings, textvariable=self.atom_scale, width=10).grid(row=4, column=1, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="CP size").grid(row=4, column=3, sticky="w", pady=(8, 0))
-        ttk.Entry(settings, textvariable=self.cp_scale, width=10).grid(row=4, column=4, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="Bond/path radius").grid(row=4, column=6, sticky="w", pady=(8, 0))
-        ttk.Entry(settings, textvariable=self.bond_radius, width=10).grid(row=4, column=7, sticky="w", pady=(8, 0))
+        size_frame = ttk.LabelFrame(settings, text="Sizes", padding=8)
+        size_frame.pack(fill="x", pady=(0, 8))
+        size_frame.columnconfigure(1, weight=1)
+        ttk.Label(size_frame, text="Atom size").grid(row=0, column=0, sticky="w")
+        ttk.Entry(size_frame, textvariable=self.atom_scale).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        ttk.Label(size_frame, text="CP size").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(size_frame, textvariable=self.cp_scale).grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(6, 0))
+        ttk.Label(size_frame, text="Bond/path radius").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(size_frame, textvariable=self.bond_radius).grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(6, 0))
 
-        ttk.Label(settings, text="Background").grid(row=5, column=0, sticky="w", pady=(8, 0))
-        ttk.Combobox(settings, textvariable=self.background, values=["black", "white"], width=10, state="readonly").grid(row=5, column=1, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="Image size").grid(row=5, column=3, sticky="w", pady=(8, 0))
+        appearance_frame = ttk.LabelFrame(settings, text="Appearance and output", padding=8)
+        appearance_frame.pack(fill="x", pady=(0, 8))
+        appearance_frame.columnconfigure(0, weight=1)
+        ttk.Label(appearance_frame, text="Background").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(appearance_frame, textvariable=self.background, values=["black", "white"], state="readonly").grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        ttk.Checkbutton(appearance_frame, text="CP energy", variable=self.show_cp_energy).grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(appearance_frame, text="Energy unit").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Combobox(appearance_frame, textvariable=self.cp_energy_unit, values=["kJ/mol", "kcal/mol"], state="readonly").grid(row=4, column=0, sticky="ew", pady=(2, 0))
+        ttk.Label(appearance_frame, text="Image size").grid(row=5, column=0, sticky="w", pady=(8, 0))
         ttk.Combobox(
-            settings,
+            appearance_frame,
             textvariable=self.image_resolution,
             values=list(IMAGE_PRESETS.keys()),
-            width=28,
             state="readonly",
-        ).grid(row=5, column=4, columnspan=4, sticky="w", pady=(8, 0))
+        ).grid(row=6, column=0, sticky="ew", pady=(2, 0))
 
-        ttk.Checkbutton(settings, text="CP energy", variable=self.show_cp_energy).grid(row=6, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="Energy unit").grid(row=6, column=3, sticky="w", pady=(8, 0))
-        ttk.Combobox(
-            settings,
-            textvariable=self.cp_energy_unit,
-            values=["kJ/mol", "kcal/mol"],
-            width=10,
-            state="readonly",
-        ).grid(row=6, column=4, sticky="w", pady=(8, 0))
-        ttk.Label(settings, text="uses 0.5V(r) when available", style="Muted.TLabel").grid(row=6, column=6, columnspan=3, sticky="w", pady=(8, 0))
-
-        buttons = ttk.Frame(root)
-        buttons.pack(fill="x", pady=(0, 8))
-
-        ttk.Button(buttons, text="Display CPs and bonding paths", command=self.visualize, style="Primary.TButton").pack(side="left", padx=(0, 6))
-        ttk.Button(buttons, text="Update plot", command=self.update_plot).pack(side="left", padx=(0, 6))
-        ttk.Button(buttons, text="Reset view", command=self.reset_view).pack(side="left", padx=(0, 6))
-        ttk.Button(buttons, text="Save image", command=self.save_image).pack(side="left", padx=(0, 6))
+        actions = ttk.LabelFrame(settings, text="Actions", padding=8)
+        actions.pack(fill="x")
+        actions.columnconfigure(0, weight=1)
+        ttk.Button(actions, text="Open / rebuild viewer", command=self.visualize, style="Primary.TButton").grid(row=0, column=0, sticky="ew")
+        ttk.Button(actions, text="Reset controls", command=self.reset_view).grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        ttk.Button(actions, text="Save Image As...", command=self.save_image).grid(row=2, column=0, sticky="ew", pady=(6, 0))
 
         log_frame = ttk.LabelFrame(root, text="Status", padding=10)
         log_frame.pack(fill="both", expand=True)
@@ -3715,7 +3775,16 @@ class QTAIMGui(ttk.Frame):
             "enabled the parsed CP categories automatically."
         )
 
-    def update_plot(self):
+    def update_plot(self, live: bool = False):
+        if self.plot_update_in_progress:
+            return
+        if not live and self.live_plot_job is not None:
+            try:
+                self.after_cancel(self.live_plot_job)
+            except Exception:
+                pass
+            self.live_plot_job = None
+        self.plot_update_in_progress = True
         try:
             if pv is None:
                 raise RuntimeError("PyVista is not installed. Install with: pip install pyvista vtk")
@@ -3728,9 +3797,23 @@ class QTAIMGui(ttk.Frame):
             self.ensure_at_least_one_cp_type_visible()
             self.save_current_graphics_settings()
 
-            if not self.is_plotter_alive():
+            reuse_plotter = self.is_plotter_alive()
+            camera_position = None
+            if reuse_plotter:
+                try:
+                    camera_position = self.plotter.camera_position
+                except Exception:
+                    camera_position = None
+            tiled_layout = None
+            if not reuse_plotter:
                 self.close_plotter_reference(close_window=False)
-                self.plotter = pv.Plotter(window_size=self.pyvista_window_size)
+                tiled_layout = compute_visualization_layout(
+                    self,
+                    control_width=390,
+                    control_height=720,
+                )
+                self.plotter = pv.Plotter(window_size=tiled_layout.viewer_size)
+                place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout)
 
             display_paths = select_bond_paths_by_range(self.bond_paths, self.path_display_range.get())
             draw_qtaim_scene(
@@ -3757,12 +3840,18 @@ class QTAIMGui(ttk.Frame):
                 cp_colors=self.current_cp_colors(),
                 bond_path_color=self.bond_path_color.get(),
             )
-            if self.bond_paths and bool(self.show_bond_paths.get()):
+            if camera_position is not None:
+                try:
+                    self.plotter.camera_position = camera_position
+                except Exception:
+                    pass
+
+            if not live and self.bond_paths and bool(self.show_bond_paths.get()):
                 if len(display_paths) == len(self.bond_paths):
                     self.log(f"PyVista plot updated with exact Multiwfn bond paths: {len(self.bond_paths)}")
                 else:
                     self.log(f"PyVista plot updated with selected exact Multiwfn bond paths: {len(display_paths)}/{len(self.bond_paths)}")
-            else:
+            elif not live:
                 self.log("PyVista plot updated without QTAIM paths.")
 
             try:
@@ -3773,11 +3862,23 @@ class QTAIMGui(ttk.Frame):
                 self.plotter.render()
                 bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
             else:
+                place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout)
                 bring_pyvista_window_to_front(self.plotter)
                 self.plotter.show(title="QTAIM", interactive_update=True, auto_close=False)
+                place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout)
                 bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
+                self.after(
+                    120,
+                    lambda: place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout),
+                )
+                self.after(180, self.show_viewer_controls)
         except Exception as exc:
-            self.show_exception("Plot update failed", exc)
+            if live:
+                self.log(f"Live plot update skipped: {exc}")
+            else:
+                self.show_exception("Plot update failed", exc)
+        finally:
+            self.plot_update_in_progress = False
 
     def visualize(self):
         self.close_plotter_reference(close_window=True)
