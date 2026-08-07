@@ -1337,9 +1337,8 @@ class NCIPlotterApp:
         button_row.grid(row=3, column=0, sticky="ew")
         button_row.columnconfigure(0, weight=1)
 
-        ttk.Button(button_row, text="Update plot", command=self.update_plot).grid(row=0, column=0, sticky="ew")
-        ttk.Button(button_row, text="Reset view", command=self.reset_view).grid(row=1, column=0, sticky="ew", pady=(6, 0))
-        ttk.Button(button_row, text="Save image", command=self.save_image).grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        ttk.Button(button_row, text="Reset view", command=self.reset_view).grid(row=0, column=0, sticky="ew")
+        ttk.Button(button_row, text="Save image", command=self.save_image).grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
         for variable in (
             self.rdg_isovalue,
@@ -2139,7 +2138,7 @@ class NCIPlotterApp:
 
     def save_image(self) -> None:
         if not self.is_plotter_alive():
-            messagebox.showerror("No plot", "No active PyVista plot to save. Use Update plot or Reset view to reopen it.")
+            messagebox.showerror("No plot", "No active PyVista plot to save. Generate NCI data or use Reset view to reopen it.")
             return
 
         path = filedialog.asksaveasfilename(

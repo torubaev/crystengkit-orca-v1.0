@@ -54,6 +54,20 @@ For most Windows users, use the web `.exe` installer from the latest GitHub rele
 
 Download the newest `CrystEngKit-ORCA-Setup-*_web.exe`, run it, and follow the setup window. The installer prepares CrystEngKit, checks for Python and required Python packages, and looks for ORCA and Multiwfn on your computer.
 
+The same release package handles both installation and updating. The small web
+EXE downloads and SHA-256-verifies the full versioned installer. If the stable
+CrystEngKit application identity is already registered, setup performs an
+in-place update; otherwise it creates a new installation. Program files are
+updated while projects, user configuration, and the compatible managed `.venv`
+remain in place. The environment checker adds only requirements that are
+missing from the installed release.
+
+Installed builds provide **Update** on the startup screen and in **About**. It
+checks the latest GitHub release, requires a published SHA-256 digest or
+checksum asset, downloads the web installer, and closes Builder only after the
+verified external updater starts. Development Git checkouts are never
+overwritten by this action.
+
 If Windows warns about running a downloaded app, check that the file came from the official release page above before continuing. If your institution blocks downloaded installers, ask your local IT support to approve the file from the GitHub release page.
 
 CrystEngKit uses external chemistry programs that must be installed separately:
@@ -339,6 +353,8 @@ For a single manually configured TD-DFT job instead of the full sequence, use **
 ### Make Figures After a Calculation
 
 Use the top-panel buttons after the ORCA job finishes:
+
+The currently active tool is highlighted in the top panel, and its name appears on the left side of the panel, so you can always see which workspace is open.
 
 ![ORCA Input Builder top panel analysis buttons](images/wiki/orca_top_panel_1.png)
 

@@ -2,6 +2,16 @@
 setlocal
 cd /d "%~dp0"
 
+if exist "%~dp0.venv\Scripts\pythonw.exe" (
+    start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0tools\Orca_input\orca_input.py"
+    exit /b 0
+)
+
+if exist "%~dp0.venv\Scripts\python.exe" (
+    "%~dp0.venv\Scripts\python.exe" "%~dp0tools\Orca_input\orca_input.py"
+    exit /b %errorlevel%
+)
+
 where pyw.exe >nul 2>nul
 if %errorlevel%==0 (
     start "" pyw.exe -3 "%~dp0tools\Orca_input\orca_input.py"

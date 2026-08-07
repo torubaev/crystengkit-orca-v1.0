@@ -51,6 +51,10 @@ if ($finalSignature.Status -ne "Valid" -and -not $AllowUnsigned) {
     throw "The installer is unsigned. Provide -CertificateThumbprint or use -AllowUnsigned."
 }
 
+$installerHash = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$checksumPath = "$outputPath.sha256"
+Set-Content -LiteralPath $checksumPath -Value "$installerHash  $([IO.Path]::GetFileName($outputPath))" -Encoding ASCII
 Write-Host "Built full offline installer: $outputPath"
-Write-Host "Installer SHA-256: $((Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash)"
+Write-Host "Installer SHA-256: $installerHash"
+Write-Host "Checksum asset: $checksumPath"
 Write-Host "Signature status: $($finalSignature.Status)"

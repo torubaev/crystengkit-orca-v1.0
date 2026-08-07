@@ -44,10 +44,28 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from app_updater import (
+    download_verified_installer,
+    fetch_latest_installer,
+    is_development_checkout,
+    version_tuple as updater_version_tuple,
+)
 from orca_job_queue import OrcaJobQueue, OrcaQueueJob
 from workspace_navigation import StackedPageController
 
-LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
+
+def user_config_dir() -> Path:
+    system = platform.system().lower()
+    if system == "windows":
+        root = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(root) / "CrystEngKit-ORCA"
+    if system == "darwin":
+        return Path.home() / "Library" / "Application Support" / "CrystEngKit-ORCA"
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "CrystEngKit-ORCA"
+
+
+LEGACY_LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
+LAUNCHER_SETTINGS_PATH = user_config_dir() / "orca_gaussian_builder_settings.json"
 DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
 DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
 DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
@@ -353,13 +371,7 @@ def open_readme_or_wiki():
 
 
 def startup_news_cache_dir() -> Path:
-    system = platform.system().lower()
-    if system == "windows":
-        root = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(root) / "CrystEngKit-ORCA"
-    if system == "darwin":
-        return Path.home() / "Library" / "Application Support" / "CrystEngKit-ORCA"
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "CrystEngKit-ORCA"
+    return user_config_dir()
 
 
 STARTUP_NEWS_CACHE_PATH = startup_news_cache_dir() / "startup_news_cache.json"
@@ -615,6 +627,99 @@ def fetch_startup_news() -> Dict:
         }
 
 
+def start_application_update(master: tk.Misc):
+    """Check, verify, and launch the external installer without blocking Tk."""
+    if is_development_checkout(APP_ROOT):
+        messagebox.showinfo(
+            "Update",
+            "This is a Git development checkout, so it will not be overwritten by the updater.\n\n"
+            "Install a published release into the normal application folder to test or use automatic updates.",
+            parent=master,
+        )
+        return
+
+    dialog = tk.Toplevel(master)
+    dialog.title("CrystEngKit-ORCA Update")
+    dialog.transient(master)
+    dialog.resizable(False, False)
+    dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+    frame = ttk.Frame(dialog, padding=18)
+    frame.pack(fill="both", expand=True)
+    status_var = tk.StringVar(value="Checking the latest published release...")
+    ttk.Label(frame, textvariable=status_var, wraplength=430, justify="left").pack(fill="x")
+    progress = ttk.Progressbar(frame, mode="indeterminate", length=430)
+    progress.pack(fill="x", pady=(14, 0))
+    progress.start(12)
+    configure_tk_window_identity(dialog, "Update", BUILDER_ICON_ICO_PATH)
+    dialog.update_idletasks()
+    x = max(0, (dialog.winfo_screenwidth() - dialog.winfo_reqwidth()) // 2)
+    y = max(0, (dialog.winfo_screenheight() - dialog.winfo_reqheight()) // 2)
+    dialog.geometry(f"+{x}+{y}")
+
+    def fail(message: str):
+        try:
+            dialog.destroy()
+        except Exception:
+            pass
+        messagebox.showerror("Update", message, parent=master)
+
+    def check_worker():
+        try:
+            release = fetch_latest_installer()
+            master.after(0, lambda: offer_release(release))
+        except Exception as exc:
+            master.after(0, lambda message=str(exc): fail(message))
+
+    def offer_release(release):
+        if updater_version_tuple(release.version) <= updater_version_tuple(APP_VERSION):
+            dialog.destroy()
+            messagebox.showinfo(
+                "Update",
+                f"CrystEngKit-ORCA {APP_VERSION} is already the latest published release.",
+                parent=master,
+            )
+            return
+        progress.stop()
+        proceed = messagebox.askyesno(
+            "Update available",
+            f"Installed version: {APP_VERSION}\nAvailable version: {release.version}\n\n"
+            "Download the verified installer, close Builder, and update now?\n\n"
+            "Projects, user settings, and a compatible managed Python environment will be preserved.",
+            parent=master,
+            icon="warning",
+        )
+        if not proceed:
+            dialog.destroy()
+            return
+        status_var.set(f"Downloading and verifying {release.asset_name}...")
+        progress.configure(mode="indeterminate")
+        progress.start(10)
+
+        def download_worker():
+            try:
+                installer_path = download_verified_installer(release)
+                master.after(0, lambda: launch_installer(installer_path))
+            except Exception as exc:
+                master.after(0, lambda message=str(exc): fail(message))
+
+        threading.Thread(target=download_worker, daemon=True).start()
+
+    def launch_installer(installer_path: Path):
+        try:
+            progress.stop()
+            status_var.set("Starting the verified updater...")
+            subprocess.Popen([str(installer_path)], cwd=str(installer_path.parent), shell=False)
+        except Exception as exc:
+            fail(str(exc))
+            return
+        try:
+            master.after(250, master.destroy)
+        except Exception:
+            pass
+
+    threading.Thread(target=check_worker, daemon=True).start()
+
+
 class StartupSplash:
     def __init__(self, master: tk.Tk):
         self.master = master
@@ -665,6 +770,7 @@ class StartupSplash:
         self.dismiss_var = tk.BooleanVar(value=False)
         self.release_button = ttk.Button(bottom, text="Open release page", command=self.open_details, state="disabled")
         self.release_button.pack(side="left")
+        ttk.Button(bottom, text="Update", command=lambda: start_application_update(self.master)).pack(side="left", padx=(8, 0))
         ttk.Checkbutton(bottom, text="Don't show this message again", variable=self.dismiss_var).pack(side="left", padx=(12, 0))
         self.close_button = ttk.Button(bottom, text="Close", command=self.close)
         self.close_button.pack(side="right")
@@ -5608,9 +5714,16 @@ class App(tk.Tk):
 
     def _load_launcher_settings(self):
         try:
-            if not LAUNCHER_SETTINGS_PATH.is_file():
+            settings_path = LAUNCHER_SETTINGS_PATH
+            if not settings_path.is_file() and LEGACY_LAUNCHER_SETTINGS_PATH.is_file():
+                settings_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(LEGACY_LAUNCHER_SETTINGS_PATH, settings_path)
+                self.append_monitor(
+                    f"Launcher settings migrated to user configuration: {settings_path}\n"
+                )
+            if not settings_path.is_file():
                 return
-            data = json.loads(LAUNCHER_SETTINGS_PATH.read_text(encoding="utf-8"))
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
             self.homo_lumo_script_var.set(str(resolve_app_path(data.get("homo_lumo_script"), DEFAULT_HOMO_LUMO_SCRIPT)))
             self.esp_script_var.set(str(resolve_app_path(data.get("esp_script"), DEFAULT_ESP_SCRIPT)))
             nci_script = resolve_app_path(data.get("nci_script"), DEFAULT_NCI_SCRIPT)
@@ -5656,7 +5769,7 @@ class App(tk.Tk):
             ):
                 data["ai_web_model"] = resolved_ai_model
                 data["ai_web_model_settings_version"] = AI_WEB_MODEL_SETTINGS_VERSION
-                LAUNCHER_SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                settings_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception as exc:
             self.append_monitor(f"Launcher settings could not be loaded: {exc}\n")
 
@@ -5677,6 +5790,7 @@ class App(tk.Tk):
             "ai_web_model": self.ai_web_model_var.get().strip() or DEFAULT_AI_WEB_MODEL,
             "ai_web_model_settings_version": AI_WEB_MODEL_SETTINGS_VERSION,
         }
+        LAUNCHER_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
         LAUNCHER_SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def _browse_script_into(self, var: tk.StringVar):
@@ -5930,7 +6044,8 @@ class App(tk.Tk):
 
         buttons = ttk.Frame(box)
         buttons.grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
-        ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=0)
+        ttk.Button(buttons, text="Update", command=lambda: start_application_update(self)).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=1)
 
         win.update_idletasks()
         width = max(570, win.winfo_reqwidth())

@@ -1,6 +1,6 @@
 param(
     [string]$CertificateThumbprint = $env:CRYSTENGKIT_SIGN_CERT_SHA1,
-    [switch]$PinCurrentCommit,
+    [string]$FullInstallerPath = "",
     [switch]$AllowUnsigned
 )
 
@@ -8,59 +8,34 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $sourcePath = Join-Path $PSScriptRoot "CrystEngKitInstaller.cs"
-$licensePath = Join-Path $repoRoot "LICENSE"
 $versionPath = Join-Path $repoRoot "app_metadata\version.json"
 $appVersion = (Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json).version
 if ($appVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "Invalid application version '$appVersion' in $versionPath. Expected MAJOR.MINOR.PATCH."
 }
+
+$fullInstallerName = "CrystEngKit-ORCA-Setup-$appVersion.exe"
+if (-not $FullInstallerPath) {
+    $FullInstallerPath = Join-Path $repoRoot "install\releases\$fullInstallerName"
+}
+$FullInstallerPath = [IO.Path]::GetFullPath($FullInstallerPath)
+if (-not (Test-Path -LiteralPath $FullInstallerPath -PathType Leaf)) {
+    throw "Build the full Inno installer first. Expected: $FullInstallerPath"
+}
+$fullInstallerHash = (Get-FileHash -LiteralPath $FullInstallerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$packageUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/releases/download/v$appVersion/$fullInstallerName"
 $outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-$appVersion-web.exe"
 $compiler = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) {
     throw "The Windows .NET Framework C# compiler was not found."
 }
 
-$repoRef = "origin/main"
-$zipUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/archive/refs/heads/main.zip"
-$sha256 = ""
-if ($PinCurrentCommit) {
-    $status = git -C $repoRoot status --porcelain
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not read Git status."
-    }
-    if ($status) {
-        throw "Commit or stash all changes before building a pinned installer."
-    }
-
-    $repoRef = (git -C $repoRoot rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $repoRef) {
-        throw "Could not determine the current Git commit."
-    }
-
-    $remoteMain = git -C $repoRoot ls-remote origin refs/heads/main
-    if ($LASTEXITCODE -ne 0 -or -not $remoteMain) {
-        throw "Could not read origin/main."
-    }
-    $remoteMainCommit = ($remoteMain -split "\s+")[0]
-    if ($remoteMainCommit -ne $repoRef) {
-        throw "Current commit $repoRef is not origin/main. Push it before building a pinned installer."
-    }
-
-    $zipUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/archive/$repoRef.zip"
-}
-
-$tempZip = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKit-ORCA-web.zip"
 $tempSource = Join-Path ([IO.Path]::GetTempPath()) "CrystEngKitInstaller-web.cs"
 try {
-    Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip
-    if ($PinCurrentCommit) {
-        $sha256 = (Get-FileHash -LiteralPath $tempZip -Algorithm SHA256).Hash
-    }
-
     $source = Get-Content -LiteralPath $sourcePath -Raw
     $source = $source.Replace("__APP_VERSION__", $appVersion)
-    $source = $source.Replace("__REPO_URL__", $zipUrl)
-    $source = $source.Replace("__REPO_SHA256__", $sha256)
+    $source = $source.Replace("__PACKAGE_URL__", $packageUrl)
+    $source = $source.Replace("__PACKAGE_SHA256__", $fullInstallerHash)
     Set-Content -LiteralPath $tempSource -Value $source -Encoding UTF8
 
     New-Item -ItemType Directory -Path (Split-Path $outputPath) -Force | Out-Null
@@ -75,18 +50,15 @@ try {
         /reference:System.Core.dll `
         /reference:System.Drawing.dll `
         /reference:System.Windows.Forms.dll `
-        /reference:System.IO.Compression.dll `
-        /reference:System.IO.Compression.FileSystem.dll `
         /reference:Microsoft.CSharp.dll `
-        /resource:"$licensePath",LICENSE `
         $tempSource
     if ($LASTEXITCODE -ne 0) {
-        throw "C# installer compilation failed with exit code $LASTEXITCODE."
+        throw "C# bootstrapper compilation failed with exit code $LASTEXITCODE."
     }
 
     $probe = Start-Process -FilePath $outputPath -ArgumentList "/probe" -Wait -PassThru
     if ($probe.ExitCode -ne 0) {
-        throw "The built installer failed its Windows launch probe with exit code $($probe.ExitCode)."
+        throw "The built bootstrapper failed its Windows launch probe with exit code $($probe.ExitCode)."
     }
 
     if ($CertificateThumbprint) {
@@ -102,23 +74,26 @@ try {
             -TimestampServer "http://timestamp.digicert.com" `
             -HashAlgorithm SHA256
         if ($signature.Status -ne "Valid") {
-            throw "Installer signing failed: $($signature.StatusMessage)"
+            throw "Bootstrapper signing failed: $($signature.StatusMessage)"
         }
     }
 
     $finalSignature = Get-AuthenticodeSignature -FilePath $outputPath
     if ($finalSignature.Status -ne "Valid" -and -not $AllowUnsigned) {
         Remove-Item -LiteralPath $outputPath -Force -ErrorAction SilentlyContinue
-        throw "The installer is unsigned. Provide -CertificateThumbprint or use -AllowUnsigned only for local testing."
+        throw "The bootstrapper is unsigned. Provide -CertificateThumbprint or use -AllowUnsigned only for local testing."
     }
 
-    Write-Host "Built installer: $outputPath"
-    Write-Host "Repository source: $repoRef"
-    Write-Host "Repository ZIP SHA-256: $(if ($sha256) { $sha256 } else { 'not pinned; latest main is downloaded at install time' })"
-    Write-Host "Installer SHA-256: $((Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash)"
+    $bootstrapperHash = (Get-FileHash -LiteralPath $outputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $checksumPath = "$outputPath.sha256"
+    Set-Content -LiteralPath $checksumPath -Value "$bootstrapperHash  $([IO.Path]::GetFileName($outputPath))" -Encoding ASCII
+    Write-Host "Built web bootstrapper: $outputPath"
+    Write-Host "Full installer asset: $packageUrl"
+    Write-Host "Embedded full-installer SHA-256: $fullInstallerHash"
+    Write-Host "Bootstrapper SHA-256: $bootstrapperHash"
+    Write-Host "Checksum asset: $checksumPath"
     Write-Host "Signature status: $($finalSignature.Status)"
 }
 finally {
-    Remove-Item -LiteralPath $tempZip -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $tempSource -Force -ErrorAction SilentlyContinue
 }
