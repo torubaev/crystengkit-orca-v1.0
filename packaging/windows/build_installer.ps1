@@ -7,7 +7,12 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $issPath = Join-Path $PSScriptRoot "CrystEngKit_ORCA.iss"
-$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-v.10.exe"
+$versionPath = Join-Path $repoRoot "app_metadata\version.json"
+$appVersion = (Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json).version
+if ($appVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Invalid application version '$appVersion' in $versionPath. Expected MAJOR.MINOR.PATCH."
+}
+$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-$appVersion.exe"
 $isccCandidates = @(
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
@@ -18,7 +23,7 @@ if (-not $iscc) {
 }
 
 New-Item -ItemType Directory -Path (Split-Path $outputPath) -Force | Out-Null
-& $iscc $issPath
+& $iscc "/DMyAppVersion=$appVersion" $issPath
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
 }

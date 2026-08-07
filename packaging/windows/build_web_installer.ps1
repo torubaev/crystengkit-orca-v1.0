@@ -9,7 +9,12 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $sourcePath = Join-Path $PSScriptRoot "CrystEngKitInstaller.cs"
 $licensePath = Join-Path $repoRoot "LICENSE"
-$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-v.10_web.exe"
+$versionPath = Join-Path $repoRoot "app_metadata\version.json"
+$appVersion = (Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json).version
+if ($appVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Invalid application version '$appVersion' in $versionPath. Expected MAJOR.MINOR.PATCH."
+}
+$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-$appVersion-web.exe"
 $compiler = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) {
     throw "The Windows .NET Framework C# compiler was not found."
@@ -53,6 +58,7 @@ try {
     }
 
     $source = Get-Content -LiteralPath $sourcePath -Raw
+    $source = $source.Replace("__APP_VERSION__", $appVersion)
     $source = $source.Replace("__REPO_URL__", $zipUrl)
     $source = $source.Replace("__REPO_SHA256__", $sha256)
     Set-Content -LiteralPath $tempSource -Value $source -Encoding UTF8

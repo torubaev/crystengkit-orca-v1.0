@@ -2,7 +2,9 @@
 ; All project files are embedded. No network download is performed by Setup.
 
 #define MyAppName "CrystEngKit ORCA"
-#define MyAppVersion "1.0.2"
+#ifndef MyAppVersion
+  #error MyAppVersion must be supplied by build_installer.ps1
+#endif
 #define MyAppPublisher "CrystEngKit"
 #define MyAppURL "https://github.com/torubaev/crystengkit-orca-v1.0"
 
@@ -19,7 +21,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\..\LICENSE
 OutputDir=..\..\install\releases
-OutputBaseFilename=CrystEngKit-ORCA-Setup-v.10
+OutputBaseFilename=CrystEngKit-ORCA-Setup-{#MyAppVersion}
 SetupIconFile=..\..\tools\images\orca_builder.ico
 Compression=lzma2
 SolidCompression=yes
@@ -45,6 +47,7 @@ Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\index.html"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\crystengkit_v1.0_1.png"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\..\app_metadata\*"; DestDir: "{app}\app_metadata"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.pyo"
 Source: "..\..\images\*"; DestDir: "{app}\images"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\install\*"; DestDir: "{app}\install"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "releases\*,__pycache__\*,*.pyc,*.pyo"

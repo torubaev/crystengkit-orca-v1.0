@@ -17,7 +17,7 @@ Public releases should be Authenticode-signed by passing
 Output:
 
 ```text
-install\releases\CrystEngKit-ORCA-Setup-v.10.exe
+install\releases\CrystEngKit-ORCA-Setup-<version>.exe
 ```
 
 The alternative web installer is a much smaller .NET executable. It downloads
@@ -31,5 +31,9 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\build_web_installer.p
 Output:
 
 ```text
-install\releases\CrystEngKit-ORCA-Setup-v.10_web.exe
+install\releases\CrystEngKit-ORCA-Setup-<version>-web.exe
 ```
+
+Both builders read `app_metadata\version.json`. Change the version there once
+before creating a release; the GUI and package filenames then use the same
+`MAJOR.MINOR.PATCH` value.

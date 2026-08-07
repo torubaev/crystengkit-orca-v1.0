@@ -215,9 +215,13 @@ FEATURE_MATRIX = [
 ]
 
 
+VERSION_FILE = ROOT / "app_metadata" / "version.json"
+APP_VERSION = json.loads(VERSION_FILE.read_text(encoding="utf-8"))["version"]
+
+
 VERSION_AND_FEATURES = {
     "product": "CrystEngKit-ORCA",
-    "version": "1.0.0",
+    "version": APP_VERSION,
     "documentation_schema": 1,
     "primary_gui": "ORCA Input Builder",
     "tools": ["ORCA Input Builder", "TD-DFT", "HOMO-LUMO", "ESP/VisMap", "NCI Plotter", "QTAIM", "NCI + QTAIM Overlay"],

@@ -52,7 +52,21 @@ DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
 DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
 DEFAULT_TD_DFT_SCRIPT = TOOLS_ROOT / Path("TD_DFT") / "td_dft_module.py"
-APP_VERSION = "1.0.0"
+
+
+def _read_app_version() -> str:
+    """Read the single release version shared by the GUI and packagers."""
+    version_file = APP_ROOT / "app_metadata" / "version.json"
+    try:
+        value = json.loads(version_file.read_text(encoding="utf-8"))["version"]
+        if re.fullmatch(r"\d+\.\d+\.\d+", str(value)):
+            return str(value)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return "0.0.0"
+
+
+APP_VERSION = _read_app_version()
 STARTUP_NEWS_URL = "https://raw.githubusercontent.com/torubaev/crystengkit-orca-v1.0/main/app_metadata/startup_news.json"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
 GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"

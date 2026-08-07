@@ -12,7 +12,7 @@ using Microsoft.Win32;
 
 internal static class InstallerConfig
 {
-    internal const string Version = "v.10 (web)";
+    internal const string Version = "__APP_VERSION__ (web)";
     internal const string RepoUrl = "__REPO_URL__";
     internal const string RepoSha256 = "__REPO_SHA256__";
 }
