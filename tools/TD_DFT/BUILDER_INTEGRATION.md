@@ -1,7 +1,7 @@
 # TD-DFT Builder usage
 
 1. In ORCA Input Builder, select **TD-DFT / UV-Vis**.
-2. Configure TD-DFT/TDA, roots, and manifold in the TD-DFT window.
+2. Configure TD-DFT/TDA, roots, and manifold on the TD-DFT page.
 3. Select **Show ORCA Block**.
 
 The module validates and generates only the `%tddft` fragment. The connected
@@ -30,7 +30,7 @@ excited-state optimization and vertical-emission sequence. The Builder runs
 these as monitored ORCA jobs and preserves the source electronic-structure and
 solvent settings.
 
-Uncheck **TD-DFT / UV-Vis** in the Builder to exclude the synchronized block.
-Closing the module does not remove the last synchronized block. When the module
-is launched independently, **Show ORCA Block** displays and copies the fragment
-without requiring a Builder connection.
+Uncheck **TD-DFT / UV-Vis** in Input to exclude the synchronized block. Moving
+to another workspace page does not remove the last synchronized block; return
+to TD-DFT through the top navigation whenever it needs to be reviewed or
+changed.

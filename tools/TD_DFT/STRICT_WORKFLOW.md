@@ -42,13 +42,14 @@ Traceable CSV/JSON summaries and file hashes are written under `results/`.
 SLURM submission is intentionally not automatic unless a later UI action
 explicitly requests external submission.
 
-## Integrated TD-DFT window
+## TD-DFT workspace
 
-Normally no command line is needed. Open **TD-DFT / UV-Vis** from the ORCA
 Builder and use **Run complete workflow...**. Functional, basis, dispersion,
+Normally no command line is needed. Select **TD-DFT** in the Builder's top
+navigation and use **Run complete workflow...**. Functional, basis, dispersion,
 grid, solvent, charge, multiplicity, constraints, geometry, and ORCA path come
 from the Builder. Roots, target state, TDA/TD-DFT, MaxDim, and MaxIter come from
-the TD-DFT window.
+the TD-DFT page.
 
 Every complete workflow starts from the geometry currently loaded in Builder
 and creates all stages inside the selected project directory. External `.out`

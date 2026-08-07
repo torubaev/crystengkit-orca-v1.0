@@ -242,6 +242,7 @@
 <a class="nav-link level-3" href="#manual-installation">Manual installation</a></div></details>
 <a class="nav-link level-2" href="#starting-the-suite">Starting the Suite</a>
 <details class="nav-group" open><summary><a href="#tools">Tools</a></summary><div class="nav-children"><a class="nav-link level-3" href="#orca-input-builder">ORCA Input Builder</a>
+<a class="nav-link level-3" href="#torsion-generator">Torsion Generator</a>
 <a class="nav-link level-3" href="#td-dft-setup-analysis-and-visualization">TD-DFT Setup, Analysis, and Visualization</a>
 <a class="nav-link level-3" href="#homo-lumo-plotter">HOMO-LUMO Plotter</a>
 <a class="nav-link level-3" href="#esp-vismap">ESP / VisMap</a>
@@ -339,14 +340,58 @@
 <p>Or double-click the <code>tools/Orca_input/orca_input.py</code> file.</p>
 <p>At startup, the Builder displays a short splash while checking the local tool environment and may show a repository-maintained notice. Notices can be dismissed individually; failure to retrieve online notice data does not prevent the Builder from opening.</p>
 <h2 id="tools">Tools</h2>
-<p>The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.</p>
+<p>The Builder&#x27;s top navigation changes the central workspace between <strong>Input</strong>, <strong>HOMO LUMO</strong>, <strong>ESP map</strong>, <strong>NCI plot</strong>, <strong>QTAIM CP</strong>, and <strong>TD-DFT</strong>. The active tool is highlighted and its name is shown at the left. Tool pages remain mounted while you switch, so their loaded files, selections, results, and scroll positions remain available during the session. The <strong>Input</strong> button returns to the Builder without closing the active analysis page.</p>
+<p>Molecular graphics use native PyVista viewer windows. For ESP, NCI, and QTAIM, the visualization controls open in a narrow always-on-top panel beside the viewer. Changes are applied to the displayed model in real time. Closing the control panel does not close the viewer; use <strong>Viewer controls</strong> on the tool page to show it again. File choosers, confirmations, and error messages may still appear as ordinary dialogs.</p>
 <h3 id="orca-input-builder">ORCA Input Builder</h3>
 <figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder main working window"></figure>
-<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, existing <code>.inp</code> files, or external ORCA/Gaussian <code>.out</code> / <code>.log</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a <code>Show input</code> / <code>Job monitor</code> switch. During a run, <code>Show input</code> displays the exact input being executed without regenerating or replacing it; <code>Job monitor</code> shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. The Builder tries to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run; for older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
+<p>The main working window. Use it to prepare ORCA input files from <code>.cif</code>, <code>.xyz</code>, existing <code>.inp</code> files, or external ORCA/Gaussian <code>.out</code> / <code>.log</code> files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a <code>Show input</code> / <code>Job monitor</code> switch. During a run, <code>Show input</code> displays the exact input being executed without regenerating or replacing it; <code>Job monitor</code> shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. Active jobs are recorded in the user configuration folder: if the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process, and <strong>Reconnect</strong> provides the same action manually. A reconnected queue pauses after its current calculation. Before rerunning a successfully completed job, the Builder warns that all same-basename result files may be overwritten and recommends a next unused name, such as <code>filename_01.inp</code> or <code>filename_02.inp</code>. Accepting the recommendation opens a Save As dialog prefilled with that name; ORCA starts only after the user saves the copied input under the suggested or another unused name. Choosing overwrite opens a second <strong>ATTENTION — Are you sure?</strong> confirmation. The Builder tries to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run; for older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
+<h3 id="torsion-generator">Torsion Generator</h3>
+<p><code>tools/torsion_generator/torsion_generator.py</code> generates reproducible single, independent, collective, alternating, combinatorial, or seeded-random torsional distortions from an XYZ structure. It preserves atom order, validates axes and connectivity, writes a CSV audit table, and can prepare ORCA TD-DFT inputs without launching ORCA. From Builder, open the <strong>TD-DFT</strong> module and select <strong>Torsion scan</strong> in its header. See <code>tools/torsion_generator/README.md</code> and the two generic JSON examples in that directory.</p>
 <h3 id="td-dft-setup-analysis-and-visualization">TD-DFT Setup, Analysis, and Visualization</h3>
-<p>The TD-DFT module configures ORCA TD-DFT or TDA vertical excitations, singlet/triplet manifolds, target roots, excited-state optimization, excited-state frequencies, and absorption-to-emission sequences. When opened from the Builder, validated settings are synchronized into exactly one <code>%tddft</code> block while the Builder retains ownership of the functional, basis set, solvent, charge, multiplicity, and complete ORCA input.</p>
-<p>Every generated TD-DFT/TDA block requests natural transition orbitals with <code>DoNTO true</code> and <code>NTOThresh 1e-4</code>. Post-processing can parse excited states and oscillator strengths, plot stick or Gaussian-broadened UV-Vis spectra, export tables and images, generate selected-state NTO hole/electron cubes through a validated Multiwfn workflow, and display signed cubes with molecule, bond, label, isovalue, opacity, screenshot, and cube-export controls. Associated <code>.gbw</code>, <code>.wfn</code>, <code>.wfx</code>, Molden, and cube files are detected beside the ORCA output where applicable.</p>
-<p>TD-DFT input and emission-sequence filenames encode the structure, functional, basis, optional solvent, actual <code>td-dft</code>/<code>tda</code> method, and analysis step. CSV, spectrum, and screenshot dialogs suggest descriptive filenames while remaining editable.</p>
+<p>The TD-DFT workspace can prepare one calculation or run a complete absorption-to-emission workflow. It reuses the current molecular structure, functional, basis set, dispersion correction, solvent, charge, multiplicity, constraints, and ORCA executable from Input. The TD-DFT page supplies the TD-DFT/TDA choice, number of roots, target state, and solver settings.</p>
+<p>The complete workflow runs one required calculation at a time:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>Starting molecular structure
+    -&gt; S0 geometry optimization
+    -&gt; optional S0 frequency check
+    -&gt; vertical absorption at the optimized S0 geometry
+    -&gt; optimization of the selected S1/Sn state
+    -&gt; vertical emission at the optimized excited-state geometry
+    -&gt; results and provenance report</code></pre></div>
+<p>Select <strong>Run complete workflow...</strong>, choose a project directory, review the summary, and confirm. A later stage starts only after the preceding stage terminates normally and produces its required geometry and <code>.gbw</code> wavefunction. A failed optimization, missing file, important imaginary frequency, or inconsistent method stops the sequence instead of launching downstream jobs.</p>
+<p>Every generated TD-DFT/TDA job requests natural transition orbitals. After absorption or emission finishes, load its <code>.out</code> in <strong>Post-processing</strong>, select a state, and use <strong>Generate all analyses</strong> to prepare the NTO hole/electron cubes and the other supported density analyses. Spectrum tables and plots do not require Multiwfn; NTO cube generation requires the matching <code>.gbw</code> and a validated Multiwfn executable.</p>
+<p>&lt;details&gt; &lt;summary&gt;&lt;strong&gt;More details: inputs, outputs, continuation, and safeguards&lt;/strong&gt;&lt;/summary&gt;</p>
+<h4 id="starting-inputs">Starting inputs</h4>
+<p>For a new workflow, first load and inspect a molecular <code>.cif</code>, <code>.xyz</code>, or another supported structure in the Builder. The complete workflow reads the current Builder geometry and method directly; it does not require a second copy of those settings in TD-DFT.</p>
+<p>Complete TD-DFT workflows always start from the molecular geometry currently loaded in Builder (<code>.cif</code>, <code>.xyz</code>, or another accepted geometry source) and write every stage into the newly selected project folder. Drop-in continuation from an external <code>.out</code> is disabled to prevent another molecule, geometry, or wavefunction from being mixed into the project. Existing <code>.out</code> files can still be loaded in <strong>Post-processing</strong> for analysis, but they cannot become a workflow starting stage.</p>
+<h4 id="calculation-sequence">Calculation sequence</h4>
+<ul>
+<li><code>01_S0_opt</code>: optimizes the electronic ground-state geometry.</li>
+<li><code>02_S0_freq</code>: optionally checks that the optimized S0 structure is a minimum. A substantial imaginary frequency changes the workflow to <code>NEEDS_REVIEW</code>.</li>
+<li><code>03_absorption</code>: calculates vertical excited states at the optimized S0 geometry without <code>Opt</code>.</li>
+<li><code>04_S1_opt</code>: optimizes the selected excited-state root starting from the optimized S0 geometry. For another selected root, the same stage represents Sn rather than necessarily S1.</li>
+<li><code>05_emission</code>: calculates vertical emission at the optimized excited-state geometry without reusing the S0 geometry.</li>
+</ul>
+<p>All principal stages use one consistent functional, basis set, auxiliary basis, dispersion correction, RIJCOSX choice, solvent treatment, grid, SCF setting, and TD-DFT/TDA choice where applicable. Geometry and wavefunction handoffs are explicit: S0 products feed absorption and excited-state optimization, and excited-state products feed emission.</p>
+<h4 id="project-outputs">Project outputs</h4>
+<p>Each numbered directory contains its stage-specific <code>.inp</code>, <code>.out</code>, <code>.gbw</code>, and extracted geometry where applicable. The project also contains:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>config.yaml
+workflow_status.json
+input/initial_geometry.xyz
+results/&lt;compound&gt;_&lt;functional&gt;_&lt;basis&gt;_&lt;solvent&gt;_&lt;tda-or-td-dft&gt;_absorption-states.csv
+results/&lt;compound&gt;_&lt;functional&gt;_&lt;basis&gt;_&lt;solvent&gt;_&lt;tda-or-td-dft&gt;_emission-summary.csv
+results/&lt;compound&gt;_&lt;functional&gt;_&lt;basis&gt;_&lt;solvent&gt;_&lt;tda-or-td-dft&gt;_workflow-summary.json
+results/&lt;compound&gt;_&lt;functional&gt;_&lt;basis&gt;_&lt;solvent&gt;_&lt;tda-or-td-dft&gt;_workflow-summary.csv
+results/&lt;compound&gt;_&lt;functional&gt;_&lt;basis&gt;_&lt;solvent&gt;_&lt;tda-or-td-dft&gt;_provenance.json
+restarts/</code></pre></div>
+<p><code>workflow_status.json</code> records <code>NOT_STARTED</code>, <code>RUNNING</code>, <code>COMPLETED</code>, <code>FAILED</code>, or <code>NEEDS_REVIEW</code> states. Completed calculations are not silently overwritten. Failed or interrupted artifacts are preserved under <code>restarts/</code> before regeneration.</p>
+<h4 id="processes-and-memory">Processes and memory</h4>
+<p>Workflow stages are always sequential, but each individual ORCA job may use several processes. <code>Processes = 1</code> runs serially and does not require an MPI launcher. Values above 1 require a working ORCA-compatible <code>mpiexec</code> installation. <code>MaxCore</code> is specified in MB per process, so the approximate requested memory increases with the number of processes.</p>
+<h4 id="analysis-outputs">Analysis outputs</h4>
+<p>Post-processing reads excitation energies, wavelengths, oscillator strengths, and printed orbital contributions from a completed TD-DFT/TDA output. It can export state tables, broadened spectra, images, NTO hole/electron cubes, difference and transition densities, attachment/detachment results, and screenshots when their required source files and external tools are available.</p>
+<p>TD-DFT calculation and analysis filenames carry the calculation identity:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>&lt;compound&gt;_&lt;functional&gt;_&lt;basis&gt;_[solvent]_&lt;tda-or-td-dft&gt;_&lt;calculation-or-artifact&gt;.&lt;extension&gt;</code></pre></div>
+<p>For example: <code>B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption.out</code>, <code>B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption_uv-vis-spectrum.png</code>, and <code>B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption_NTO-pair.png</code>. The solvent part is omitted for gas-phase calculations. Export dialogs suggest these traceable names but still allow them to be edited before saving.</p>
+<p>&lt;/details&gt;</p>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt="HOMO-LUMO energy diagram tool"></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with <code>orca_plot</code>, render HOMO/LUMO surface images, and collect saved orbital views into a table.</p>
@@ -358,12 +403,15 @@
 <p>Resulting ESP map Image</p>
 <figure><img src="../images/wiki/orca_vismap_output_2.png" alt="ESP map"></figure>
 <p>This version is based on the original VisMap code by aaan1s (&lt;https://github.com/aaan1s/VisMap&gt;) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as <code>.wfn</code>, <code>.wfx</code>, or <code>.fchk</code>.</p>
+<p>When the ESP map viewer opens, its visualization-control panel opens beside it. Use the panel to adjust the surface, molecule style, colors, range, opacity, and image output while seeing the result immediately in PyVista. If the panel is closed, <strong>Viewer controls</strong> restores it.</p>
 <h3 id="nci-plotter">NCI Plotter</h3>
 <figure><img src="../images/wiki/orca_nci_output_1.png" alt="NCI plotter visualization of noncovalent interaction surfaces"></figure>
 <p>Creates noncovalent-interaction surfaces<sup><a href="#ref-nci">nci</a></sup> from <code>.wfn</code> or <code>.wfx</code> files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.</p>
+<p>The NCI viewer uses the same side-by-side control arrangement. Surface and molecule controls update the existing PyVista scene in real time; NCI opacity changes only the interaction surface, not the molecular model.</p>
 <h3 id="qtaim-critical-points-viewer">QTAIM Critical Points Viewer</h3>
 <figure><img src="../images/wiki/orca_qtaim_1.png" alt="QTAIM critical points viewer"></figure>
 <p>Shows QTAIM bond, ring, and cage critical points<sup><a href="#ref-qtaim">qtaim</a></sup> from <code>.wfn</code> or <code>.wfx</code> files and Multiwfn QTAIM output. The visualization settings include separate <code>Strong interaction CPs</code> and <code>Weak interaction CPs</code> checkboxes for BCP filtering, plus <code>CP energy</code> with <code>kJ/mol</code> or <code>kcal/mol</code> labels when <code>CPprop.txt</code> provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.</p>
+<p>QTAIM visualization controls are kept in the narrow panel beside the PyVista viewer. Filtering, colors, labels, sizes, and display choices update the current scene without rebuilding the tool page. Use <strong>Viewer controls</strong> to restore a closed panel.</p>
 <figure><img src="../images/wiki/orca_qtaim_2.png" alt="QTAIM critical point visualization settings"></figure>
 <h3 id="nci-qtaim-overlay">NCI + QTAIM Overlay</h3>
 <figure><img src="../images/wiki/orca_qtaim_nci_overlay.png" alt="NCI and QTAIM overlay visualization"></figure>
@@ -396,13 +444,18 @@
 <p>In <code>Settings</code>, choose the browser AI service; ChatGPT is the default. While an ORCA output is available, click <code>Ask AI about progress</code>. CrystEngKit reads the complete available <code>.out</code>, removes Cartesian-coordinate lines, absolute Windows paths, common filenames, and obvious credential fields, then builds a short progress-analysis prompt and copies it to the clipboard before opening the selected website. Paste the prompt and submit it in the browser.</p>
 <p>The prompt asks only for the current stage and convergence trend, evidence of looping or failure, the expected remaining stages, a cautious timing forecast, and whether to continue, monitor, or stop. A marker at the end lets the AI detect a truncated paste; successful completeness checks stay out of the report, while missing-marker truncation must be reported. Redaction is a convenience filter, not a guarantee: review the prompt before sending confidential calculations to an external service.</p>
 <h3 id="configure-and-analyze-a-td-dft-job">Configure and Analyze a TD-DFT Job</h3>
+<h4 id="complete-workflow-short-version">Complete workflow: short version</h4>
 <ol>
-<li>Select <code>TD-DFT / UV-Vis</code> in the Builder and configure TD-DFT or TDA, roots, manifold, and the required vertical/optimization/frequency steps.</li>
-<li>Select <code>Show ORCA Block</code> to validate the settings, synchronize the <code>%tddft</code> block, and return to the complete Builder input preview.</li>
-<li>Run the absorption job. For fluorescence, load the completed absorption output in TD-DFT post-processing and prepare the excited-state optimization and vertical-emission sequence for the selected root.</li>
-<li>Load a completed output to inspect the state table and UV-Vis spectrum. Select a state to generate its analysis package and dominant NTO hole/electron cubes when the matching <code>.gbw</code> and validated Multiwfn executable are available.</li>
-<li>Use the CSV, image, screenshot, and cube export controls; the proposed artifact names can be edited before saving.</li>
+<li>Load the starting structure in the Builder and verify the molecule with <strong>Structure preview</strong>.</li>
+<li>Set the functional, basis, dispersion, solvent, charge, multiplicity, grid, TightSCF, and RIJCOSX options in the Builder.</li>
+<li>Enable <strong>TD-DFT / UV-Vis</strong> and select <strong>TD-DFT</strong> in the top navigation.</li>
+<li>Choose TD-DFT or TDA, the number of roots, and the target state/root. NTO preparation is enabled automatically.</li>
+<li>Choose whether to validate S0 with a separate frequency calculation. Set <code>Processes = 1</code> for a serial ORCA installation, or use more processes only when MPI is configured.</li>
+<li>Click <strong>Run complete workflow...</strong>, choose a project directory, review the summary, and confirm.</li>
+<li>Let the program run S0 optimization, optional frequencies, absorption, excited-state optimization, and emission sequentially. If a required stage fails or needs review, the workflow stops.</li>
+<li>Load the completed absorption or emission <code>.out</code> in <strong>Post-processing</strong> to plot the spectrum, export states, and generate NTO or density analyses.</li>
 </ol>
+<p>For a single manually configured TD-DFT job instead of the full sequence, use <strong>Show ORCA Block</strong> to synchronize exactly one <code>%tddft</code> block with the Builder and run it normally.</p>
 <h3 id="make-figures-after-a-calculation">Make Figures After a Calculation</h3>
 <p>Use the top-panel buttons after the ORCA job finishes:</p>
 <figure><img src="../images/wiki/orca_top_panel_1.png" alt="ORCA Input Builder top panel analysis buttons"></figure>
@@ -567,6 +620,8 @@
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>README.md
 LICENSE
 docs/
+  build_gpt_knowledge.py         # rebuilds the custom-GPT knowledge bundle
+  gpt_knowledge/                 # upload-ready user-assistant reference files
 images/                         # README/wiki screenshots and figures
 install/
 examples/                       # reserved for future examples

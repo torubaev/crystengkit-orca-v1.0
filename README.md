@@ -119,7 +119,19 @@ the Builder from opening.
 
 ## Tools
 
-The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.
+The Builder's top navigation changes the central workspace between **Input**,
+**HOMO LUMO**, **ESP map**, **NCI plot**, **QTAIM CP**, and **TD-DFT**. The active
+tool is highlighted and its name is shown at the left. Tool pages remain mounted
+while you switch, so their loaded files, selections, results, and scroll
+positions remain available during the session. The **Input** button returns to
+the Builder without closing the active analysis page.
+
+Molecular graphics use native PyVista viewer windows. For ESP, NCI, and QTAIM,
+the visualization controls open in a narrow always-on-top panel beside the
+viewer. Changes are applied to the displayed model in real time. Closing the
+control panel does not close the viewer; use **Viewer controls** on the tool page
+to show it again. File choosers, confirmations, and error messages may still
+appear as ordinary dialogs.
 
 ### ORCA Input Builder
 
@@ -137,7 +149,7 @@ generic JSON examples in that directory.
 
 ### TD-DFT Setup, Analysis, and Visualization
 
-The TD-DFT window can prepare one calculation or run a complete absorption-to-emission workflow. In Builder-connected mode it reuses the current molecular structure, functional, basis set, dispersion correction, solvent, charge, multiplicity, constraints, and ORCA executable. The TD-DFT window supplies the TD-DFT/TDA choice, number of roots, target state, and solver settings.
+The TD-DFT workspace can prepare one calculation or run a complete absorption-to-emission workflow. It reuses the current molecular structure, functional, basis set, dispersion correction, solvent, charge, multiplicity, constraints, and ORCA executable from Input. The TD-DFT page supplies the TD-DFT/TDA choice, number of roots, target state, and solver settings.
 
 The complete workflow runs one required calculation at a time:
 
@@ -229,17 +241,31 @@ Resulting ESP map Image
 
 This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as `.wfn`, `.wfx`, or `.fchk`.
 
+When the ESP map viewer opens, its visualization-control panel opens beside it.
+Use the panel to adjust the surface, molecule style, colors, range, opacity, and
+image output while seeing the result immediately in PyVista. If the panel is
+closed, **Viewer controls** restores it.
+
 ### NCI Plotter
 
 ![NCI plotter visualization of noncovalent interaction surfaces](images/wiki/orca_nci_output_1.png)
 
 Creates noncovalent-interaction surfaces[^nci] from `.wfn` or `.wfx` files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.
 
+The NCI viewer uses the same side-by-side control arrangement. Surface and
+molecule controls update the existing PyVista scene in real time; NCI opacity
+changes only the interaction surface, not the molecular model.
+
 ### QTAIM Critical Points Viewer
 
 ![QTAIM critical points viewer](images/wiki/orca_qtaim_1.png)
 
 Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output. The visualization settings include separate `Strong interaction CPs` and `Weak interaction CPs` checkboxes for BCP filtering, plus `CP energy` with `kJ/mol` or `kcal/mol` labels when `CPprop.txt` provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
+
+QTAIM visualization controls are kept in the narrow panel beside the PyVista
+viewer. Filtering, colors, labels, sizes, and display choices update the current
+scene without rebuilding the tool page. Use **Viewer controls** to restore a
+closed panel.
 
 ![QTAIM critical point visualization settings](images/wiki/orca_qtaim_2.png)
 
@@ -285,7 +311,7 @@ The prompt asks only for the current stage and convergence trend, evidence of lo
 
 1. Load the starting structure in the Builder and verify the molecule with **Structure preview**.
 2. Set the functional, basis, dispersion, solvent, charge, multiplicity, grid, TightSCF, and RIJCOSX options in the Builder.
-3. Enable **TD-DFT / UV-Vis** and open its setup window.
+3. Enable **TD-DFT / UV-Vis** and select **TD-DFT** in the top navigation.
 4. Choose TD-DFT or TDA, the number of roots, and the target state/root. NTO preparation is enabled automatically.
 5. Choose whether to validate S0 with a separate frequency calculation. Set `Processes = 1` for a serial ORCA installation, or use more processes only when MPI is configured.
 6. Click **Run complete workflow...**, choose a project directory, review the summary, and confirm.
