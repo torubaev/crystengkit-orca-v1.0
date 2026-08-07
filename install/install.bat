@@ -1,6 +1,16 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+@echo off
+title Cryst Eng Kit
 
+echo.
+echo    ____                _   _____             _  ___ _
+echo   / ___^|_ __ _   _ ___^| ^|_^| ____^|_ __   __ _^| ^|/ (_) ^|_
+echo  ^| ^|   ^| '__^| ^| ^| / __^| __^|  _^| ^| '_ \ / _` ^| ' /^| ^| __^|
+echo  ^| ^|___^| ^|  ^| ^|_^| \__ \ ^|_^| ^|___^| ^| ^| ^| (_^| ^| . \^| ^| ^|_
+echo   \____^|_^|   \__, ^|___/\__^|_____^|_^| ^|_^|\__, ^|_^|\_\_^|\__^|
+echo              ^|___/                      ^|___/
+echo.
 cd /d "%~dp0"
 
 set "CHECKER=install.py"
