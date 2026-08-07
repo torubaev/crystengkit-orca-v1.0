@@ -1402,8 +1402,12 @@ class MOSurfaceContactSheet(tk.Toplevel):
         top = ttk.Frame(self, style="Panel.TFrame", padding=8)
         top.pack(fill="x")
         ttk.Label(top, text="MO Surface Contact Sheet", font=("Segoe UI", 11, "bold")).pack(side="left")
-        ttk.Button(top, text="Save", command=self._save).pack(side="right")
+        self.save_button = ttk.Button(top, text="Save", command=self._save)
+        self.save_button.pack(side="right")
         ttk.Button(top, text="Clean all", command=self._clean_all).pack(side="right", padx=(0, 6))
+
+        self.export_progress = ttk.Progressbar(self, mode="indeterminate", length=180)
+        self.export_progress.pack(fill="x", padx=8, pady=(0, 4))
 
         self.grid_frame = ttk.Frame(self, style="Panel.TFrame", padding=8)
         self.grid_frame.pack(fill="both", expand=True)
@@ -2308,15 +2312,29 @@ class App(ttk.Frame):
                     live_image = plotter.screenshot(return_img=True, window_size=plotter.window_size, scale=1)
                     camera_position = plotter.camera_position
                     camera_state = capture_plotter_camera_state(plotter)
-                    self.active_mo_plotter = None
-                    self._dispose_mo_plotter(plotter)
+                    # Do only bounded image/file work in the key callback. In
+                    # particular, never close or deep-clean a VTK interactor here:
+                    # that can deadlock on Windows. The contact sheet is refreshed
+                    # after the user closes this viewer normally.
                     self.save_mo_surface_view(
                         orbital,
                         camera_position,
                         live_image=live_image,
                         camera_state=camera_state,
+                        refresh_contact_sheet=False,
                     )
                     save_completed = True
+                    try:
+                        plotter.add_text(
+                            "Saved - close this viewer to update the contact sheet",
+                            position="upper_left",
+                            font_size=11,
+                            color="black",
+                            name="save_prompt",
+                        )
+                        plotter.render()
+                    except Exception:
+                        pass
                 except Exception as exc:
                     _show_error("Save MO surface image", exc)
                 finally:
@@ -2337,7 +2355,6 @@ class App(ttk.Frame):
                 self._close_active_mo_plotter()
 
             plotter.add_key_event("s", save_current_view)
-            plotter.add_key_event("S", save_current_view)
             add_pyvista_keypress_observer(plotter, "s", save_current_view)
             plotter.add_key_event("r", reset_current_view)
             plotter.add_key_event("R", reset_current_view)
@@ -2349,6 +2366,9 @@ class App(ttk.Frame):
             except TypeError:
                 bring_pyvista_window_to_front(plotter)
                 plotter.show(title=f"{orbital['display_label']} MO #{orbital['mo_number']}")
+            if save_completed and self.mo_contact_sheet is not None and self.mo_contact_sheet.winfo_exists():
+                self.mo_contact_sheet.refresh()
+                self.mo_contact_sheet.lift()
         except Exception as exc:
             _show_error("MO surface viewer", exc)
         finally:
@@ -2555,7 +2575,23 @@ class App(ttk.Frame):
         self.mo_surface_rendering = True
         try:
             render_options = dict(render_options or {})
-            if {"preset", "width", "height", "isovalue", "opacity", "molecule_style", "color_scheme"}.issubset(render_options):
+            if live_image is not None:
+                live = Image.fromarray(live_image).convert("RGB")
+                width, height = live.size
+                preset = "Live viewer"
+                orbital["isovalue"], orbital["opacity"] = self._current_mo_visual_settings()
+                orbital["molecule_style"] = self.mo_molecule_style_var.get()
+                orbital["color_scheme"] = self.mo_color_scheme_var.get()
+                render_options.update({
+                    "preset": preset,
+                    "width": width,
+                    "height": height,
+                    "isovalue": orbital["isovalue"],
+                    "opacity": orbital["opacity"],
+                    "molecule_style": orbital["molecule_style"],
+                    "color_scheme": orbital["color_scheme"],
+                })
+            elif {"preset", "width", "height", "isovalue", "opacity", "molecule_style", "color_scheme"}.issubset(render_options):
                 preset = str(render_options["preset"])
                 width = int(render_options["width"])
                 height = int(render_options["height"])
@@ -2577,24 +2613,28 @@ class App(ttk.Frame):
                     "molecule_style": orbital["molecule_style"],
                     "color_scheme": orbital["color_scheme"],
                 })
-            plotter = self._build_orbital_plotter(orbital, off_screen=True, window_size=(width, height), render_options=render_options)
-            apply_plotter_camera_state(plotter, camera_position, camera_state)
             image_path = Path(orbital["image_path"])
             thumb_path = Path(orbital["thumbnail_path"])
-            try:
-                for old_path in (image_path, thumb_path):
-                    try:
-                        if old_path.exists():
-                            old_path.unlink()
-                    except Exception:
-                        pass
-                img = pyvista_screenshot(plotter, str(image_path), window_size=(width, height), return_img=True)
-            except Exception as exc:
-                raise RuntimeError("High-resolution image saving failed. Try a smaller preset.") from exc
-            finally:
-                self._dispose_mo_plotter(plotter)
-            if img is None or getattr(img, "size", 0) == 0:
-                raise RuntimeError("Screenshot saving failed: blank image returned.")
+            for old_path in (image_path, thumb_path):
+                try:
+                    if old_path.exists():
+                        old_path.unlink()
+                except Exception:
+                    pass
+            if live_image is not None:
+                live.save(image_path)
+                img = live_image
+            else:
+                plotter = self._build_orbital_plotter(orbital, off_screen=True, window_size=(width, height), render_options=render_options)
+                apply_plotter_camera_state(plotter, camera_position, camera_state)
+                try:
+                    img = pyvista_screenshot(plotter, str(image_path), window_size=(width, height), return_img=True)
+                except Exception as exc:
+                    raise RuntimeError("High-resolution image saving failed. Try a smaller preset.") from exc
+                finally:
+                    self._dispose_mo_plotter(plotter)
+                if img is None or getattr(img, "size", 0) == 0:
+                    raise RuntimeError("Screenshot saving failed: blank image returned.")
             with Image.open(image_path) as opened:
                 im = opened.convert("RGB")
             if im.size != (width, height):
@@ -2724,25 +2764,58 @@ class App(ttk.Frame):
             return
         output = Path(selected)
         suffix = output.suffix.lower()
-        if suffix == ".png":
-            self._write_contact_sheet_png(output)
-        elif suffix == ".xlsx":
-            self._write_contact_sheet_xlsx(output)
-        elif suffix == ".ods":
-            self._write_contact_sheet_ods(output)
-        else:
+        if suffix not in {".png", ".xlsx", ".ods"}:
             raise ValueError("Choose .png, .xlsx, or .ods.")
+
+        # Read every Tk value before starting the worker. Tk calls from a worker
+        # thread are a common source of intermittent hangs on Windows.
+        resolution = self._selected_image_resolution() if suffix == ".png" else None
+        sheet = self.mo_contact_sheet
+        if sheet is not None and sheet.winfo_exists():
+            sheet.save_button.configure(state="disabled", text="Saving...")
+            sheet.export_progress.start(12)
+        self.mo_status_var.set(f"Saving contact sheet: {output.name}")
+
+        def worker() -> None:
+            try:
+                if suffix == ".png":
+                    self._write_contact_sheet_png(output, resolution=resolution)
+                elif suffix == ".xlsx":
+                    self._write_contact_sheet_xlsx(output)
+                else:
+                    self._write_contact_sheet_ods(output)
+            except Exception as exc:
+                self.after(0, lambda exc=exc: self._finish_contact_sheet_export(output, exc))
+            else:
+                self.after(0, lambda: self._finish_contact_sheet_export(output, None))
+
+        threading.Thread(target=worker, daemon=True, name="mo-contact-sheet-export").start()
+
+    def _finish_contact_sheet_export(self, output: Path, error: Optional[Exception]) -> None:
+        sheet = self.mo_contact_sheet
+        if sheet is not None and sheet.winfo_exists():
+            sheet.export_progress.stop()
+            sheet.save_button.configure(state="normal", text="Save")
+        if error is not None:
+            self.mo_status_var.set("Contact-sheet save failed.")
+            _show_error("Save contact sheet", error)
+            return
+        self.mo_status_var.set(f"Contact sheet saved: {output}")
         messagebox.showinfo("Contact sheet saved", f"Saved:\n{output}")
         open_image_in_system_viewer(output)
 
-    def _write_contact_sheet_png(self, output: Path) -> None:
+    def _write_contact_sheet_png(
+        self,
+        output: Path,
+        resolution: Optional[Tuple[str, int, int]] = None,
+    ) -> None:
         if Image is None or ImageDraw is None:
             raise RuntimeError("Pillow is required for contact-sheet image export.")
         if not self.mo_orbitals:
             raise ValueError("No MO surface tiles are available.")
         rows_by_kind = contact_sheet_rows(self.mo_orbitals)
         cols = max(1, max(len(row) for row in rows_by_kind))
-        _preset, min_width, min_height = self._selected_image_resolution()
+        _preset, min_width, min_height = resolution or (DEFAULT_IMAGE_PRESET, 6000, 4500)
         base_tile_w, base_tile_h = 430, 430
         scale = max(
             1.0,
@@ -2776,15 +2849,19 @@ class App(ttk.Frame):
                 draw.text((x + max(text_y, (tile_w - text_w) // 2), y + text_y), text, fill=CONTACT_HEADER_FG, font=header_font)
                 if orbital.get("energy_ev") is not None:
                     draw.text((x + max(15, int(math.ceil(15 * scale))), y + detail_y), f"{orbital['energy_ev']:.4f} eV", fill="black", font=detail_font)
-                image_path = Path(orbital.get("image_path") or "")
                 thumb_path = Path(orbital.get("thumbnail_path") or "")
-                source_path = image_path if image_path.is_file() else thumb_path
+                image_path = Path(orbital.get("image_path") or "")
+                # Contact sheets do not need to decode every 6000 x 4500 source
+                # render. Prefer the existing 400 px thumbnail and fall back to
+                # the full image only for older metadata without thumbnails.
+                source_path = thumb_path if thumb_path.is_file() else image_path
                 if source_path.is_file():
-                    img = Image.open(source_path).convert("RGB")
-                    img.thumbnail((image_box, image_box))
-                    paste_x = x + image_margin_x + max(0, (image_box - img.width) // 2)
-                    paste_y = y + image_margin_y + max(0, (image_box - img.height) // 2)
-                    sheet.paste(img, (paste_x, paste_y))
+                    with Image.open(source_path) as source:
+                        img = source.convert("RGB")
+                        img.thumbnail((image_box, image_box))
+                        paste_x = x + image_margin_x + max(0, (image_box - img.width) // 2)
+                        paste_y = y + image_margin_y + max(0, (image_box - img.height) // 2)
+                        sheet.paste(img, (paste_x, paste_y))
                 else:
                     draw.rectangle([x + image_margin_x, y + image_margin_y, x + image_margin_x + image_box, y + image_margin_y + image_box], outline="#e2e8f0")
                     draw.text((x + max(140, int(math.ceil(140 * scale))), y + max(220, int(math.ceil(220 * scale)))), "No saved image", fill="#64748b", font=detail_font)
