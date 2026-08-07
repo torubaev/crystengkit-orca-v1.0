@@ -2020,6 +2020,14 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             APP_STATE["root"].after(120, _position_viewer_window)
         except Exception:
             pass
+        try:
+            show_controls = getattr(APP_STATE["root"], "show_viewer_controls", None)
+            if callable(show_controls):
+                # Raise controls after the native PyVista window completes its
+                # delayed positioning/front operation.
+                APP_STATE["root"].after(180, show_controls)
+        except Exception:
+            pass
         sync_main_controls_from_viewer()
         refresh_extrema_panel([])
 
@@ -2271,7 +2279,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     tk.Label(input_box, text="Input wavefunction file (.wfn / .wfx / .fchk)", font=subsection_font).grid(row=0, column=0, sticky="w")
     input_file_var = tk.StringVar(value="")
     recent_input_files = load_recent_files()
-    entry_file = ttk.Combobox(input_box, textvariable=input_file_var, values=recent_input_files, width=88)
+    entry_file = ttk.Combobox(input_box, textvariable=input_file_var, values=recent_input_files, width=60)
     keep_entry_end_visible(entry_file, input_file_var)
     entry_file.grid(row=1, column=0, padx=(0, 10), pady=(4, 12), sticky="we")
     if initial_inputfile:
@@ -2359,10 +2367,52 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     default_pregen = bool(initial_pregen)
     default_cp = initial_cpisov or "0.001"
 
-    action_box = tk.LabelFrame(frm, text="2. Viewer controls", padx=12, pady=12, font=section_font, labelanchor="nw")
-    action_box.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(0, 12))
+    viewer_controls_window = tk.Toplevel(root)
+    viewer_controls_window.title("ESP Viewer Controls")
+    viewer_controls_window.geometry("370x720")
+    viewer_controls_window.minsize(340, 600)
+    viewer_controls_window.configure(background=app_bg)
+    viewer_controls_window.attributes("-topmost", True)
+    viewer_controls_window.protocol("WM_DELETE_WINDOW", viewer_controls_window.withdraw)
+    # Create the persistent controls window with the ESP page, but do not show
+    # it until a PyVista visualization window has actually been opened.
+    viewer_controls_window.withdraw()
+
+    def show_viewer_controls():
+        try:
+            viewer_controls_window.deiconify()
+            viewer_controls_window.attributes("-topmost", True)
+            viewer_controls_window.lift()
+            viewer_controls_window.focus_force()
+        except tk.TclError:
+            pass
+
+    viewer_controls_button = tk.Button(
+        input_box,
+        text="Viewer controls...",
+        image=run_icon,
+        compound="left",
+        command=show_viewer_controls,
+        font=section_font,
+        width=160,
+        height=44,
+        padx=10,
+        anchor="center",
+        bg=accent_bg,
+        fg=action_fg,
+        activebackground=action_bg,
+        activeforeground=action_fg,
+        relief="flat",
+        borderwidth=0,
+        highlightthickness=0,
+        cursor="hand2",
+    )
+    viewer_controls_button.grid(row=1, column=3, sticky="w", padx=(8, 0), pady=(4, 12))
+    input_box.grid_columnconfigure(3, weight=0)
+
+    action_box = tk.LabelFrame(viewer_controls_window, text="Viewer controls", padx=12, pady=12, font=section_font, labelanchor="nw")
+    action_box.pack(fill="both", expand=True, padx=12, pady=12)
     action_box.grid_columnconfigure(0, weight=1)
-    action_box.grid_columnconfigure(1, weight=1)
 
     APP_STATE["suggested_range_var"] = tk.StringVar(value="Suggested density range: n/a")
     APP_STATE["esp_range_hint_var"] = tk.StringVar(value="ESP data range: n/a")
@@ -2377,7 +2427,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     APP_STATE["image_resolution_var"] = tk.StringVar(value=DEFAULT_IMAGE_PRESET)
 
     surface_box = tk.LabelFrame(action_box, text="Surface", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    surface_box.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 10))
+    surface_box.grid(row=0, column=0, sticky="ew", pady=(0, 10))
     surface_box.grid_columnconfigure(1, weight=1)
 
     tk.Label(surface_box, text="Density isovalue", font=subsection_font).grid(row=0, column=0, sticky="w", pady=(0, 6))
@@ -2388,7 +2438,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     apply_btn.grid(row=0, column=2, sticky="w", padx=(8, 0), pady=(0, 6))
 
     tk.Label(surface_box, text="Opacity", font=subsection_font).grid(row=1, column=0, sticky="w")
-    opacity_scale = tk.Scale(surface_box, from_=0, to=100, orient="horizontal", resolution=1, command=viewer_update_opacity, showvalue=True, length=210)
+    opacity_scale = tk.Scale(surface_box, from_=0, to=100, orient="horizontal", resolution=1, command=viewer_update_opacity, showvalue=True, length=110)
     opacity_scale.set(100)
     opacity_scale.grid(row=1, column=1, columnspan=2, sticky="we", pady=(0, 6))
     APP_STATE["opacity_scale"] = opacity_scale
@@ -2414,14 +2464,14 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
         resolution=1,
         command=viewer_update_molecule_opacity,
         showvalue=True,
-        length=210,
+        length=110,
     )
     molecule_opacity_scale.set(40)
     molecule_opacity_scale.grid(row=4, column=1, columnspan=2, sticky="we", pady=(8, 0))
     APP_STATE["molecule_opacity_scale"] = molecule_opacity_scale
 
     range_box = tk.LabelFrame(action_box, text="ESP scale bar", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    range_box.grid(row=0, column=1, sticky="nsew", pady=(0, 10))
+    range_box.grid(row=1, column=0, sticky="ew", pady=(0, 10))
     range_box.grid_columnconfigure(1, weight=1)
 
     tk.Label(range_box, textvariable=APP_STATE["suggested_range_var"], font=emphasis_font, anchor="w", justify="left").grid(row=0, column=0, columnspan=3, sticky="w")
@@ -2439,7 +2489,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     esp_apply_btn.grid(row=2, column=2, rowspan=2, sticky="w", padx=(8, 0))
 
     appearance_box = tk.LabelFrame(action_box, text="Display options", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    appearance_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+    appearance_box.grid(row=2, column=0, sticky="ew", pady=(0, 10))
     for idx in range(2):
         appearance_box.grid_columnconfigure(idx, weight=1)
 
@@ -2448,11 +2498,11 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     bg_menu.grid(row=0, column=1, sticky="w")
 
     quick_box = tk.LabelFrame(action_box, text="Quick actions", padx=10, pady=8, font=subsection_font, labelanchor="nw")
-    quick_box.grid(row=1, column=1, sticky="nsew")
+    quick_box.grid(row=3, column=0, sticky="ew")
     for idx in range(2):
         quick_box.grid_columnconfigure(idx, weight=1)
 
-    save_btn = tk.Button(quick_box, text="Save as...", command=viewer_save_as, width=14)
+    save_btn = tk.Button(quick_box, text="Save Image As...", command=viewer_save_as, width=14)
     save_btn.grid(row=0, column=0, sticky="we", padx=(0, 6), pady=(0, 6))
     copy_btn = tk.Button(quick_box, text="Copy image", command=viewer_copy_to_clipboard, width=14)
     copy_btn.grid(row=0, column=1, sticky="we", pady=(0, 6))
@@ -2680,6 +2730,8 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
 
     root.on_hide = on_hide
     root.on_show = on_show
+    root.show_viewer_controls = show_viewer_controls
+    root.viewer_controls_window = viewer_controls_window
     try:
         root.after(ESP_VIEWER_PUMP_MS, pump_viewer)
     except tk.TclError:

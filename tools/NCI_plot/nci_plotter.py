@@ -1032,6 +1032,7 @@ class NCIPlotterApp:
 
         self.plotter = None
         self.header_icon: Optional[tk.PhotoImage] = None
+        self.viewer_controls_window: Optional[tk.Toplevel] = None
 
         self.build_gui()
         if initial_wavefunction_path:
@@ -1079,6 +1080,19 @@ class NCIPlotterApp:
 
     def selected_image_size(self) -> Optional[Tuple[int, int]]:
         return IMAGE_PRESETS.get(self.image_resolution.get(), IMAGE_PRESETS[DEFAULT_IMAGE_PRESET])
+
+    def show_viewer_controls(self) -> None:
+        """Show the persistent NCI controls beside an active PyVista view."""
+        win = self.viewer_controls_window
+        if win is None:
+            return
+        try:
+            win.deiconify()
+            win.attributes("-topmost", True)
+            win.lift()
+            win.focus_force()
+        except tk.TclError:
+            pass
 
     def recent_wavefunction_files(self) -> list[str]:
         values = self.config.get("recent_wavefunction_files", [])
@@ -1239,110 +1253,115 @@ class NCIPlotterApp:
         )
         self.progress_bar.pack(fill="x", pady=(4, 0))
 
-        control_frame = ttk.LabelFrame(main, text="Visualization controls", padding=8)
-        control_frame.pack(fill="x", pady=(0, 8))
+        self.viewer_controls_window = tk.Toplevel(self.root)
+        self.viewer_controls_window.title("NCI Viewer Controls")
+        self.viewer_controls_window.geometry("370x650")
+        self.viewer_controls_window.minsize(340, 560)
+        configure_builder_ui_style(self.viewer_controls_window)
+        self.viewer_controls_window.attributes("-topmost", True)
+        self.viewer_controls_window.protocol("WM_DELETE_WINDOW", self.viewer_controls_window.withdraw)
+        self.viewer_controls_window.withdraw()
 
-        ttk.Label(control_frame, text="RDG isovalue").grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            main,
+            text="Viewer controls...",
+            command=self.show_viewer_controls,
+            style="Primary.TButton",
+        ).pack(anchor="w", pady=(0, 8))
+
+        control_frame = ttk.LabelFrame(
+            self.viewer_controls_window,
+            text="Visualization controls",
+            padding=12,
+        )
+        control_frame.pack(fill="both", expand=True, padx=12, pady=12)
+        control_frame.columnconfigure(0, weight=1)
+
+        surface_frame = ttk.LabelFrame(control_frame, text="Surface", padding=8)
+        surface_frame.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        surface_frame.columnconfigure(0, weight=1)
+        ttk.Label(surface_frame, text="RDG isovalue").grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Scale(
-            control_frame,
+            surface_frame,
             from_=0.1,
             to=1.5,
             variable=self.rdg_isovalue,
             orient="horizontal",
-        ).grid(row=0, column=1, sticky="ew", padx=5)
+            length=150,
+        ).grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
-        ttk.Entry(control_frame, textvariable=self.rdg_isovalue, width=10).grid(
-            row=0, column=2, padx=5
+        ttk.Entry(surface_frame, textvariable=self.rdg_isovalue, width=9).grid(
+            row=1, column=1, padx=(8, 0), pady=(2, 0)
         )
 
-        ttk.Label(control_frame, text="Opacity").grid(
-            row=1, column=0, sticky="w", pady=(6, 0)
+        ttk.Label(surface_frame, text="Opacity").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
         ttk.Scale(
-            control_frame,
+            surface_frame,
             from_=0.05,
             to=1.0,
             variable=self.opacity,
             orient="horizontal",
-        ).grid(row=1, column=1, sticky="ew", padx=5, pady=(6, 0))
+            length=150,
+        ).grid(row=3, column=0, sticky="ew", pady=(2, 0))
 
-        ttk.Entry(control_frame, textvariable=self.opacity, width=10).grid(
-            row=1, column=2, padx=5, pady=(6, 0)
-        )
-
-        ttk.Label(control_frame, text="Color min").grid(
-            row=2, column=0, sticky="w", pady=(6, 0)
-        )
-        ttk.Entry(control_frame, textvariable=self.color_min, width=12).grid(
-            row=2, column=1, sticky="w", padx=5, pady=(6, 0)
+        ttk.Entry(surface_frame, textvariable=self.opacity, width=9).grid(
+            row=3, column=1, padx=(8, 0), pady=(2, 0)
         )
 
-        ttk.Label(control_frame, text="Color max").grid(
-            row=2, column=2, sticky="w", pady=(6, 0)
-        )
-        ttk.Entry(control_frame, textvariable=self.color_max, width=12).grid(
-            row=2, column=3, sticky="w", padx=5, pady=(6, 0)
-        )
-
-        ttk.Label(control_frame, text="Colormap").grid(
-            row=3, column=0, sticky="w", pady=(6, 0)
-        )
+        color_frame = ttk.LabelFrame(control_frame, text="Colors", padding=8)
+        color_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        color_frame.columnconfigure(1, weight=1)
+        ttk.Label(color_frame, text="Color min").grid(row=0, column=0, sticky="w")
+        ttk.Entry(color_frame, textvariable=self.color_min, width=12).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        ttk.Label(color_frame, text="Color max").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(color_frame, textvariable=self.color_max, width=12).grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(6, 0))
+        ttk.Label(color_frame, text="Colormap").grid(row=2, column=0, sticky="w", pady=(6, 0))
         ttk.Combobox(
-            control_frame,
+            color_frame,
             textvariable=self.colormap,
             values=["bwr", "seismic", "coolwarm", "rainbow", "jet", "viridis", "plasma"],
-            width=14,
             state="readonly",
-        ).grid(row=3, column=1, sticky="w", padx=5, pady=(6, 0))
-
-        ttk.Label(control_frame, text="Background").grid(
-            row=3, column=2, sticky="w", pady=(6, 0)
-        )
+        ).grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(6, 0))
+        ttk.Label(color_frame, text="Background").grid(row=3, column=0, sticky="w", pady=(6, 0))
         ttk.Combobox(
-            control_frame,
+            color_frame,
             textvariable=self.background,
             values=["white", "black", "gray", "lightgray"],
-            width=14,
             state="readonly",
-        ).grid(row=3, column=3, sticky="w", padx=5, pady=(6, 0))
+        ).grid(row=3, column=1, sticky="ew", padx=(8, 0), pady=(6, 0))
+
+        display_frame = ttk.LabelFrame(control_frame, text="Display", padding=8)
+        display_frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        display_frame.columnconfigure(0, weight=1)
+        ttk.Checkbutton(
+            display_frame, text="Show molecule", variable=self.show_molecule
+        ).grid(row=0, column=0, sticky="w")
 
         ttk.Checkbutton(
-            control_frame, text="Show molecule", variable=self.show_molecule
-        ).grid(row=4, column=0, sticky="w", pady=(8, 0))
+            display_frame, text="Show bonds", variable=self.show_bonds
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
         ttk.Checkbutton(
-            control_frame, text="Show bonds", variable=self.show_bonds
-        ).grid(row=4, column=1, sticky="w", pady=(8, 0))
+            display_frame, text="Show scalar bar", variable=self.show_scalar_bar
+        ).grid(row=2, column=0, sticky="w", pady=(4, 0))
 
-        ttk.Checkbutton(
-            control_frame, text="Show scalar bar", variable=self.show_scalar_bar
-        ).grid(row=4, column=2, sticky="w", pady=(8, 0))
-
-        ttk.Label(control_frame, text="Image size").grid(
-            row=5, column=0, sticky="w", pady=(8, 0)
-        )
+        ttk.Label(display_frame, text="Image size").grid(row=3, column=0, sticky="w", pady=(8, 0))
         ttk.Combobox(
-            control_frame,
+            display_frame,
             textvariable=self.image_resolution,
             values=list(IMAGE_PRESETS.keys()),
-            width=28,
             state="readonly",
-        ).grid(row=5, column=1, columnspan=3, sticky="w", padx=5, pady=(8, 0))
+        ).grid(row=4, column=0, sticky="ew", pady=(2, 0))
 
         button_row = ttk.Frame(control_frame)
-        button_row.grid(row=6, column=0, columnspan=4, sticky="w", pady=(10, 0))
+        button_row.grid(row=3, column=0, sticky="ew")
+        button_row.columnconfigure(0, weight=1)
 
-        ttk.Button(button_row, text="Update plot", command=self.update_plot).pack(
-            side="left", padx=(0, 6)
-        )
-        ttk.Button(button_row, text="Reset view", command=self.reset_view).pack(
-            side="left", padx=6
-        )
-        ttk.Button(button_row, text="Save image", command=self.save_image).pack(
-            side="left", padx=6
-        )
-
-        control_frame.columnconfigure(1, weight=1)
+        ttk.Button(button_row, text="Update plot", command=self.update_plot).grid(row=0, column=0, sticky="ew")
+        ttk.Button(button_row, text="Reset view", command=self.reset_view).grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        ttk.Button(button_row, text="Save image", command=self.save_image).grid(row=2, column=0, sticky="ew", pady=(6, 0))
 
         log_frame = ttk.LabelFrame(main, text="Status / log", padding=8)
         log_frame.pack(fill="both", expand=True)
@@ -1996,6 +2015,7 @@ class NCIPlotterApp:
             bring_pyvista_window_to_front(self.plotter)
             self.plotter.show(interactive_update=True, auto_close=False)
             bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
+            self.root.after(180, self.show_viewer_controls)
 
             self.log("Plot updated.")
 

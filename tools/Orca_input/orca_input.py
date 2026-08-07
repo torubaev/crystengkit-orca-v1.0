@@ -3860,7 +3860,14 @@ class App(tk.Tk):
                 cursor="hand2",
             )
         button.grid(row=0, column=0, sticky="n")
-        action_link = tk.Label(box, text=label, bg="#1e3a5f", fg="#dbeafe", cursor="hand2", font=("Segoe UI", 9))
+        action_link = tk.Label(
+            box,
+            text=label,
+            bg="#1e3a5f",
+            fg="#dbeafe",
+            cursor="hand2",
+            font=("Segoe UI", 11, "bold"),
+        )
         action_link.grid(row=1, column=0, sticky="n", pady=(3, 0))
         action_link.bind("<Button-1>", lambda _e: activate())
         self.workspace_action_widgets[label] = {"box": box, "button": button, "label": action_link}
@@ -3868,7 +3875,7 @@ class App(tk.Tk):
     def _activate_workspace_action(self, label: str) -> None:
         """Update persistent-header identity and active navigation styling."""
         tool_titles = {
-            "Builder": "ORCA Input Builder",
+            "Input": "ORCA Input Builder",
             "HOMO LUMO": "HOMO–LUMO Analysis",
             "ESP map": "Electrostatic Potential",
             "NCI plot": "Noncovalent Interactions",
@@ -3887,7 +3894,7 @@ class App(tk.Tk):
             widgets["label"].configure(
                 bg="#0f6cbd" if active else "#1e3a5f",
                 fg="#ffffff" if active else "#dbeafe",
-                font=("Segoe UI", 9, "bold underline") if active else ("Segoe UI", 9),
+                font=("Segoe UI", 11, "bold underline") if active else ("Segoe UI", 11, "bold"),
             )
 
     def _on_workspace_page_change(self, key: str, title: str) -> None:
@@ -3913,7 +3920,7 @@ class App(tk.Tk):
         about_link = ttk.Label(settings_box, text="About", style="HeaderLink.TLabel", cursor="hand2")
         about_link.grid(row=0, column=2, sticky="w")
         about_link.bind("<Button-1>", lambda _e: self.open_about_window())
-        self._add_header_image_action(header, 2, ORCA_ICON_PATH, "Builder", self._show_builder_workspace)
+        self._add_header_image_action(header, 2, ORCA_ICON_PATH, "Input", self._show_builder_workspace)
         self._add_header_image_action(header, 3, HOMO_LUMO_ICON_PATH, "HOMO LUMO", self.launch_homo_lumo)
         self._add_header_image_action(header, 4, ESP_ICON_PATH, "ESP map", self.launch_esp)
         self._add_header_image_action(header, 5, NCI_ICON_PATH, "NCI plot", self.launch_nci)
@@ -4440,7 +4447,7 @@ class App(tk.Tk):
         """Raise the persistent Builder page."""
         self._save_workspace_state_safely(active_key="builder")
         self.page_controller.show("builder")
-        self._activate_workspace_action("Builder")
+        self._activate_workspace_action("Input")
 
     def _save_workspace_state_safely(self, active_key: Optional[str] = None) -> None:
         """Session persistence must never prevent workspace navigation."""
