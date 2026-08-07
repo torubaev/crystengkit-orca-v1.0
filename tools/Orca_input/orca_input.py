@@ -20,6 +20,7 @@ import json
 import urllib.error
 import urllib.request
 import webbrowser
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 try:
@@ -1454,7 +1455,7 @@ ATOMIC_NUMBERS = {sym: idx + 1 for idx, sym in enumerate(ELEMENT_SYMBOLS)}
 ELEMENT_BY_ATOMIC_NUMBER = {idx + 1: sym for idx, sym in enumerate(ELEMENT_SYMBOLS)}
 BOHR_TO_ANGSTROM = 0.529177210903
 OPEN_BABEL_TIMEOUT = 45.0
-OPEN_BABEL_EXTENSIONS = {".mol", ".sdf", ".sd", ".cml", ".cdxml", ".cdx", ".ct"}
+OPEN_BABEL_EXTENSIONS = {".mol", ".sdf", ".sd", ".cml", ".cdxml", ".cdxm", ".cdx", ".ct"}
 GAUSSIAN_INPUT_EXTENSIONS = {".gjf", ".com", ".gau", ".gjc"}
 OUTPUT_STRUCTURE_EXTENSIONS = {".out", ".log"}
 STRUCTURE_INPUT_EXTENSIONS = {".xyz", ".cif", ".inp"} | OPEN_BABEL_EXTENSIONS | GAUSSIAN_INPUT_EXTENSIONS | OUTPUT_STRUCTURE_EXTENSIONS
@@ -1902,7 +1903,7 @@ def structure_input_format(path: str) -> str:
     if ext in GAUSSIAN_INPUT_EXTENSIONS:
         return "Gaussian input"
     raise ValueError(
-        "Supported structure files: .xyz, .cif, ORCA .inp, ORCA/Gaussian .out/.log, .mol, .sdf/.sd, .cml, .cdxml, .cdx, .ct, and Gaussian .gjf/.com/.gau/.gjc."
+        "Supported structure files: .xyz, .cif, ORCA .inp, ORCA/Gaussian .out/.log, .mol, .sdf/.sd, .cml, .cdxml/.cdxm, .cdx, .ct, and Gaussian .gjf/.com/.gau/.gjc."
     )
 
 
@@ -2078,6 +2079,129 @@ def mol_sdf_to_xyz_text(path: str, record_index: Optional[int] = None) -> Tuple[
     validate_xyz_text(xyz_text, source_format)
     log_lines.append(f"Atom count: {len(atoms)}")
     return xyz_text, title or source_path.name, log_lines
+
+
+def _xml_local_name(tag: str) -> str:
+    return str(tag).rsplit("}", 1)[-1]
+
+
+def parse_cdxml_stored_3d(
+    path: str,
+) -> Optional[Tuple[List[Tuple[str, float, float, float]], List[str]]]:
+    """Read a complete CDXML ``xyz`` model, returning None for 2D-only files.
+
+    ChemDraw serializes 3D positions in drawing-coordinate units. A single
+    uniform scale derived from explicitly stored bonds converts the shape to a
+    chemically reasonable Angstrom starting geometry without changing angles
+    or relative depth.
+    """
+    source = Path(path)
+    try:
+        root = ET.parse(source).getroot()
+    except ET.ParseError as exc:
+        raise ValueError(f"CDXML is not well-formed XML: {exc}") from exc
+    except OSError as exc:
+        raise ValueError(f"CDXML could not be read: {exc}") from exc
+    if _xml_local_name(root.tag).lower() != "cdxml":
+        raise ValueError("The selected file is XML but its root element is not CDXML.")
+
+    node_elements = [element for element in root.iter() if _xml_local_name(element.tag).lower() == "n"]
+    if not node_elements:
+        raise ValueError("CDXML contains no chemical atom nodes.")
+    with_xyz = [element for element in node_elements if str(element.attrib.get("xyz", "")).strip()]
+    if not with_xyz:
+        return None
+    if len(with_xyz) != len(node_elements):
+        raise ValueError(
+            "CDXML contains incomplete stored 3D coordinates: "
+            f"{len(with_xyz)} of {len(node_elements)} atom nodes have xyz values. "
+            "The Builder will not mix stored and generated coordinates."
+        )
+
+    atoms_by_id: Dict[str, Tuple[str, float, float, float]] = {}
+    ordered_ids: List[str] = []
+    formal_charge = 0
+    for index, element in enumerate(node_elements, start=1):
+        node_type = str(element.attrib.get("NodeType", "Element")).strip().lower()
+        if node_type not in {"", "element", "1"}:
+            raise ValueError(
+                f"CDXML atom node {element.attrib.get('id', index)} uses unsupported "
+                f"NodeType={element.attrib.get('NodeType')!r}. Expand nicknames or groups in ChemDraw first."
+            )
+        try:
+            atomic_number = int(element.attrib.get("Element", "6"))
+            symbol = ELEMENT_BY_ATOMIC_NUMBER[atomic_number]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"CDXML atom node {element.attrib.get('id', index)} has an invalid Element value."
+            ) from exc
+        values = [part for part in re.split(r"[\s,]+", element.attrib["xyz"].strip()) if part]
+        if len(values) != 3:
+            raise ValueError(f"CDXML atom node {element.attrib.get('id', index)} has an invalid xyz value.")
+        try:
+            x, y, z = (float(value) for value in values)
+        except ValueError as exc:
+            raise ValueError(f"CDXML atom node {element.attrib.get('id', index)} has a nonnumeric xyz value.") from exc
+        if not all(math.isfinite(value) for value in (x, y, z)):
+            raise ValueError(f"CDXML atom node {element.attrib.get('id', index)} has non-finite xyz coordinates.")
+        atom_id = str(element.attrib.get("id", index)).strip()
+        if atom_id in atoms_by_id:
+            raise ValueError(f"CDXML contains duplicate atom id {atom_id!r}.")
+        atoms_by_id[atom_id] = (symbol, x, y, z)
+        ordered_ids.append(atom_id)
+        try:
+            formal_charge += int(element.attrib.get("Charge", "0"))
+        except ValueError as exc:
+            raise ValueError(f"CDXML atom node {atom_id} has an invalid formal charge.") from exc
+
+    scale_ratios: List[float] = []
+    bond_count = 0
+    for bond in (element for element in root.iter() if _xml_local_name(element.tag).lower() == "b"):
+        begin = str(bond.attrib.get("B", "")).strip()
+        end = str(bond.attrib.get("E", "")).strip()
+        if begin not in atoms_by_id or end not in atoms_by_id:
+            continue
+        bond_count += 1
+        left = atoms_by_id[begin]
+        right = atoms_by_id[end]
+        distance = math.sqrt(sum((left[i] - right[i]) ** 2 for i in range(1, 4)))
+        if distance <= 1e-9:
+            raise ValueError(f"CDXML bond {begin}-{end} has coincident stored 3D atom positions.")
+        expected = COVALENT_RADII.get(left[0], 0.77) + COVALENT_RADII.get(right[0], 0.77)
+        order_text = str(bond.attrib.get("Order", "1")).strip().lower()
+        if order_text in {"2", "double"}:
+            expected *= 0.90
+        elif order_text in {"3", "triple"}:
+            expected *= 0.84
+        elif order_text in {"1.5", "aromatic"}:
+            expected *= 0.92
+        scale_ratios.append(expected / distance)
+
+    scale = float(np.median(scale_ratios)) if scale_ratios and np is not None else (
+        sorted(scale_ratios)[len(scale_ratios) // 2] if scale_ratios else 1.0
+    )
+    centroid = [sum(atoms_by_id[atom_id][axis] for atom_id in ordered_ids) / len(ordered_ids) for axis in range(1, 4)]
+    atoms = [
+        (
+            atoms_by_id[atom_id][0],
+            (atoms_by_id[atom_id][1] - centroid[0]) * scale,
+            (atoms_by_id[atom_id][2] - centroid[1]) * scale,
+            (atoms_by_id[atom_id][3] - centroid[2]) * scale,
+        )
+        for atom_id in ordered_ids
+    ]
+    fragment_count = sum(1 for element in root.iter() if _xml_local_name(element.tag).lower() == "fragment")
+    logs = [
+        "Direct parser: native CDXML stored-3D reader",
+        f"Stored xyz atom count: {len(atoms)}",
+        f"Stored bond count used for scaling: {bond_count}",
+        f"Uniform CDXML-to-Angstrom scale factor: {scale:.8g}",
+        f"CDXML fragment objects: {fragment_count}",
+        f"Sum of explicit atom formal charges: {formal_charge}",
+    ]
+    if not scale_ratios:
+        logs.append("Coordinate warning: no usable bonds were available for unit scaling; centered xyz values were preserved.")
+    return atoms, logs
 
 
 def count_sdf_records(path: str) -> List[Dict[str, object]]:
@@ -5077,6 +5201,34 @@ class App(tk.Tk):
         log_lines.append(f"Atom count: {len(structure.atoms)}")
         return ImportResult(structure, direct_xyz, path, source_format, title, warnings=[], log_lines=log_lines)
 
+    def _import_cdxml_structure(self, path: str, ext: str) -> ImportResult:
+        parsed = parse_cdxml_stored_3d(path)
+        if parsed is None:
+            return self._import_openbabel_structure(path, ext)
+        atoms, parser_logs = parsed
+        title = Path(path).name + " (stored ChemDraw 3D geometry)"
+        xyz_text = xyz_text_from_atoms(atoms, title)
+        structure = self._parse_xyz_through_existing_loader(xyz_text, title)
+        fragment_count = next(
+            (
+                int(line.rsplit(":", 1)[1].strip())
+                for line in parser_logs
+                if line.startswith("CDXML fragment objects:")
+            ),
+            0,
+        )
+        warnings = [
+            "ChemDraw stored xyz geometry was centered and uniformly scaled to approximate Angstrom bond lengths. "
+            "Inspect the structure before calculation; it is a starting geometry, not a quantum-chemical optimization."
+        ]
+        if fragment_count > 1:
+            warnings.append(
+                f"The CDXML document contains {fragment_count} fragment objects. They were imported together; "
+                "check that counterions, solvents, and separate drawings belong in the intended calculation."
+            )
+        log_lines = [f"Source format: {ext[1:].upper()}"] + parser_logs + [f"Atom count: {len(atoms)}"]
+        return ImportResult(structure, xyz_text, path, ext[1:].upper(), title, warnings=warnings, log_lines=log_lines)
+
     def _import_mol_sdf_structure(self, path: str, ext: str) -> ImportResult:
         source_format = ext[1:].upper()
         record_index: Optional[int] = None
@@ -5205,6 +5357,8 @@ class App(tk.Tk):
             )
         if ext in {".mol", ".sdf", ".sd"}:
             return self._import_mol_sdf_structure(path, ext)
+        if ext in {".cdxml", ".cdxm"}:
+            return self._import_cdxml_structure(path, ext)
         if ext in OPEN_BABEL_EXTENSIONS:
             return self._import_openbabel_structure(path, ext)
         if ext in GAUSSIAN_INPUT_EXTENSIONS:
@@ -5220,7 +5374,7 @@ class App(tk.Tk):
             ("ORCA queue files", "*.orcaqueue.json *.queue.json *.json"),
             ("XYZ/CIF/ORCA input", "*.xyz *.cif *.inp"),
             ("ORCA/Gaussian output", "*.out *.log"),
-            ("MOL/SDF and Open Babel formats", "*.mol *.sdf *.sd *.cml *.cdxml *.cdx *.ct"),
+            ("MOL/SDF and ChemDraw formats", "*.mol *.sdf *.sd *.cml *.cdxml *.cdxm *.cdx *.ct"),
             ("Gaussian input", "*.gjf *.com *.gau *.gjc"),
             ("All files", "*.*"),
         ])

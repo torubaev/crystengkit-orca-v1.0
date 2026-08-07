@@ -51,7 +51,7 @@ class ImportHelperTests(unittest.TestCase):
             return self.value
 
     def test_new_extensions_are_case_insensitive(self):
-        for ext in [".mol", ".SDF", ".sd", ".CML", ".cdxml", ".CDX", ".ct", ".GJF", ".com", ".GAU", ".gjc"]:
+        for ext in [".mol", ".SDF", ".sd", ".CML", ".cdxml", ".CDXM", ".CDX", ".ct", ".GJF", ".com", ".GAU", ".gjc"]:
             self.assertTrue(orca_input.structure_input_format("molecule" + ext))
         with self.assertRaises(ValueError):
             orca_input.structure_input_format("generic.inp2")
@@ -67,6 +67,44 @@ class ImportHelperTests(unittest.TestCase):
             orca_input.validate_xyz_text("2\nbad\nO 0 0 nan\nH 0 0 1\n")
         with self.assertRaises(ValueError):
             orca_input.validate_xyz_text("3\nbad\nO 0 0 0\n")
+
+    def test_native_cdxml_reads_and_scales_complete_stored_3d(self):
+        cdxml = """<?xml version="1.0"?>
+<CDXML xmlns="http://www.cambridgesoft.com/xml/cdxml">
+  <page><fragment id="10">
+    <n id="1" Element="6" xyz="0 0 0"/>
+    <n id="2" Element="8" xyz="14.4 0 3.0" Charge="-1"/>
+    <b id="3" B="1" E="2" Order="1"/>
+  </fragment></page>
+</CDXML>"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "stored.cdxml"
+            path.write_text(cdxml, encoding="utf-8")
+            parsed = orca_input.parse_cdxml_stored_3d(str(path))
+        self.assertIsNotNone(parsed)
+        atoms, logs = parsed
+        self.assertEqual([atom[0] for atom in atoms], ["C", "O"])
+        distance = sum((atoms[0][axis] - atoms[1][axis]) ** 2 for axis in range(1, 4)) ** 0.5
+        expected = orca_input.COVALENT_RADII["C"] + orca_input.COVALENT_RADII["O"]
+        self.assertAlmostEqual(distance, expected, places=6)
+        self.assertTrue(any("formal charges: -1" in line for line in logs))
+
+    def test_native_cdxml_returns_none_for_2d_only_document(self):
+        cdxml = "<CDXML><page><fragment><n id='1' Element='6' p='0 0'/></fragment></page></CDXML>"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "flat.cdxm"
+            path.write_text(cdxml, encoding="utf-8")
+            self.assertIsNone(orca_input.parse_cdxml_stored_3d(str(path)))
+
+    def test_native_cdxml_rejects_partial_stored_3d(self):
+        cdxml = """<CDXML><page><fragment>
+<n id="1" Element="6" xyz="0 0 0"/><n id="2" Element="6" p="1 0"/>
+<b B="1" E="2"/></fragment></page></CDXML>"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "partial.cdxml"
+            path.write_text(cdxml, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "incomplete stored 3D coordinates"):
+                orca_input.parse_cdxml_stored_3d(str(path))
 
     @unittest.skipIf(orca_input.gemmi is None, "Gemmi is not installed")
     def test_cif_symmetry_completes_inversion_generated_molecule(self):

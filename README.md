@@ -24,7 +24,7 @@
 
 CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.
 
-Typical input formats are `.xyz`, existing ORCA `.inp` files, `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd], and 3D `.mol`, `.sdf`, or `.sd` files. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
+Typical input formats are `.xyz`, existing ORCA `.inp` files, `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd], 3D `.mol`, `.sdf`, or `.sd` files, and ChemDraw `.cdxml` / `.cdxm` or binary `.cdx` files. CDXML/CDXM files with complete stored `xyz` coordinates are imported natively; 2D-only ChemDraw drawings and binary CDX use Open Babel for conversion and optional 3D generation. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
 
 The suite is built around widely used, freely available academic/freeware programs. ORCA[^orca-site] is used for quantum-chemical calculations, and Multiwfn[^multiwfn-site] is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.
 ![CrystEngKit-ORCA](images/wiki/crystengkit_v1.0_1.png)
@@ -33,7 +33,7 @@ CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or n
 
 The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
-- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, 3D MOL/SDF files, Gaussian input files, and external ORCA/Gaussian `.out` / `.log` files
+- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, 3D MOL/SDF files, ChemDraw CDXML/CDXM/CDX files, Gaussian input files, and external ORCA/Gaussian `.out` / `.log` files
 - prepare ORCA and Gaussian[^gaussian] input files
 - run ORCA and show live output
 - organize saved ORCA inputs into named, persistent job queues and run them sequentially
@@ -136,6 +136,22 @@ appear as ordinary dialogs.
 ### ORCA Input Builder
 
 ![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, existing `.inp` files, or external ORCA/Gaussian `.out` / `.log` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a `Show input` / `Job monitor` switch. During a run, `Show input` displays the exact input being executed without regenerating or replacing it; `Job monitor` shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. Active jobs are recorded in the user configuration folder: if the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process, and **Reconnect** provides the same action manually. A reconnected queue pauses after its current calculation. Before rerunning a successfully completed job, the Builder warns that all same-basename result files may be overwritten and recommends a next unused name, such as `filename_01.inp` or `filename_02.inp`. Accepting the recommendation opens a Save As dialog prefilled with that name; ORCA starts only after the user saves the copied input under the suggested or another unused name. Choosing overwrite opens a second **ATTENTION — Are you sure?** confirmation. The Builder tries to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
+
+#### ChemDraw CDXML/CDXM import
+
+The Builder natively reads ChemDraw XML files containing a complete stored
+`xyz` model. Atom identities and the three-dimensional shape are preserved;
+the coordinates are centered and uniformly converted from ChemDraw drawing
+units to approximate angstrom bond lengths using the stored connectivity and
+covalent radii. The resulting structure is an initial geometry and must be
+checked in **Structure preview** before calculation.
+
+The importer refuses incomplete 3D models instead of silently mixing stored and
+generated coordinates. It reports unsupported nickname/group nodes and warns
+when several ChemDraw fragments are imported together. Standard `.cdxml` and
+the `.cdxm` alias are accepted. Two-dimensional ChemDraw XML and binary `.cdx`
+files continue through Open Babel, which can generate a provisional 3D model
+after user confirmation.
 
 ### Torsion Generator
 
@@ -279,7 +295,7 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 ### Build and Run an ORCA Job
 
-1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, and 3D `.mol`/`.sdf`/`.sd` files are read directly. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are also supported. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
+1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, 3D `.mol`/`.sdf`/`.sd`, and complete stored-3D ChemDraw `.cdxml`/`.cdxm` files are read directly. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are also supported. Binary `.cdx` and 2D-only ChemDraw XML use Open Babel. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
    
    ![ORCA Input Builder job setup window](images/wiki/orca-input_1.png)
 
