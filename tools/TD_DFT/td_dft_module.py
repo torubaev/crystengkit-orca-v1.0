@@ -678,20 +678,19 @@ def auto_detect_multiwfn_path(saved: str = "") -> str:
     return ""
 
 
-class TDDFTWindow(tk.Toplevel):
-    def __init__(self, parent, settings: Dict, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None, on_run_strict_workflow=None):
-        super().__init__(parent)
-        configure_tk_window_identity(self, "TDDFT")
-        self.title("TD-DFT setup, analysis, and visualization")
-        screen_width = max(1, int(self.winfo_screenwidth()))
-        screen_height = max(1, int(self.winfo_screenheight()))
-        window_width = max(1, int(screen_width * 0.50))
-        window_height = max(1, int(screen_height * 0.85))
-        x = max(0, (screen_width - window_width) // 2)
-        y = max(0, (screen_height - window_height) // 2)
-        self.geometry(f"{window_width}x{window_height}+{x}+{y}")
-        self.minsize(min(640, window_width), min(560, window_height))
-        configure_builder_ui_style(self)
+class TDDFTPanel(ttk.Frame):
+    """Reusable TD-DFT workspace.
+
+    Builder mounts this frame directly in its page host.  Standalone mode puts
+    the same frame inside a very small ``Toplevel`` wrapper; the tool itself no
+    longer owns or hides a window.
+    """
+
+    def __init__(self, parent, settings: Dict, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None, on_run_strict_workflow=None, on_open_torsion=None, host_window=None):
+        super().__init__(parent, style="Panel.TFrame")
+        self.host_window = host_window
+        self.on_open_torsion = on_open_torsion
+        self.embedded = host_window is None
         self.on_apply, self.on_close, self.on_run_emission_sequence = on_apply, on_close, on_run_emission_sequence
         self.on_run_strict_workflow = on_run_strict_workflow
         self.states, self.output_path = [], ""
@@ -743,32 +742,55 @@ class TDDFTWindow(tk.Toplevel):
             self.update_progress(0, self.migration_warnings[0], "blue")
         for variable in self.vars.values():
             variable.trace_add("write", lambda *_args: self._mark_tddft_modified())
-        self.protocol("WM_DELETE_WINDOW", self._close_window)
+        self.pack(fill="both", expand=True)
+
+    def get_state(self) -> Dict:
+        return {
+            "settings": {key: variable.get() for key, variable in self.vars.items()},
+            "ui_mode": self.ui_mode,
+            "output_path": self.output_path,
+            "scroll": float(self.body_canvas.yview()[0]) if hasattr(self, "body_canvas") else 0.0,
+        }
+
+    def set_state(self, state: Dict) -> None:
+        for key, value in (state or {}).get("settings", {}).items():
+            if key in self.vars:
+                self.vars[key].set(value)
+        self._set_ui_mode(str((state or {}).get("ui_mode", "input")))
+        output_path = str((state or {}).get("output_path", ""))
+        if output_path and Path(output_path).is_file():
+            self._set_loaded_output(output_path)
+        scroll = float((state or {}).get("scroll", 0.0))
+        self.after_idle(lambda: self.body_canvas.yview_moveto(scroll))
 
     def _build(self):
-        header = ttk.Frame(self, style="Header.TFrame", padding=(14, 10))
-        header.pack(fill="x")
-        self.header_icon = load_header_icon(TD_DFT_ICON_PATH)
-        if self.header_icon is not None:
-            tk.Label(header, image=self.header_icon, bg="#1e3a5f", bd=0, highlightthickness=0).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
-        ttk.Label(header, text="TD-DFT", style="HeaderTitle.TLabel").grid(row=0, column=1, sticky="w")
-        ttk.Label(header, text="Excited-State Setup, Analysis and Visualization", style="HeaderSub.TLabel").grid(row=1, column=1, sticky="w")
-        header.columnconfigure(2, weight=1)
-        torsion_link = ttk.Label(header, text="Torsion scan", style="HeaderLink.TLabel", cursor="hand2")
-        torsion_link.grid(row=0, column=3, rowspan=2, sticky="e", padx=(0, 16))
-        torsion_link.bind("<Button-1>", lambda _event: self.open_torsion_generator())
-        about_link = ttk.Label(header, text="About", style="HeaderLink.TLabel", cursor="hand2")
-        about_link.grid(row=0, column=4, rowspan=2, sticky="e")
-        about_link.bind("<Button-1>", lambda _event: self.open_about_window())
+        container = self
+        if not self.embedded:
+            header = ttk.Frame(container, style="Header.TFrame", padding=(14, 10))
+            header.pack(fill="x")
+            self.header_icon = load_header_icon(TD_DFT_ICON_PATH)
+            if self.header_icon is not None:
+                tk.Label(header, image=self.header_icon, bg="#1e3a5f", bd=0, highlightthickness=0).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
+            ttk.Label(header, text="TD-DFT", style="HeaderTitle.TLabel").grid(row=0, column=1, sticky="w")
+            ttk.Label(header, text="Excited-State Setup, Analysis and Visualization", style="HeaderSub.TLabel").grid(row=1, column=1, sticky="w")
+            header.columnconfigure(2, weight=1)
+            torsion_link = ttk.Label(header, text="Torsion scan", style="HeaderLink.TLabel", cursor="hand2")
+            torsion_link.grid(row=0, column=3, rowspan=2, sticky="e", padx=(0, 16))
+            torsion_link.bind("<Button-1>", lambda _event: self.open_torsion_generator())
+            about_link = ttk.Label(header, text="About", style="HeaderLink.TLabel", cursor="hand2")
+            about_link.grid(row=0, column=4, rowspan=2, sticky="e")
+            about_link.bind("<Button-1>", lambda _event: self.open_about_window())
 
-        mode_bar = ttk.Frame(self, style="Panel.TFrame", padding=(10, 8, 10, 0))
+        mode_bar = ttk.Frame(container, style="Panel.TFrame", padding=(10, 8, 10, 0))
         mode_bar.pack(fill="x")
         self.input_mode_button = tk.Button(mode_bar, text="Input", command=lambda: self._set_ui_mode("input"), relief="solid", borderwidth=1, padx=18, pady=5, cursor="hand2", font=("Segoe UI", 9, "bold"))
         self.input_mode_button.pack(side="left")
         self.post_mode_button = tk.Button(mode_bar, text="Post-processing", command=lambda: self._set_ui_mode("post"), relief="solid", borderwidth=1, padx=18, pady=5, cursor="hand2", font=("Segoe UI", 9, "bold"))
         self.post_mode_button.pack(side="left", padx=(4, 0))
+        if self.embedded:
+            ttk.Button(mode_bar, text="Torsion scan", command=self.open_torsion_generator).pack(side="right")
 
-        body = ttk.Frame(self, style="Panel.TFrame")
+        body = ttk.Frame(container, style="Panel.TFrame")
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
         body.rowconfigure(0, weight=1)
@@ -962,6 +984,9 @@ class TDDFTWindow(tk.Toplevel):
     def open_torsion_generator(self):
         """Open torsion scanning from the Builder geometry carried by TD-DFT."""
         try:
+            if self.on_open_torsion is not None:
+                self.on_open_torsion()
+                return
             atoms = list(self.builder_context.get("atoms") or [])
             if not atoms:
                 raise ValueError(
@@ -977,14 +1002,14 @@ class TDDFTWindow(tk.Toplevel):
                 multiplicity=int(self.builder_context.get("multiplicity", 1)),
                 existing=self.torsion_generator_window,
             )
-            self.torsion_generator_window.lift(self)
+            self.torsion_generator_window.lift()
         except Exception as exc:
             messagebox.showerror("Torsion generator", str(exc), parent=self)
 
     def open_about_window(self):
         win = tk.Toplevel(self)
         win.title("About")
-        win.transient(self)
+        win.transient(self.winfo_toplevel())
         win.withdraw()
         win.columnconfigure(0, weight=1)
         win.rowconfigure(0, weight=1)
@@ -1166,7 +1191,10 @@ class TDDFTWindow(tk.Toplevel):
                 self.on_close(self)
             except Exception:
                 pass
-        self.destroy()
+        if self.host_window is not None and self.host_window.winfo_exists():
+            self.host_window.destroy()
+        else:
+            self.destroy()
 
     def _settings(self): return validate_tddft_settings({key: var.get() for key, var in self.vars.items()})
     def update_progress(self, percent: int, message: str = "", color: str = "blue") -> None:
@@ -1679,19 +1707,42 @@ class TDDFTWindow(tk.Toplevel):
         self._guard("Open analysis directory", action)
 
 
-def open_tddft_window(parent=None, initial_settings=None, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None, on_run_strict_workflow=None) -> TDDFTWindow:
-    """Open one Builder-connected TD-DFT ``Toplevel`` without creating a new Tk root."""
+def open_tddft_window(parent=None, initial_settings=None, on_apply=None, on_close=None, builder_context=None, on_run_emission_sequence=None, on_run_strict_workflow=None, embed_parent=None, on_open_torsion=None) -> TDDFTPanel:
+    """Create the reusable panel, optionally wrapped in a standalone window."""
     if parent is None:
         raise ValueError("A Tk parent is required when embedding the TD-DFT window.")
-    return TDDFTWindow(
-        parent,
+    host = None
+    panel_parent = embed_parent
+    if panel_parent is None:
+        host = tk.Toplevel(parent)
+        configure_tk_window_identity(host, "TDDFT")
+        host.title("TD-DFT setup, analysis, and visualization")
+        screen_width = max(1, int(host.winfo_screenwidth()))
+        screen_height = max(1, int(host.winfo_screenheight()))
+        window_width = max(1, int(screen_width * 0.50))
+        window_height = max(1, int(screen_height * 0.85))
+        host.geometry(f"{window_width}x{window_height}+{max(0, (screen_width-window_width)//2)}+{max(0, (screen_height-window_height)//2)}")
+        host.minsize(min(640, window_width), min(560, window_height))
+        configure_builder_ui_style(host)
+        panel_parent = host
+    panel = TDDFTPanel(
+        panel_parent,
         initial_settings or DEFAULT_TDDFT_SETTINGS,
         on_apply=on_apply,
         on_close=on_close,
         builder_context=builder_context,
         on_run_emission_sequence=on_run_emission_sequence,
         on_run_strict_workflow=on_run_strict_workflow,
+        on_open_torsion=on_open_torsion,
+        host_window=host,
     )
+    if host is not None:
+        host.protocol("WM_DELETE_WINDOW", panel._close_window)
+    return panel
+
+
+# Compatibility name for callers that imported the old class directly.
+TDDFTWindow = TDDFTPanel
 
 
 def prepare_strict_tddft_workflow(config_path: str, project_dir: str, *, generate_slurm: bool = False):

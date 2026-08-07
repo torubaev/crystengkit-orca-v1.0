@@ -2644,15 +2644,21 @@ def visualize_qtaim(
 # GUI
 # -----------------------------
 
-class QTAIMGui(tk.Tk):
-    def __init__(self, initial_input_path: Optional[str] = None):
-        set_windows_app_id("QTAIM")
-        super().__init__()
-        configure_tk_window_identity(self, "QTAIM")
-        self.title("QTAIM")
+class QTAIMGui(ttk.Frame):
+    def __init__(self, initial_input_path: Optional[str] = None, parent=None, *, embedded: bool = False):
+        self.host_window = None
+        if parent is None:
+            set_windows_app_id("QTAIM")
+            self.host_window = tk.Tk()
+            configure_tk_window_identity(self.host_window, "QTAIM")
+            self.host_window.title("QTAIM")
+            parent = self.host_window
+        super().__init__(parent, style="Panel.TFrame")
+        self.embedded = bool(embedded)
         self.main_window_size = self.detect_main_window_size()
-        self.geometry(f"{self.main_window_size[0]}x{self.main_window_size[1]}")
-        configure_builder_ui_style(self)
+        if self.host_window is not None:
+            self.host_window.geometry(f"{self.main_window_size[0]}x{self.main_window_size[1]}")
+            configure_builder_ui_style(self.host_window)
 
         self.input_path = tk.StringVar()
         self.multiwfn_path = tk.StringVar(value=find_multiwfn() or "")
@@ -2713,10 +2719,38 @@ class QTAIMGui(tk.Tk):
         self.log(f"QTAIM script build: {QTAIM_UI_BUILD}")
         self.log(f"Main window size: {self.main_window_size[0]} x {self.main_window_size[1]}")
         self.log(f"PyVista window size: {self.pyvista_window_size[0]} x {self.pyvista_window_size[1]}")
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.pack(fill="both", expand=True)
+        if self.host_window is not None:
+            self.host_window.protocol("WM_DELETE_WINDOW", self.on_close)
         if initial_input_path:
             self.set_input_path(initial_input_path)
         self.start_multiwfn_locator()
+
+    def get_state(self) -> Dict[str, object]:
+        names = (
+            "input_path", "multiwfn_path", "cp_file_path", "path_file_path",
+            "show_ncp", "show_covalent_bcp", "show_non_covalent_bcp", "show_rcp",
+            "show_ccp", "show_unknown", "show_labels", "show_cp_energy",
+            "show_molecule", "show_covalent_bonds", "show_bond_paths", "atom_scale",
+            "cp_scale", "bond_radius", "timeout_s", "background", "cp_energy_unit",
+            "open_native_after_run", "use_existing_outputs", "path_display_range",
+            "image_resolution", "bond_path_color",
+        )
+        state = {name: getattr(self, name).get() for name in names}
+        state["cp_colors"] = {key: variable.get() for key, variable in self.cp_color_vars.items()}
+        return state
+
+    def set_state(self, state: Dict[str, object]) -> None:
+        allowed = set(self.get_state()) - {"cp_colors"}
+        for name, value in (state or {}).items():
+            variable = getattr(self, name, None)
+            if name in allowed and isinstance(variable, tk.Variable):
+                variable.set(value)
+        colors = (state or {}).get("cp_colors", {})
+        if isinstance(colors, dict):
+            for key, value in colors.items():
+                if key in self.cp_color_vars:
+                    self.cp_color_vars[key].set(value)
 
     def apply_graphics_settings(self, settings: Dict[str, object]) -> None:
         if not settings:
@@ -2924,7 +2958,8 @@ class QTAIMGui(tk.Tk):
 
     def _build_ui(self):
         header = ttk.Frame(self, style="Header.TFrame", padding=(14, 10))
-        header.pack(fill="x")
+        if not self.embedded:
+            header.pack(fill="x")
         self.header_icon = load_header_icon(QTAIM_ICON_PATH)
         if self.header_icon is not None:
             tk.Label(header, image=self.header_icon, bg="#1e3a5f", bd=0, highlightthickness=0).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
@@ -2985,12 +3020,24 @@ class QTAIMGui(tk.Tk):
         ttk.Button(top_buttons, text="Settings", command=self.open_settings).pack(side="left")
 
         ttk.Label(file_frame, text="WFN/WFX file:").grid(row=1, column=0, sticky="w")
-        self.input_combo = ttk.Combobox(file_frame, textvariable=self.input_path, values=self.recent_input_files, width=46)
+        self.input_combo = ttk.Combobox(
+            file_frame,
+            textvariable=self.input_path,
+            values=self.recent_input_files,
+            width=37 if self.embedded else 46,
+        )
         keep_entry_end_visible(self.input_combo, self.input_path)
         self.input_combo.grid(row=1, column=1, sticky="ew", padx=5)
         self.input_combo.bind("<<ComboboxSelected>>", lambda _e: self.set_input_path(self.input_path.get().strip()))
         ttk.Button(file_frame, text="Browse", command=self.browse_input).grid(row=1, column=2)
         ttk.Button(file_frame, text="Run", command=self.run_multiwfn_threaded, style="Primary.TButton").grid(row=1, column=3, padx=(8, 0))
+        if self.embedded:
+            ttk.Button(
+                file_frame,
+                text="NCI + QTAIM overlay",
+                command=self.open_nci_qtaim_overlay,
+                style="HeaderCTA.TButton",
+            ).grid(row=1, column=4, sticky="e", padx=(18, 0))
 
         file_frame.columnconfigure(1, weight=0)
         file_frame.columnconfigure(4, weight=1)
@@ -3625,6 +3672,49 @@ class QTAIMGui(tk.Tk):
             if candidate and candidate.exists():
                 self.load_path_file(candidate)
 
+    def ensure_at_least_one_cp_type_visible(self) -> None:
+        """Avoid an empty scene caused only by stale CP visibility filters."""
+        if not self.cps:
+            return
+
+        def currently_visible(cp: CriticalPoint) -> bool:
+            cp_type = normalize_cp_type(cp.cp_type)
+            if cp_type == "(3,-3)":
+                return bool(self.show_ncp.get())
+            if cp_type == "(3,-1)":
+                return bcp_visible_by_strength(
+                    cp,
+                    bool(self.show_covalent_bcp.get()),
+                    bool(self.show_non_covalent_bcp.get()),
+                )
+            if cp_type == "(3,+1)":
+                return bool(self.show_rcp.get())
+            if cp_type == "(3,+3)":
+                return bool(self.show_ccp.get())
+            return bool(self.show_unknown.get())
+
+        if any(currently_visible(cp) for cp in self.cps):
+            return
+
+        parsed_types = {normalize_cp_type(cp.cp_type) for cp in self.cps}
+        if "(3,-3)" in parsed_types:
+            self.show_ncp.set(True)
+        if "(3,-1)" in parsed_types:
+            # Enable both strength classes because the parsed BCP population
+            # may contain only one class under the current rho threshold.
+            self.show_covalent_bcp.set(True)
+            self.show_non_covalent_bcp.set(True)
+        if "(3,+1)" in parsed_types:
+            self.show_rcp.set(True)
+        if "(3,+3)" in parsed_types:
+            self.show_ccp.set(True)
+        if "unknown" in parsed_types:
+            self.show_unknown.set(True)
+        self.log(
+            "No parsed critical points matched the saved visibility filters; "
+            "enabled the parsed CP categories automatically."
+        )
+
     def update_plot(self):
         try:
             if pv is None:
@@ -3635,6 +3725,7 @@ class QTAIMGui(tk.Tk):
                 return
 
             self.ensure_plot_data_loaded()
+            self.ensure_at_least_one_cp_type_visible()
             self.save_current_graphics_settings()
 
             if not self.is_plotter_alive():
@@ -3869,14 +3960,17 @@ class QTAIMGui(tk.Tk):
 
     def on_close(self):
         self.close_plotter_reference(close_window=True)
-        self.destroy()
+        if self.host_window is not None:
+            self.host_window.destroy()
+        else:
+            self.destroy()
 
 
 def main():
     initial_input_path = sys.argv[1] if len(sys.argv) > 1 else None
     app = QTAIMGui(initial_input_path)
-    install_dev_reload_shortcut(app, Path(__file__), can_restart=lambda: not app.run_in_progress)
-    app.mainloop()
+    install_dev_reload_shortcut(app.host_window, Path(__file__), can_restart=lambda: not app.run_in_progress)
+    app.host_window.mainloop()
 
 
 if __name__ == "__main__":

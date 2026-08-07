@@ -1474,17 +1474,22 @@ class MOSurfaceContactSheet(tk.Toplevel):
             _show_error("Clean MO surfaces", exc)
 
 
-class App(tk.Tk):
-    def __init__(self) -> None:
-        set_windows_app_id("HOMOLUMO")
-        super().__init__()
-        configure_tk_window_identity(self, "HOMOLUMO")
-        self.title("HOMO–LUMO Levels Plot")
-        window_height = screen_fraction_height(self)
-        self.geometry(f"1100x{window_height}")
-        self.minsize(980, min(650, window_height))
-        self.title("HOMO-LUMO")
-        configure_builder_ui_style(self)
+class App(ttk.Frame):
+    def __init__(self, parent=None, *, embedded=False, initial_path=None) -> None:
+        self.host_window = None
+        if parent is None:
+            set_windows_app_id("HOMOLUMO")
+            self.host_window = tk.Tk()
+            configure_tk_window_identity(self.host_window, "HOMOLUMO")
+            self.host_window.title("HOMO-LUMO")
+            window_height = screen_fraction_height(self.host_window)
+            self.host_window.geometry(f"1100x{window_height}")
+            self.host_window.minsize(980, min(650, window_height))
+            configure_builder_ui_style(self.host_window)
+            parent = self.host_window
+        super().__init__(parent, style="Panel.TFrame")
+        self.embedded = bool(embedded)
+        self.initial_path = initial_path
 
         self.current_fig: Optional[plt.Figure] = None
         self.current_gap: Optional[float] = None
@@ -1509,13 +1514,31 @@ class App(tk.Tk):
 
         self._build_ui()
         self._load_startup_file()
+        self.pack(fill="both", expand=True)
+
+    def get_state(self) -> Dict[str, Any]:
+        names = (
+            "title_var", "sep_var", "show_energy_values_var", "file_path_var",
+            "file_homo_minus_var", "file_lumo_plus_var", "mo_isovalue_var",
+            "mo_opacity_var", "mo_molecule_style_var", "image_resolution_var",
+            "mo_color_scheme_var", "custom_width_var", "custom_height_var",
+        )
+        return {name: getattr(self, name).get() for name in names}
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        allowed = set(self.get_state())
+        for name, value in (state or {}).items():
+            variable = getattr(self, name, None)
+            if name in allowed and isinstance(variable, tk.Variable):
+                variable.set(value)
 
     def _build_ui(self) -> None:
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(0 if self.embedded else 1, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
         header = ttk.Frame(self, style="Header.TFrame", padding=(14, 10))
-        header.grid(row=0, column=0, sticky="ew")
+        if not self.embedded:
+            header.grid(row=0, column=0, sticky="ew")
         self.header_icon = load_header_icon(HOMO_LUMO_ICON_PATH)
         if self.header_icon is not None:
             tk.Label(header, image=self.header_icon, bg="#1e3a5f", bd=0, highlightthickness=0).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
@@ -1534,7 +1557,7 @@ class App(tk.Tk):
         )
 
         body = ttk.Frame(self, style="Panel.TFrame", padding=10)
-        body.grid(row=1, column=0, sticky="nsew")
+        body.grid(row=1 if not self.embedded else 0, column=0, sticky="nsew")
         body.grid_rowconfigure(0, weight=1)
         body.grid_columnconfigure(0, weight=0)
         body.grid_columnconfigure(1, weight=1)
@@ -1712,9 +1735,12 @@ class App(tk.Tk):
             self.file_path_var.set(FILE_PLACEHOLDER_TEXT)
 
     def _load_startup_file(self) -> None:
-        if len(sys.argv) < 2:
+        if self.initial_path:
+            path = str(self.initial_path).strip().strip('"')
+        elif len(sys.argv) >= 2:
+            path = sys.argv[1].strip().strip('"')
+        else:
             return
-        path = sys.argv[1].strip().strip('"')
         if not path:
             return
         try:
@@ -3091,12 +3117,12 @@ class App(tk.Tk):
 def main() -> None:
     app = App()
     install_dev_reload_shortcut(
-        app,
+        app.host_window,
         Path(__file__),
         can_restart=lambda: not app.mo_surface_rendering
         and not (app.mo_batch_thread is not None and app.mo_batch_thread.is_alive()),
     )
-    app.mainloop()
+    app.host_window.mainloop()
 
 
 if __name__ == "__main__":

@@ -44,6 +44,7 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 from orca_job_queue import OrcaJobQueue, OrcaQueueJob
+from workspace_navigation import StackedPageController
 
 LAUNCHER_SETTINGS_PATH = Path(__file__).with_name("orca_gaussian_builder_settings.json")
 DEFAULT_HOMO_LUMO_SCRIPT = TOOLS_ROOT / "HOMO_LUMO" / "HOMO_LUMO_v2.py"
@@ -3688,6 +3689,13 @@ class App(tk.Tk):
         self.ai_web_model_var = tk.StringVar(value=DEFAULT_AI_WEB_MODEL)
         self.recent_input_files: List[str] = []
         self.header_images = []
+        self.workspace_title_var = tk.StringVar(value="ORCA Input Builder")
+        self.workspace_action_widgets: Dict[str, Dict[str, tk.Widget]] = {}
+        self.page_controller: Optional[StackedPageController] = None
+        self._workspace_state_loaded_from = ""
+        self.active_workspace_key = "builder"
+        self.embedded_tool_controllers: Dict[str, object] = {}
+        self._embedded_tool_modules: Dict[str, object] = {}
         self.monitor_action_icons: Dict[str, tk.PhotoImage] = {}
         self.window_icon_image = None
         self.output_mode = "preview"
@@ -3782,6 +3790,25 @@ class App(tk.Tk):
         style.configure("TLabelframe.Label", background="#f8fafc", foreground="#172033", font=("Segoe UI", 10, "bold"))
         style.configure("TButton", padding=(9, 5), font=("Segoe UI", 9))
         style.configure("Primary.TButton", padding=(14, 8), font=("Segoe UI", 10, "bold"))
+        # Shared NCI/QTAIM action: identical to the standalone tool headers.
+        style.configure(
+            "HeaderCTA.TButton",
+            background="#2f80c8",
+            foreground="#ffffff",
+            bordercolor="#61a5e8",
+            lightcolor="#2f80c8",
+            darkcolor="#2f80c8",
+            focusthickness=0,
+            padding=(14, 7),
+            relief="flat",
+            font=("Segoe UI", 9, "bold"),
+        )
+        style.map(
+            "HeaderCTA.TButton",
+            background=[("active", "#3b94df"), ("pressed", "#1f68a8")],
+            foreground=[("active", "#ffffff"), ("pressed", "#ffffff")],
+            bordercolor=[("active", "#8ac4f4"), ("pressed", "#1f68a8")],
+        )
         style.configure("Info.TButton", padding=(3, 1), font=("Segoe UI", 9, "bold"))
         style.configure("TCheckbutton", background="#f8fafc", padding=(1, 2), font=("Segoe UI", 9))
         style.configure("TLabel", background="#f8fafc", foreground="#263348", padding=(1, 1), font=("Segoe UI", 9))
@@ -3802,11 +3829,14 @@ class App(tk.Tk):
         box = ttk.Frame(parent, style="Header.TFrame")
         box.grid(row=0, column=column, rowspan=2, padx=(8, 0), sticky="ns")
         icon = self._load_header_icon(icon_path)
+        def activate():
+            command()
+
         if icon is None:
-            tk.Button(
+            button = tk.Button(
                 box,
                 text=label,
-                command=command,
+                command=activate,
                 bg="#2a4b75",
                 fg="#f8fafc",
                 activebackground="#345986",
@@ -3815,12 +3845,12 @@ class App(tk.Tk):
                 padx=10,
                 pady=8,
                 cursor="hand2",
-            ).grid(row=0, column=0, sticky="n")
+            )
         else:
-            tk.Button(
+            button = tk.Button(
                 box,
                 image=icon,
-                command=command,
+                command=activate,
                 bg="#1e3a5f",
                 activebackground="#2a4b75",
                 relief="flat",
@@ -3828,10 +3858,41 @@ class App(tk.Tk):
                 width=88,
                 height=78,
                 cursor="hand2",
-            ).grid(row=0, column=0, sticky="n")
-        action_link = ttk.Label(box, text=label, style="HeaderAction.TLabel", cursor="hand2")
+            )
+        button.grid(row=0, column=0, sticky="n")
+        action_link = tk.Label(box, text=label, bg="#1e3a5f", fg="#dbeafe", cursor="hand2", font=("Segoe UI", 9))
         action_link.grid(row=1, column=0, sticky="n", pady=(3, 0))
-        action_link.bind("<Button-1>", lambda _e: command())
+        action_link.bind("<Button-1>", lambda _e: activate())
+        self.workspace_action_widgets[label] = {"box": box, "button": button, "label": action_link}
+
+    def _activate_workspace_action(self, label: str) -> None:
+        """Update persistent-header identity and active navigation styling."""
+        tool_titles = {
+            "Builder": "ORCA Input Builder",
+            "HOMO LUMO": "HOMO–LUMO Analysis",
+            "ESP map": "Electrostatic Potential",
+            "NCI plot": "Noncovalent Interactions",
+            "QTAIM CP": "QTAIM Critical Points",
+            "TD-DFT": "TD-DFT",
+        }
+        self.workspace_title_var.set(tool_titles.get(label, "ORCA Input Builder"))
+        for name, widgets in self.workspace_action_widgets.items():
+            active = name == label
+            widgets["button"].configure(
+                bg="#0f6cbd" if active else "#1e3a5f",
+                activebackground="#1683df" if active else "#2a4b75",
+                relief="sunken" if active else "flat",
+                borderwidth=2 if active else 0,
+            )
+            widgets["label"].configure(
+                bg="#0f6cbd" if active else "#1e3a5f",
+                fg="#ffffff" if active else "#dbeafe",
+                font=("Segoe UI", 9, "bold underline") if active else ("Segoe UI", 9),
+            )
+
+    def _on_workspace_page_change(self, key: str, title: str) -> None:
+        self.active_workspace_key = key
+        self.workspace_title_var.set(title)
 
     def _build(self):
         self.columnconfigure(0, weight=1)
@@ -3840,7 +3901,9 @@ class App(tk.Tk):
         header = ttk.Frame(self, style="Header.TFrame", padding=(14, 10))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="ORCA input builder", style="HeaderTitle.TLabel").grid(row=0, column=0, sticky="w")
+        self.workspace_title_label = ttk.Label(header, textvariable=self.workspace_title_var, style="HeaderTitle.TLabel", cursor="hand2")
+        self.workspace_title_label.grid(row=0, column=0, sticky="w")
+        self.workspace_title_label.bind("<Button-1>", lambda _event: self._show_builder_workspace())
         settings_box = ttk.Frame(header, style="Header.TFrame")
         settings_box.grid(row=1, column=0, sticky="w")
         settings_link = ttk.Label(settings_box, text="Settings", style="HeaderLink.TLabel", cursor="hand2")
@@ -3850,15 +3913,23 @@ class App(tk.Tk):
         about_link = ttk.Label(settings_box, text="About", style="HeaderLink.TLabel", cursor="hand2")
         about_link.grid(row=0, column=2, sticky="w")
         about_link.bind("<Button-1>", lambda _e: self.open_about_window())
-        self._add_header_image_action(header, 2, ORCA_ICON_PATH, "Run Orca", self.run_orca)
+        self._add_header_image_action(header, 2, ORCA_ICON_PATH, "Builder", self._show_builder_workspace)
         self._add_header_image_action(header, 3, HOMO_LUMO_ICON_PATH, "HOMO LUMO", self.launch_homo_lumo)
         self._add_header_image_action(header, 4, ESP_ICON_PATH, "ESP map", self.launch_esp)
         self._add_header_image_action(header, 5, NCI_ICON_PATH, "NCI plot", self.launch_nci)
         self._add_header_image_action(header, 6, QTAIM_ICON_PATH, "QTAIM CP", self.launch_qtaim)
         self._add_header_image_action(header, 7, HOMO_LUMO_ICON_PATH, "TD-DFT", self.launch_td_dft)
 
-        body = ttk.Frame(self, style="Panel.TFrame", padding=10)
-        body.grid(row=1, column=0, sticky="nsew")
+        self.workspace_host = ttk.Frame(self, style="Panel.TFrame")
+        self.workspace_host.grid(row=1, column=0, sticky="nsew")
+        self.workspace_host.rowconfigure(0, weight=1)
+        self.workspace_host.columnconfigure(0, weight=1)
+        self.page_controller = StackedPageController(self._on_workspace_page_change)
+
+        body = ttk.Frame(self.workspace_host, style="Panel.TFrame", padding=10)
+        self.builder_workspace = body
+        self.page_controller.register("builder", "ORCA Input Builder", body)
+        self.page_controller.show("builder")
         body.columnconfigure(0, weight=0, minsize=450)
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
@@ -4049,7 +4120,8 @@ class App(tk.Tk):
         preview_actions.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         preview_actions.columnconfigure(0, weight=1)
         switch_box = ttk.Frame(preview_actions)
-        switch_box.grid(row=0, column=0, sticky="w", pady=(0, 6))
+        switch_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        switch_box.columnconfigure(2, weight=1)
         self.preview_mode_button = tk.Button(
             switch_box,
             text="Show input",
@@ -4074,6 +4146,28 @@ class App(tk.Tk):
             font=("Segoe UI", 9, "bold"),
         )
         self.monitor_mode_button.grid(row=0, column=1, sticky="w", padx=(3, 0))
+        self.run_orca_toolbar_icon = self._load_header_icon(ORCA_ICON_PATH, max_size=20)
+        self.run_orca_toolbar_button = tk.Button(
+            switch_box,
+            text="Run ORCA",
+            image=self.run_orca_toolbar_icon,
+            compound="left",
+            command=self.run_orca,
+            font=("Segoe UI", 9, "bold"),
+            padx=10,
+            pady=4,
+            anchor="center",
+            bg="#1e3a5f",
+            fg="#f8fafc",
+            activebackground="#2a4b75",
+            activeforeground="#f8fafc",
+            disabledforeground="#d7e1ee",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
+            cursor="hand2",
+        )
+        self.run_orca_toolbar_button.grid(row=0, column=3, sticky="e", padx=(10, 0))
         input_actions = ttk.Frame(preview_actions)
         input_actions.grid(row=1, column=0, sticky="ew")
         for column in range(4):
@@ -4278,10 +4372,14 @@ class App(tk.Tk):
         if self.tddft_window is not None and self.tddft_window.winfo_exists():
             self.tddft_window.set_builder_enabled(bool(self.job_tddft_var.get()), bool(self.current_tddft_block))
             self.tddft_window.set_builder_context(self.get_tddft_global_context())
-            self.tddft_window.deiconify(); self.tddft_window.lift(self); self.tddft_window.focus_force()
+            self._show_embedded_workspace("tddft", "TD-DFT")
             return self.tddft_window
         module = self._load_tddft_module()
         initial = dict(self.current_tddft_settings) if self.current_tddft_settings else dict(module.DEFAULT_TDDFT_SETTINGS)
+        page = self.page_controller.page("tddft")
+        if page is None:
+            page = ttk.Frame(self.workspace_host, style="Panel.TFrame")
+            self.page_controller.register("tddft", "TD-DFT", page)
         self.tddft_window = module.open_tddft_window(
             parent=self,
             initial_settings=initial,
@@ -4290,10 +4388,121 @@ class App(tk.Tk):
             builder_context=self.get_tddft_global_context(),
             on_run_emission_sequence=self.run_tddft_emission_sequence,
             on_run_strict_workflow=self.run_strict_tddft_workflow,
+            embed_parent=page,
+            on_open_torsion=self.open_torsion_workspace,
         )
+        self.embedded_tool_controllers["tddft"] = self.tddft_window
         self.tddft_window.set_builder_enabled(bool(self.job_tddft_var.get()), bool(self.current_tddft_block))
-        self.tddft_window.lift(self); self.tddft_window.focus_force()
+        self._restore_workspace_state()
+        self._show_embedded_workspace("tddft", "TD-DFT")
         return self.tddft_window
+
+    def open_torsion_workspace(self):
+        """Show the persistent Torsion panel using the current Builder geometry."""
+        if not self.structure or not self.structure.atoms:
+            raise ValueError("Load a CIF, XYZ, or another supported geometry before opening Torsion Scan.")
+        page = self.page_controller.page("torsion")
+        panel = self.__dict__.get("torsion_generator_panel")
+        if page is None:
+            page = ttk.Frame(self.workspace_host, style="Panel.TFrame")
+            self.page_controller.register("torsion", "Torsion Scan", page)
+        if panel is None or not panel.winfo_exists():
+            tools_root = str(TOOLS_ROOT)
+            if tools_root not in sys.path:
+                sys.path.insert(0, tools_root)
+            module = importlib.import_module("torsion_generator.torsion_generator_gui")
+            panel = module.open_torsion_generator_window(
+                self,
+                list(self.structure.atoms),
+                title=getattr(self.structure, "title", "molecule"),
+                source_path=self.structure_source_path,
+                charge=int(self.charge_var.get()),
+                multiplicity=int(self.mult_var.get()),
+                embed_parent=page,
+            )
+            self.torsion_generator_panel = panel
+            self.embedded_tool_controllers["torsion"] = panel
+            self._restore_workspace_state()
+        self._show_embedded_workspace("torsion", "Torsion Scan")
+        return panel
+
+    def _show_embedded_workspace(self, key: str, title: str) -> None:
+        """Raise one persistent tool page in the standard stacked workspace."""
+        self._save_workspace_state_safely(active_key=key)
+        self.page_controller.show(key)
+        action_labels = {
+            "homo_lumo": "HOMO LUMO", "esp": "ESP map", "nci": "NCI plot",
+            "qtaim": "QTAIM CP", "tddft": "TD-DFT", "torsion": "TD-DFT",
+        }
+        self._activate_workspace_action(action_labels.get(key, title))
+
+    def _show_builder_workspace(self) -> None:
+        """Raise the persistent Builder page."""
+        self._save_workspace_state_safely(active_key="builder")
+        self.page_controller.show("builder")
+        self._activate_workspace_action("Builder")
+
+    def _save_workspace_state_safely(self, active_key: Optional[str] = None) -> None:
+        """Session persistence must never prevent workspace navigation."""
+        try:
+            self._save_workspace_state(active_key=active_key)
+        except (OSError, TypeError, ValueError, RuntimeError, tk.TclError) as exc:
+            try:
+                self.append_monitor(f"Workspace state was not saved: {exc}\n")
+            except Exception:
+                pass
+
+    def _workspace_state_path(self) -> Optional[Path]:
+        """Return the per-project UI session file beside the loaded geometry."""
+        source = str(getattr(self, "structure_source_path", "") or "").strip()
+        if not source:
+            source = str(getattr(self, "last_output_path", "") or "").strip()
+        if not source:
+            return None
+        try:
+            return Path(source).expanduser().resolve().parent / ".crystengkit-workspace.json"
+        except Exception:
+            return None
+
+    def _save_workspace_state(self, active_key: Optional[str] = None) -> None:
+        path = self._workspace_state_path()
+        if path is None:
+            return
+        state: Dict[str, object] = {
+            "version": 1,
+            "active_tool": active_key or self.active_workspace_key,
+            "source_geometry": str(self.structure_source_path),
+            "tools": {},
+        }
+        for key, controller in self.embedded_tool_controllers.items():
+            get_state = getattr(controller, "get_state", None)
+            if callable(get_state):
+                state["tools"][key] = get_state()
+        try:
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            temporary.replace(path)
+        except OSError:
+            pass
+
+    def _restore_workspace_state(self) -> None:
+        path = self._workspace_state_path()
+        if path is None or not path.is_file():
+            return
+        resolved = str(path)
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+            if str(state.get("source_geometry", "")) != str(self.structure_source_path):
+                return
+            tools_state = state.get("tools", {})
+            for key, controller in self.embedded_tool_controllers.items():
+                tool_state = tools_state.get(key, {}) if isinstance(tools_state, dict) else {}
+                set_state = getattr(controller, "set_state", None)
+                if callable(set_state) and isinstance(tool_state, dict):
+                    set_state(tool_state)
+            self._workspace_state_loaded_from = resolved
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return
 
     def get_tddft_global_context(self) -> Dict:
         output_path = ""
@@ -5871,20 +6080,61 @@ class App(tk.Tk):
         self.append_monitor(f"Launched helper with Python: {py_parts[0]}\n")
         return True
 
+    def _load_embedded_tool_module(self, key: str, script_path: str):
+        cached = self._embedded_tool_modules.get(key)
+        if cached is not None:
+            return cached
+        path = Path(script_path).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Tool module was not found:\n{path}")
+        for directory in (str(TOOLS_ROOT), str(path.parent)):
+            if directory not in sys.path:
+                sys.path.insert(0, directory)
+        module_name = f"crystengkit_embedded_{key}"
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load tool module: {path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        self._embedded_tool_modules[key] = module
+        return module
+
+    def _embedded_tool_page(self, key: str) -> ttk.Frame:
+        page = self.page_controller.page(key)
+        if page is None:
+            titles = {
+                "homo_lumo": "HOMO–LUMO Analysis",
+                "esp": "Electrostatic Potential",
+                "nci": "Noncovalent Interactions",
+                "qtaim": "QTAIM Critical Points",
+            }
+            page = ttk.Frame(self.workspace_host, style="Panel.TFrame")
+            self.page_controller.register(key, titles[key], page)
+        return page
+
     def launch_homo_lumo(self):
         try:
+            page = self._embedded_tool_page("homo_lumo")
+            panel = self.embedded_tool_controllers.get("homo_lumo")
             try:
                 out_path = self._recent_output_path()
             except ValueError as exc:
                 if "No ORCA .out file was found yet." not in str(exc):
                     raise
-                if self._launch_python_tool(self.homo_lumo_script_var.get(), None, self.launch_python_var.get()):
-                    self.append_monitor("Launched HOMO-LUMO in standalone mode.\n")
-                return
-            if self._launch_python_tool(self.homo_lumo_script_var.get(), out_path, self.launch_python_var.get()):
-                self.append_monitor(f"Launched HOMO-LUMO with: {out_path}\n")
+                out_path = None
+            if panel is None or not panel.winfo_exists():
+                module = self._load_embedded_tool_module("homo_lumo", self.homo_lumo_script_var.get())
+                panel = module.App(page, embedded=True, initial_path=out_path)
+                self.embedded_tool_controllers["homo_lumo"] = panel
+                self._restore_workspace_state()
+            elif out_path and os.path.normcase(str(panel.file_path or "")) != os.path.normcase(out_path):
+                panel.file_path_var.set(out_path)
+                panel._load_detected_file(out_path)
+                panel.after(100, panel.on_preview)
+            self._show_embedded_workspace("homo_lumo", "HOMO–LUMO Analysis")
         except Exception as exc:
-            messagebox.showerror("HOMO-LUMO launcher", str(exc))
+            messagebox.showerror("HOMO-LUMO launcher", str(exc), parent=self)
 
     def launch_td_dft(self):
         try:
@@ -5906,55 +6156,62 @@ class App(tk.Tk):
                     raise
                 wavefunction_path = None
 
-            if not wavefunction_path:
-                if self._launch_python_tool(self.esp_script_var.get(), None, self.esp_python_var.get()):
-                    self.append_monitor("Launched ESP in standalone mode.\n")
-                return
-
-            if self._launch_python_tool(self.esp_script_var.get(), wavefunction_path, self.esp_python_var.get()):
-                self.append_monitor(f"Launched ESP with: {wavefunction_path}\n")
+            page = self._embedded_tool_page("esp")
+            panel = self.embedded_tool_controllers.get("esp")
+            if panel is None or not panel.winfo_exists():
+                module = self._load_embedded_tool_module("esp", self.esp_script_var.get())
+                panel = module.launch_gui(
+                    initial_inputfile=wavefunction_path,
+                    initial_multiwfn=self.multiwfn_path_var.get().strip() or None,
+                    autorun=bool(wavefunction_path), parent=page, embedded=True, run_mainloop=False,
+                )
+                self.embedded_tool_controllers["esp"] = panel
+                page.on_show = panel.on_show
+                page.on_hide = panel.on_hide
+                self._restore_workspace_state()
+            self._show_embedded_workspace("esp", "Electrostatic Potential")
         except Exception as exc:
-            messagebox.showerror("ESP launcher", str(exc))
+            messagebox.showerror("ESP launcher", str(exc), parent=self)
 
 
     def launch_nci(self):
         try:
-            wavefunction_path = self._current_nci_input_path()
-            if not wavefunction_path:
-                if self._launch_python_tool(self.nci_script_var.get(), None, self.nci_python_var.get()):
-                    self.append_monitor("Launched NCI plotter in standalone mode.\n")
-                return
-
-            if self._launch_python_tool(self.nci_script_var.get(), wavefunction_path, self.nci_python_var.get()):
-                self.append_monitor(f"Launched NCI plotter for current ORCA task with: {wavefunction_path}\n")
-        except ValueError as exc:
-            if "No .wfx/.wfn file was found for NCI plotting" in str(exc):
-                if self._launch_python_tool(self.nci_script_var.get(), None, self.nci_python_var.get()):
-                    self.append_monitor(f"Launched NCI plotter in standalone mode. {exc}\n")
-                return
-            messagebox.showerror("NCI plotter launcher", str(exc))
+            try:
+                wavefunction_path = self._current_nci_input_path()
+            except ValueError:
+                wavefunction_path = None
+            page = self._embedded_tool_page("nci")
+            controller = self.embedded_tool_controllers.get("nci")
+            if controller is None:
+                module = self._load_embedded_tool_module("nci", self.nci_script_var.get())
+                controller = module.NCIPlotterApp(page, wavefunction_path, embedded=True)
+                self.embedded_tool_controllers["nci"] = controller
+                self._restore_workspace_state()
+            elif wavefunction_path and controller.wavefunction_path.get() != wavefunction_path:
+                controller.set_wavefunction_path(wavefunction_path)
+            self._show_embedded_workspace("nci", "Noncovalent Interactions")
         except Exception as exc:
-            messagebox.showerror("NCI plotter launcher", str(exc))
+            messagebox.showerror("NCI plotter launcher", str(exc), parent=self)
 
 
     def launch_qtaim(self):
         try:
-            wavefunction_path = self._current_qtaim_input_path()
-            if not wavefunction_path:
-                if self._launch_python_tool(self.qtaim_script_var.get(), None, self.qtaim_python_var.get()):
-                    self.append_monitor("Launched QTAIM CP viewer in standalone mode.\n")
-                return
-
-            if self._launch_python_tool(self.qtaim_script_var.get(), wavefunction_path, self.qtaim_python_var.get()):
-                self.append_monitor(f"Launched QTAIM CP viewer for current ORCA task with: {wavefunction_path}\n")
-        except ValueError as exc:
-            if "No .wfx/.wfn file was found for QTAIM CP analysis" in str(exc):
-                if self._launch_python_tool(self.qtaim_script_var.get(), None, self.qtaim_python_var.get()):
-                    self.append_monitor(f"Launched QTAIM CP viewer in standalone mode. {exc}\n")
-                return
-            messagebox.showerror("QTAIM CP launcher", str(exc))
+            try:
+                wavefunction_path = self._current_qtaim_input_path()
+            except ValueError:
+                wavefunction_path = None
+            page = self._embedded_tool_page("qtaim")
+            panel = self.embedded_tool_controllers.get("qtaim")
+            if panel is None or not panel.winfo_exists():
+                module = self._load_embedded_tool_module("qtaim", self.qtaim_script_var.get())
+                panel = module.QTAIMGui(wavefunction_path, parent=page, embedded=True)
+                self.embedded_tool_controllers["qtaim"] = panel
+                self._restore_workspace_state()
+            elif wavefunction_path and panel.input_path.get() != wavefunction_path:
+                panel.set_input_path(wavefunction_path)
+            self._show_embedded_workspace("qtaim", "QTAIM Critical Points")
         except Exception as exc:
-            messagebox.showerror("QTAIM CP launcher", str(exc))
+            messagebox.showerror("QTAIM CP launcher", str(exc), parent=self)
 
 
     def parse_current_structure(self) -> Structure:
@@ -7767,6 +8024,7 @@ class App(tk.Tk):
                 parent=self,
             ):
                 return
+        self._save_workspace_state_safely()
         self.destroy()
 
     def _offer_reconnect_saved_job(self) -> None:

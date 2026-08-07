@@ -1,0 +1,63 @@
+import ast
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def parsed(relative: str):
+    return ast.parse((ROOT / relative).read_text(encoding="utf-8"))
+
+
+def class_bases(tree, name: str):
+    node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == name)
+    return [ast.unparse(base) for base in node.bases]
+
+
+def function_parameters(tree, name: str):
+    node = next(item for item in tree.body if isinstance(item, ast.FunctionDef) and item.name == name)
+    return [argument.arg for argument in (*node.args.args, *node.args.kwonlyargs)]
+
+
+class EmbeddedToolContractTests(unittest.TestCase):
+    def test_class_based_tools_are_frames(self):
+        cases = (
+            ("tools/HOMO_LUMO/HOMO_LUMO_v2.py", "App"),
+            ("tools/qtaim-cp/qtaim.py", "QTAIMGui"),
+            ("tools/TD_DFT/td_dft_module.py", "TDDFTPanel"),
+            ("tools/torsion_generator/torsion_generator_gui.py", "TorsionGeneratorPanel"),
+        )
+        for relative, class_name in cases:
+            with self.subTest(tool=relative):
+                self.assertIn("ttk.Frame", class_bases(parsed(relative), class_name))
+
+    def test_procedural_esp_has_embedded_launcher_contract(self):
+        parameters = function_parameters(parsed("tools/VisMap_5.0/VisMap5.6_pyvista.py"), "launch_gui")
+        self.assertIn("parent", parameters)
+        self.assertIn("embedded", parameters)
+        self.assertIn("run_mainloop", parameters)
+
+    def test_nci_controller_accepts_embedded_mode(self):
+        tree = parsed("tools/NCI_plot/nci_plotter.py")
+        node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "NCIPlotterApp")
+        init = next(item for item in node.body if isinstance(item, ast.FunctionDef) and item.name == "__init__")
+        parameters = [argument.arg for argument in (*init.args.args, *init.args.kwonlyargs)]
+        self.assertIn("embedded", parameters)
+
+    def test_tool_panels_publish_explicit_state_contracts(self):
+        cases = (
+            ("tools/HOMO_LUMO/HOMO_LUMO_v2.py", "App"),
+            ("tools/NCI_plot/nci_plotter.py", "NCIPlotterApp"),
+            ("tools/qtaim-cp/qtaim.py", "QTAIMGui"),
+        )
+        for relative, class_name in cases:
+            tree = parsed(relative)
+            node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == class_name)
+            methods = {item.name for item in node.body if isinstance(item, ast.FunctionDef)}
+            self.assertIn("get_state", methods)
+            self.assertIn("set_state", methods)
+
+
+if __name__ == "__main__":
+    unittest.main()

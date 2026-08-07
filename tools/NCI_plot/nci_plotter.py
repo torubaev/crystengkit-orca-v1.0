@@ -986,12 +986,14 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
 
 
 class NCIPlotterApp:
-    def __init__(self, root: tk.Tk, initial_wavefunction_path: Optional[str] = None):
+    def __init__(self, root, initial_wavefunction_path: Optional[str] = None, *, embedded: bool = False):
         self.root = root
-        self.root.title("NCI Plotter")
+        self.embedded = bool(embedded)
         self.window_height = screen_fraction_height(self.root)
-        self.root.geometry(f"980x{self.window_height}")
-        configure_builder_ui_style(self.root)
+        if not self.embedded:
+            self.root.title("NCI Plotter")
+            self.root.geometry(f"980x{self.window_height}")
+            configure_builder_ui_style(self.root)
 
         self.config = self.load_config()
 
@@ -1038,6 +1040,21 @@ class NCIPlotterApp:
         self.start_multiwfn_locator()
         if self.auto_start_requested:
             self.root.after(900, self.auto_start_from_initial_wavefunction)
+
+    def get_state(self) -> dict:
+        names = (
+            "wavefunction_path", "multiwfn_path", "rdg_isovalue", "opacity",
+            "color_min", "color_max", "colormap", "show_molecule", "show_bonds",
+            "show_scalar_bar", "background", "image_resolution", "command_template",
+        )
+        return {name: getattr(self, name).get() for name in names}
+
+    def set_state(self, state: dict) -> None:
+        allowed = set(self.get_state())
+        for name, value in (state or {}).items():
+            variable = getattr(self, name, None)
+            if name in allowed and isinstance(variable, tk.Variable):
+                variable.set(value)
 
     def load_config(self) -> dict:
         if CONFIG_FILE.exists():
@@ -1113,7 +1130,8 @@ class NCIPlotterApp:
 
     def build_gui(self) -> None:
         header = ttk.Frame(self.root, style="Header.TFrame", padding=(14, 10))
-        header.pack(fill="x")
+        if not self.embedded:
+            header.pack(fill="x")
         self.header_icon = load_header_icon(NCI_ICON_PATH)
         if self.header_icon is not None:
             tk.Label(header, image=self.header_icon, bg="#1e3a5f", bd=0, highlightthickness=0).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
@@ -1170,6 +1188,13 @@ class NCIPlotterApp:
         ttk.Button(input_frame, text="Browse", command=self.browse_wavefunction).grid(
             row=0, column=2, padx=5
         )
+        if self.embedded:
+            ttk.Button(
+                input_frame,
+                text="NCI + QTAIM overlay",
+                command=self.open_nci_qtaim_overlay,
+                style="HeaderCTA.TButton",
+            ).grid(row=0, column=3, rowspan=2, sticky="e", padx=(18, 0))
 
         ttk.Label(input_frame, text="Output folder:").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
@@ -1178,7 +1203,9 @@ class NCIPlotterApp:
         keep_entry_end_visible(output_entry, self.output_dir)
         output_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=(6, 0))
 
-        input_frame.columnconfigure(1, weight=1)
+        input_frame.columnconfigure(1, weight=4)
+        if self.embedded:
+            input_frame.columnconfigure(3, weight=1)
 
         gen_frame = ttk.LabelFrame(main, text="NCI data generation", padding=8)
         gen_frame.pack(fill="x", pady=(0, 8))

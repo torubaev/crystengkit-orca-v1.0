@@ -101,14 +101,12 @@ def rotating_side_for_axis(molecule: Molecule, first: int, second: int) -> set[i
     return None if first in seen else seen
 
 
-class TorsionGeneratorWindow(tk.Toplevel):
+class TorsionGeneratorPanel(ttk.Frame):
     """A click-first torsion workflow with advanced settings kept optional."""
 
-    def __init__(self, parent, molecule: Molecule, source_path: str = "", charge: int = 0, multiplicity: int = 1):
+    def __init__(self, parent, molecule: Molecule, source_path: str = "", charge: int = 0, multiplicity: int = 1, host_window=None):
         super().__init__(parent)
-        self.title("Torsion geometry generator")
-        self.geometry("1080x720")
-        self.minsize(860, 620)
+        self.host_window = host_window
         self.molecule, self.source_path = molecule, source_path
         self.rotations: list[dict[str, Any]] = []
         self.axis_selection: list[int] = []
@@ -133,7 +131,34 @@ class TorsionGeneratorWindow(tk.Toplevel):
         self.status_var = tk.StringVar(value="1. Select an axis  →  2. Confirm fragment  →  3. Choose scan  →  4. Generate")
         self._build()
         self._draw_preview(self.molecule.coordinates, "Click the first axis atom")
-        self.protocol("WM_DELETE_WINDOW", self.withdraw)
+        self.pack(fill="both", expand=True)
+
+    def get_state(self) -> dict[str, Any]:
+        names = (
+            "mode_var", "preset_var", "custom_angles_var", "preview_angle_var", "output_var",
+            "write_orca_var", "charge_var", "multiplicity_var", "collision_var",
+            "max_displacement_var", "strict_var", "max_structures_var", "random_count_var",
+            "random_seed_var", "template_var",
+        )
+        return {
+            "variables": {name: getattr(self, name).get() for name in names},
+            "rotations": self.rotations,
+            "axis_selection": self.axis_selection,
+            "fragment_selection": sorted(self.fragment_selection),
+            "selection_phase": self.selection_phase,
+        }
+
+    def set_state(self, state: dict[str, Any]) -> None:
+        for name, value in (state or {}).get("variables", {}).items():
+            variable = getattr(self, name, None)
+            if isinstance(variable, tk.Variable):
+                variable.set(value)
+        self.rotations = list((state or {}).get("rotations", []))
+        self.axis_selection = list((state or {}).get("axis_selection", []))
+        self.fragment_selection = set((state or {}).get("fragment_selection", []))
+        self.selection_phase = str((state or {}).get("selection_phase", "axis"))
+        self._refresh_rotations()
+        self._draw_preview(self.molecule.coordinates, "Restored project workspace")
 
     def set_molecule(self, molecule: Molecule, source_path: str = "", charge: int | None = None, multiplicity: int | None = None) -> None:
         self.molecule, self.source_path = molecule, source_path
@@ -346,7 +371,7 @@ class TorsionGeneratorWindow(tk.Toplevel):
         if path: self.output_var.set(path)
 
     def _open_advanced(self) -> None:
-        win = tk.Toplevel(self); win.title("Advanced torsion settings"); win.transient(self); win.resizable(False, False)
+        win = tk.Toplevel(self); win.title("Advanced torsion settings"); win.transient(self.winfo_toplevel()); win.resizable(False, False)
         box = ttk.Frame(win, padding=12); box.pack(fill="both", expand=True)
         fields = (("Custom angles", self.custom_angles_var), ("Maximum structures", self.max_structures_var), ("Collision threshold / A", self.collision_var), ("Maximum displacement / A", self.max_displacement_var), ("Random count", self.random_count_var), ("Random seed", self.random_seed_var), ("Charge", self.charge_var), ("Multiplicity", self.multiplicity_var), ("ORCA template", self.template_var))
         for row, (label, variable) in enumerate(fields):
@@ -394,18 +419,36 @@ class TorsionGeneratorWindow(tk.Toplevel):
         except Exception as exc: messagebox.showerror("Torsion generation", str(exc), parent=self)
 
 
-def open_torsion_generator_window(parent, atoms: Sequence[Sequence[Any]], title: str = "molecule", source_path: str = "", charge: int = 0, multiplicity: int = 1, existing=None):
+def open_torsion_generator_window(parent, atoms: Sequence[Sequence[Any]], title: str = "molecule", source_path: str = "", charge: int = 0, multiplicity: int = 1, existing=None, embed_parent=None):
     molecule = molecule_from_atoms(atoms, title)
     if existing is not None and existing.winfo_exists():
-        existing.set_molecule(molecule, source_path, charge, multiplicity); existing.deiconify(); existing.lift(); existing.focus_force(); return existing
-    return TorsionGeneratorWindow(parent, molecule, source_path, charge, multiplicity)
+        existing.set_molecule(molecule, source_path, charge, multiplicity)
+        if existing.host_window is not None:
+            existing.host_window.deiconify(); existing.host_window.lift(); existing.host_window.focus_force()
+        return existing
+    host = None
+    panel_parent = embed_parent
+    if panel_parent is None:
+        host = tk.Toplevel(parent)
+        host.title("Torsion geometry generator")
+        host.geometry("1080x720")
+        host.minsize(860, 620)
+        panel_parent = host
+    panel = TorsionGeneratorPanel(panel_parent, molecule, source_path, charge, multiplicity, host_window=host)
+    if host is not None:
+        host.protocol("WM_DELETE_WINDOW", host.withdraw)
+    return panel
+
+
+TorsionGeneratorWindow = TorsionGeneratorPanel
 
 
 def main() -> None:
     root = tk.Tk(); root.withdraw()
     path = filedialog.askopenfilename(title="Choose XYZ geometry", filetypes=[("XYZ", "*.xyz")])
     if not path: root.destroy(); return
-    window = TorsionGeneratorWindow(root, read_xyz(Path(path)), path); window.protocol("WM_DELETE_WINDOW", root.destroy); root.mainloop()
+    host = tk.Toplevel(root); host.title("Torsion geometry generator"); host.geometry("1080x720")
+    TorsionGeneratorPanel(host, read_xyz(Path(path)), path, host_window=host); host.protocol("WM_DELETE_WINDOW", root.destroy); root.mainloop()
 
 
 if __name__ == "__main__":

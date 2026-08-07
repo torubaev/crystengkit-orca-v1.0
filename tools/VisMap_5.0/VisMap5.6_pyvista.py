@@ -815,6 +815,7 @@ APP_STATE = {
 }
 
 VIEWER_STATE = None
+ESP_VIEWER_PUMP_MS = 100
 
 
 def _get_screen_size():
@@ -1131,16 +1132,26 @@ def pump_viewer():
     root = APP_STATE.get("root")
     if root is None:
         return
+    try:
+        if not root.winfo_exists() or not bool(getattr(root, "workspace_active", True)):
+            return
+    except tk.TclError:
+        return
     if VIEWER_STATE is not None:
         plotter = VIEWER_STATE.get("plotter")
         try:
-            if plotter is None or getattr(plotter, "ren_win", None) is None:
+            closing = bool(VIEWER_STATE.get("closing", False))
+            pyvista_closed = bool(getattr(plotter, "_closed", False)) if plotter is not None else True
+            if closing or pyvista_closed or plotter is None or getattr(plotter, "ren_win", None) is None:
                 _cleanup_viewer_state()
             else:
                 plotter.update()
         except Exception:
             _cleanup_viewer_state()
-    root.after(30, pump_viewer)
+    try:
+        root.after(ESP_VIEWER_PUMP_MS, pump_viewer)
+    except tk.TclError:
+        return
 
 
 def viewer_apply_isovalue(*_args):
@@ -1954,6 +1965,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         "extrema_points": [],
         "extrema_points_actor": None,
         "extrema_labels_actor": None,
+        "closing": False,
     }
 
     try:
@@ -1965,6 +1977,16 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         interactor = getattr(plotter, "iren", None)
         vtk_interactor = getattr(interactor, "interactor", None)
         if vtk_interactor is not None:
+            def _mark_viewer_closing(_obj=None, _event=None):
+                current = VIEWER_STATE
+                if current is not None and current.get("plotter") is plotter:
+                    current["closing"] = True
+
+            vtk_interactor.AddObserver("ExitEvent", _mark_viewer_closing)
+            render_window = getattr(plotter, "ren_win", None)
+            if render_window is not None:
+                render_window.AddObserver("DeleteEvent", _mark_viewer_closing)
+
             def _ctrl_c_observer(_obj, _event):
                 try:
                     key = vtk_interactor.GetKeySym()
@@ -2105,13 +2127,20 @@ def process_selected_file(selected_inputfile, selected_nproc="4", selected_mode=
 # ----------------------------
 
 def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", initial_vis="y",
-               initial_pregen=False, initial_cpisov=None, initial_multiwfn=None, autorun=False):
-    set_windows_app_id("VisMap")
-    root = tk.Tk()
-    configure_tk_window_identity(root, "VisMap")
+               initial_pregen=False, initial_cpisov=None, initial_multiwfn=None, autorun=False,
+               parent=None, embedded=False, run_mainloop=True):
+    if parent is None:
+        set_windows_app_id("VisMap")
+        root = tk.Tk()
+        configure_tk_window_identity(root, "VisMap")
+    else:
+        root = tk.Frame(parent, bg="#f4f6f9")
+        root.pack(fill="both", expand=True)
+        embedded = True
     APP_STATE["root"] = root
-    root.title("VisMap GUI")
-    root.resizable(True, True)
+    if not embedded:
+        root.title("VisMap GUI")
+        root.resizable(True, True)
 
     base_font = tkfont.nametofont("TkDefaultFont").copy()
     base_font.configure(size=10)
@@ -2137,35 +2166,36 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
 
     root.configure(background=app_bg)
 
-    root.option_add("*Font", base_font)
-    root.option_add("*LabelFrame.Font", section_font)
-    root.option_add("*Button.Font", base_font)
-    root.option_add("*Checkbutton.Font", base_font)
-    root.option_add("*Entry.Font", base_font)
-    root.option_add("*Text.Font", mono_font)
-    root.option_add("*Label.Background", panel_bg)
-    root.option_add("*Label.Foreground", text_fg)
-    root.option_add("*LabelFrame.Background", panel_bg)
-    root.option_add("*LabelFrame.Foreground", title_fg)
-    root.option_add("*Frame.Background", panel_bg)
-    root.option_add("*Button.Background", "#eef2f6")
-    root.option_add("*Button.Foreground", text_fg)
-    root.option_add("*Button.ActiveBackground", "#e4eaf1")
-    root.option_add("*Button.ActiveForeground", text_fg)
-    root.option_add("*Button.Relief", "flat")
-    root.option_add("*Checkbutton.Background", panel_bg)
-    root.option_add("*Checkbutton.Foreground", text_fg)
-    root.option_add("*Checkbutton.ActiveBackground", panel_bg)
-    root.option_add("*Checkbutton.SelectColor", panel_bg)
-    root.option_add("*Entry.Background", "#ffffff")
-    root.option_add("*Entry.Foreground", text_fg)
-    root.option_add("*Entry.InsertBackground", text_fg)
-    root.option_add("*Text.Background", "#ffffff")
-    root.option_add("*Text.Foreground", text_fg)
-    root.option_add("*Text.InsertBackground", text_fg)
-    root.option_add("*Scale.Background", panel_bg)
-    root.option_add("*Scale.Foreground", text_fg)
-    root.option_add("*Scale.troughColor", "#d7e1ee")
+    if not embedded:
+        root.option_add("*Font", base_font)
+        root.option_add("*LabelFrame.Font", section_font)
+        root.option_add("*Button.Font", base_font)
+        root.option_add("*Checkbutton.Font", base_font)
+        root.option_add("*Entry.Font", base_font)
+        root.option_add("*Text.Font", mono_font)
+        root.option_add("*Label.Background", panel_bg)
+        root.option_add("*Label.Foreground", text_fg)
+        root.option_add("*LabelFrame.Background", panel_bg)
+        root.option_add("*LabelFrame.Foreground", title_fg)
+        root.option_add("*Frame.Background", panel_bg)
+        root.option_add("*Button.Background", "#eef2f6")
+        root.option_add("*Button.Foreground", text_fg)
+        root.option_add("*Button.ActiveBackground", "#e4eaf1")
+        root.option_add("*Button.ActiveForeground", text_fg)
+        root.option_add("*Button.Relief", "flat")
+        root.option_add("*Checkbutton.Background", panel_bg)
+        root.option_add("*Checkbutton.Foreground", text_fg)
+        root.option_add("*Checkbutton.ActiveBackground", panel_bg)
+        root.option_add("*Checkbutton.SelectColor", panel_bg)
+        root.option_add("*Entry.Background", "#ffffff")
+        root.option_add("*Entry.Foreground", text_fg)
+        root.option_add("*Entry.InsertBackground", text_fg)
+        root.option_add("*Text.Background", "#ffffff")
+        root.option_add("*Text.Foreground", text_fg)
+        root.option_add("*Text.InsertBackground", text_fg)
+        root.option_add("*Scale.Background", panel_bg)
+        root.option_add("*Scale.Foreground", text_fg)
+        root.option_add("*Scale.troughColor", "#d7e1ee")
 
     style = ttk.Style(root)
     try:
@@ -2188,12 +2218,14 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     gui_width = min(gui_width, max(screen_w - 40, 600))
     x = 20 if screen_w - gui_width > 40 else max(screen_w - gui_width, 0)
     y = max((screen_h - gui_height) // 2, 0)
-    root.geometry(f"{gui_width}x{gui_height}+{x}+{y}")
-    root.minsize(720, min(700, gui_height))
-    root.maxsize(screen_w, screen_h)
+    if not embedded:
+        root.geometry(f"{gui_width}x{gui_height}+{x}+{y}")
+        root.minsize(720, min(700, gui_height))
+        root.maxsize(screen_w, screen_h)
 
     header = tk.Frame(root, bg=accent_bg, padx=14, pady=10)
-    header.pack(side="top", fill="x")
+    if not embedded:
+        header.pack(side="top", fill="x")
     header_icon = load_header_icon(ESP_ICON_PATH)
     if header_icon is not None:
         APP_STATE["header_icon"] = header_icon
@@ -2579,7 +2611,8 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
     )
     run_button.grid(row=1, column=2, sticky="w", padx=(14, 0), pady=(4, 12))
     quit_button = tk.Button(button_bar, text="Quit", command=root.destroy, width=12)
-    quit_button.pack(side="right")
+    if not embedded:
+        quit_button.pack(side="right")
 
     def _style_button(btn, accent=False):
         try:
@@ -2629,12 +2662,64 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
             pass
 
     root.bind_all("<Control-c>", lambda _event: viewer_copy_to_clipboard())
-    install_dev_reload_shortcut(root, Path(__file__))
-    root.after(30, pump_viewer)
+    if not embedded:
+        install_dev_reload_shortcut(root, Path(__file__))
+    root.workspace_active = True
+
+    def on_hide():
+        root.workspace_active = False
+
+    def on_show():
+        if bool(getattr(root, "workspace_active", False)):
+            return
+        root.workspace_active = True
+        try:
+            root.after(0, pump_viewer)
+        except tk.TclError:
+            pass
+
+    root.on_hide = on_hide
+    root.on_show = on_show
+    try:
+        root.after(ESP_VIEWER_PUMP_MS, pump_viewer)
+    except tk.TclError:
+        pass
     if autorun and initial_inputfile:
         root.after(250, run_clicked)
     refresh_extrema_panel([])
-    root.mainloop()
+    session_variables = {
+        "input_file": input_file_var,
+        "isovalue": APP_STATE["isovalue_var"],
+        "esp_min": APP_STATE["esp_min_var"],
+        "esp_max": APP_STATE["esp_max_var"],
+        "colormap": APP_STATE["cmap_var"],
+        "show_molecule": APP_STATE["show_molecule_var"],
+        "kill_value": APP_STATE["kill_value_var"],
+        "kill_pm": APP_STATE["kill_pm_var"],
+        "background": APP_STATE["bg_color_var"],
+        "image_resolution": APP_STATE["image_resolution_var"],
+    }
+
+    def get_state():
+        state = {name: variable.get() for name, variable in session_variables.items()}
+        state["opacity"] = int(APP_STATE["opacity_scale"].get())
+        state["molecule_opacity"] = int(APP_STATE["molecule_opacity_scale"].get())
+        return state
+
+    def set_state(state):
+        for name, value in (state or {}).items():
+            if name in session_variables:
+                session_variables[name].set(value)
+        if "opacity" in (state or {}):
+            APP_STATE["opacity_scale"].set(int(state["opacity"]))
+        if "molecule_opacity" in (state or {}):
+            APP_STATE["molecule_opacity_scale"].set(int(state["molecule_opacity"]))
+
+    root.get_state = get_state
+    root.set_state = set_state
+    if run_mainloop and not embedded:
+        root.mainloop()
+    return root
 
 
 # ----------------------------
