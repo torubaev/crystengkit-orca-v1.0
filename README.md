@@ -153,29 +153,8 @@ appear as ordinary dialogs.
 
 #### ChemDraw CDXML/CDXM import
 
-The Builder natively reads ChemDraw XML files containing a complete stored
-`xyz` model. Atom identities and the three-dimensional shape are preserved;
-the coordinates are centered and uniformly converted from ChemDraw drawing
-units to approximate angstrom bond lengths using the stored connectivity and
-covalent radii. The resulting structure is an initial geometry and must be
+The Builder natively reads ChemDraw .CDXML files. The structure must be
 checked in **Structure preview** before calculation.
-
-The importer refuses incomplete 3D models instead of silently mixing stored and
-generated coordinates. It reports unsupported nickname/group nodes and warns
-when several ChemDraw fragments are imported together. Standard `.cdxml` and
-the `.cdxm` alias are accepted. Two-dimensional ChemDraw XML and binary `.cdx`
-files continue through Open Babel, which can generate a provisional 3D model
-after user confirmation.
-
-### Torsion Generator
-
-`tools/torsion_generator/torsion_generator.py` generates reproducible single,
-independent, collective, alternating, combinatorial, or seeded-random torsional
-distortions from an XYZ structure. It preserves atom order, validates axes and
-connectivity, writes a CSV audit table, and can prepare ORCA TD-DFT inputs
-without launching ORCA. From Builder, open the **TD-DFT** module and select
-**Torsion scan** in its header. See `tools/torsion_generator/README.md` and the two
-generic JSON examples in that directory.
 
 ### TD-DFT Setup, Analysis, and Visualization
 
@@ -309,7 +288,7 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
 
 ### Build and Run an ORCA Job
 
-1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, 3D `.mol`/`.sdf`/`.sd`, and complete stored-3D ChemDraw `.cdxml`/`.cdxm` files are read directly. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are also supported. Binary `.cdx` and 2D-only ChemDraw XML use Open Babel. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
+1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, 3D `.mol`/`.sdf`/`.sd`, and ChemDraw `.cdxml`/`.cdxm` files are read directly. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are also supported. Binary `.cdx` and 2D-only ChemDraw XML use Open Babel. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
    
    ![ORCA Input Builder job setup window](images/wiki/orca-input_1.png)
 
@@ -351,13 +330,12 @@ The prompt asks only for the current stage and convergence trend, evidence of lo
 For a single manually configured TD-DFT job instead of the full sequence, use **Show ORCA Block** to synchronize exactly one `%tddft` block with the Builder and run it normally.
 
 ### Make Figures After a Calculation
-
+![****ORCA TERMINATED NORMALLY****](images/wiki/orca_finish.png)
 Use the top-panel buttons after the ORCA job finishes:
 
 The currently active tool is highlighted in the top panel, and its name appears on the left side of the panel, so you can always see which workspace is open.
 
 ![ORCA Input Builder top panel analysis buttons](images/wiki/orca_top_panel_1.png)
-
 - `HOMO LUMO` for orbital energy diagrams and, from ORCA `.out` / `.gbw` pairs, MO surface images and contact sheets
 - `ESP map` for electrostatic-potential surfaces
 - `NCI plot` for RDG / sign(lambda2)rho noncovalent-interaction surfaces
@@ -379,14 +357,12 @@ For consistent MO surface figures, orient and zoom one saved contact-sheet tile,
 
 4. Use the viewer to check the fragment assignment.
    
-   ![Dimer fragment assignment in the structure viewer](images/wiki/orca-input_viewer_2.png)
+   ![Dimer fragment assignment in the structure viewer](images/wiki/orca-input_viewer_1.png)
 
 5. Choose whether to include relaxed binding analysis and thermodynamic terms.
 
 6. Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.
    ![ORCA dimer interaction energy output summary](images/wiki/orca-output_3.png)
-   ![ORCA calculation summary text for experimental section](images/wiki/orca-output_4.png)
-
 As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&id=4&state=show&order=ASC&by=name_m&method=
 
 ### Modeling of Solvation Effects
