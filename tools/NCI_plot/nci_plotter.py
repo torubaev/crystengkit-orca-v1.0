@@ -2259,6 +2259,15 @@ class NCIPlotterApp:
             messagebox.showerror("Save failed", str(exc))
 
     def open_nci_qtaim_overlay(self) -> None:
+        try:
+            self._open_nci_qtaim_overlay()
+        except Exception as exc:
+            self.overlay_process = None
+            message = f"Could not prepare NCI + QTAIM overlay: {type(exc).__name__}: {exc}"
+            self.log(f"ERROR: {message}")
+            messagebox.showerror("Overlay failed", message, parent=self.root)
+
+    def _open_nci_qtaim_overlay(self) -> None:
         if self.overlay_process is not None and self.overlay_process.poll() is None:
             self.log("NCI + QTAIM overlay is already open.")
             return

@@ -486,6 +486,24 @@ def make_nci_grid(rdg_cube, signrho_cube):
     return grid.cell_data_to_point_data()
 
 
+def validated_nci_cube_roles(rdg_cube, signrho_cube, isovalue: float):
+    """Correct an accidentally swapped RDG/sign(lambda2)rho cube pair."""
+    rdg_values = np.asarray(rdg_cube.values, dtype=float)
+    signrho_values = np.asarray(signrho_cube.values, dtype=float)
+    rdg_range = (float(np.nanmin(rdg_values)), float(np.nanmax(rdg_values)))
+    signrho_range = (float(np.nanmin(signrho_values)), float(np.nanmax(signrho_values)))
+
+    rdg_contains_level = rdg_range[0] <= float(isovalue) <= rdg_range[1]
+    signrho_contains_level = signrho_range[0] <= float(isovalue) <= signrho_range[1]
+    if not rdg_contains_level and signrho_contains_level:
+        print(
+            "Corrected swapped NCI cube roles: the supplied sign(lambda2)rho "
+            f"cube contains RDG isovalue {isovalue}."
+        )
+        return signrho_cube, rdg_cube
+    return rdg_cube, signrho_cube
+
+
 def screen_fraction_window_size(width: int, fallback_height: int, fraction: float = 0.80):
     try:
         root = getattr(tk, "_default_root", None)
@@ -1049,6 +1067,7 @@ def build_overlay(
 
     rdg_cube = nci_module.CubeParser.parse(Path(inputs.rdg_cube))
     signrho_cube = nci_module.CubeParser.parse(Path(inputs.signrho_cube))
+    rdg_cube, signrho_cube = validated_nci_cube_roles(rdg_cube, signrho_cube, rdg_isovalue)
 
     plotter = pv.Plotter(window_size=window_size or screen_fraction_window_size(1400, 950))
     try:
@@ -1077,7 +1096,14 @@ def build_overlay(
         surface = grid.contour(isosurfaces=[float(rdg_isovalue)], scalars="RDG")
         sampled = surface.sample(grid)
         if sampled.n_points == 0:
-            raise RuntimeError(f"No NCI surface found at RDG isovalue {rdg_isovalue}.")
+            rdg_values = np.asarray(rdg_cube.values, dtype=float)
+            rdg_min = float(np.nanmin(rdg_values))
+            rdg_max = float(np.nanmax(rdg_values))
+            raise RuntimeError(
+                f"No NCI surface found at RDG isovalue {rdg_isovalue}. "
+                f"RDG file: {inputs.rdg_cube}; data range: {rdg_min:g} to {rdg_max:g}. "
+                f"sign(lambda2)rho file: {inputs.signrho_cube}."
+            )
         plotter.add_mesh(
             sampled,
             scalars="sign(lambda2)rho",

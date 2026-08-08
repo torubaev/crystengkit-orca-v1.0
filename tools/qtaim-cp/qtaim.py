@@ -2877,6 +2877,30 @@ class QTAIMGui(ttk.Frame):
         except tk.TclError:
             pass
 
+    def viewer_controls_are_visible(self) -> bool:
+        win = self.viewer_controls_window
+        if win is None:
+            return False
+        try:
+            return bool(win.winfo_exists() and win.state() != "withdrawn" and win.winfo_viewable())
+        except tk.TclError:
+            return False
+
+    def open_viewer_and_controls(self) -> None:
+        """Open only the missing parts of the QTAIM viewer/control pair."""
+        viewer_open = self.is_plotter_alive()
+        controls_open = self.viewer_controls_are_visible()
+
+        if not viewer_open:
+            self.log("Reopening QTAIM PyVista viewer from parsed analysis data.")
+            self.update_plot()
+
+        if not controls_open:
+            self.show_viewer_controls()
+
+        if self.is_plotter_alive():
+            bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
+
     def _run_graphics_settings_save(self) -> None:
         self._graphics_save_job = None
         self.save_current_graphics_settings()
@@ -3117,8 +3141,8 @@ class QTAIMGui(ttk.Frame):
 
         ttk.Button(
             root,
-            text="Viewer controls...",
-            command=self.show_viewer_controls,
+            text="Open viewer / visual controls",
+            command=self.open_viewer_and_controls,
             style="Primary.TButton",
         ).pack(anchor="w", pady=(0, 8))
 
@@ -3702,11 +3726,26 @@ class QTAIMGui(ttk.Frame):
         if self.plotter is None:
             return False
         try:
+            if bool(getattr(self.plotter, "_closed", False)):
+                return False
             if getattr(self.plotter, "render_window", None) is None:
                 return False
-            if getattr(self.plotter, "iren", None) is None:
+            iren = getattr(self.plotter, "iren", None)
+            if iren is None:
                 return False
             if hasattr(self.plotter, "closed") and self.plotter.closed:
+                return False
+            vtk_interactor = getattr(iren, "interactor", None)
+            if vtk_interactor is None:
+                return False
+            get_done = getattr(vtk_interactor, "GetDone", None)
+            if callable(get_done) and bool(get_done()):
+                return False
+            get_initialized = getattr(vtk_interactor, "GetInitialized", None)
+            if callable(get_initialized) and not bool(get_initialized()):
+                return False
+            get_mapped = getattr(self.plotter.render_window, "GetMapped", None)
+            if callable(get_mapped) and not bool(get_mapped()):
                 return False
             return True
         except Exception:
@@ -3973,33 +4012,48 @@ class QTAIMGui(ttk.Frame):
             self.show_exception("Could not save image", exc)
 
     def open_nci_qtaim_overlay(self) -> None:
-        overlay_script = TOOLS_ROOT / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py"
-        command = [sys.executable, str(overlay_script)]
-        self.save_current_graphics_settings()
+        try:
+            overlay_script = TOOLS_ROOT / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py"
+            command = [sys.executable, str(overlay_script)]
+            self.save_current_graphics_settings()
 
-        wavefunction = self.input_path.get().strip()
-        if wavefunction and Path(wavefunction).is_file():
-            command.append(wavefunction)
+            wavefunction = self.input_path.get().strip()
+            wavefunction_path = Path(wavefunction)
+            if not wavefunction or not wavefunction_path.is_file():
+                raise FileNotFoundError("Select a valid QTAIM WFN/WFX file first.")
+            command.append(str(wavefunction_path))
 
-        cp_file = self.cp_file_path.get().strip()
-        if cp_file and Path(cp_file).is_file():
-            command.extend(["--cp", cp_file])
+            nci_folder = wavefunction_path.parent / f"{wavefunction_path.stem}_NCI"
+            rdg_file = nci_folder / "func2.cub"
+            signrho_file = nci_folder / "func1.cub"
+            if not rdg_file.is_file() or not signrho_file.is_file():
+                rdg_file = nci_folder / "func2.cube"
+                signrho_file = nci_folder / "func1.cube"
+            if not rdg_file.is_file() or not signrho_file.is_file():
+                raise FileNotFoundError(
+                    "No matching NCI cube pair was found for this QTAIM wavefunction.\n\n"
+                    f"Expected folder:\n{nci_folder}\n\n"
+                    "Run NCI generation for the same WFN/WFX file first."
+                )
+            command.extend(["--rdg", str(rdg_file), "--signrho", str(signrho_file)])
+            self.log(f"Using matching NCI RDG cube: {rdg_file}")
+            self.log(f"Using matching NCI sign(lambda2)rho cube: {signrho_file}")
 
-        path_file = self.path_file_path.get().strip()
-        if path_file and Path(path_file).is_file():
-            command.extend(["--paths", path_file])
+            cp_file = self.cp_file_path.get().strip()
+            if cp_file and Path(cp_file).is_file():
+                command.extend(["--cp", cp_file])
 
-        image_size = self.selected_image_size()
-        if image_size is None and self.is_plotter_alive():
-            try:
+            path_file = self.path_file_path.get().strip()
+            if path_file and Path(path_file).is_file():
+                command.extend(["--paths", path_file])
+
+            image_size = self.selected_image_size()
+            if image_size is None and self.is_plotter_alive():
                 image_size = tuple(int(v) for v in self.plotter.window_size)
-            except Exception:
-                image_size = None
-        if image_size:
-            command.extend(["--image-width", str(image_size[0]), "--image-height", str(image_size[1])])
+            if image_size:
+                command.extend(["--image-width", str(image_size[0]), "--image-height", str(image_size[1])])
 
-        command.extend(
-            [
+            command.extend([
                 "--background", str(self.background.get()),
                 "--show-molecule", "1" if bool(self.show_molecule.get()) else "0",
                 "--show-nci", "1",
@@ -4017,10 +4071,8 @@ class QTAIMGui(ttk.Frame):
                 "--atom-scale", str(float(self.atom_scale.get())),
                 "--cp-scale", str(float(self.cp_scale.get())),
                 "--bond-radius", str(float(self.bond_radius.get())),
-            ]
-        )
+            ])
 
-        try:
             subprocess.Popen(command, cwd=str(overlay_script.parent))
             self.log("Opened NCI + QTAIM overlay.")
         except Exception as exc:

@@ -100,6 +100,42 @@ class EmbeddedToolContractTests(unittest.TestCase):
             self.assertIn("get_state", methods)
             self.assertIn("set_state", methods)
 
+    def test_qtaim_overlay_uses_the_matching_nci_output_folder(self):
+        tree = parsed("tools/qtaim-cp/qtaim.py")
+        node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "QTAIMGui")
+        method = next(
+            item for item in node.body
+            if isinstance(item, ast.FunctionDef) and item.name == "open_nci_qtaim_overlay"
+        )
+        source = ast.unparse(method)
+        self.assertIn("{wavefunction_path.stem}_NCI", source)
+        self.assertIn("func2.cub", source)
+        self.assertIn("func1.cub", source)
+        self.assertIn("--rdg", source)
+        self.assertIn("--signrho", source)
+
+    def test_qtaim_open_controls_repairs_the_viewer_pair_without_multiwfn(self):
+        tree = parsed("tools/qtaim-cp/qtaim.py")
+        node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "QTAIMGui")
+        method = next(
+            item for item in node.body
+            if isinstance(item, ast.FunctionDef) and item.name == "open_viewer_and_controls"
+        )
+        source = ast.unparse(method)
+        self.assertIn("self.is_plotter_alive()", source)
+        self.assertIn("self.viewer_controls_are_visible()", source)
+        self.assertIn("self.update_plot()", source)
+        self.assertIn("self.show_viewer_controls()", source)
+        self.assertNotIn("run_multiwfn", source)
+
+        alive = next(
+            item for item in node.body
+            if isinstance(item, ast.FunctionDef) and item.name == "is_plotter_alive"
+        )
+        alive_source = ast.unparse(alive)
+        self.assertIn("GetDone", alive_source)
+        self.assertIn("GetMapped", alive_source)
+
 
 if __name__ == "__main__":
     unittest.main()
