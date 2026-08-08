@@ -1,9 +1,10 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+for %%I in ("%~dp0.") do set "PROJECT_ROOT=%%~fI"
+cd /d "%PROJECT_ROOT%"
 
 set "INSTALL_PYTHON_IF_MISSING=0"
-set "CHECKER_ARGS="
+set "CHECKER_ARGS= "--project-root=%PROJECT_ROOT%""
 set "PYTHON_INSTALLED_EXE="
 
 :parse_args
@@ -22,7 +23,7 @@ where py.exe >nul 2>nul
 if not errorlevel 1 (
     py.exe -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>nul
     if not errorlevel 1 (
-        py.exe -3 "%~dp0install\install.py"%CHECKER_ARGS%
+        py.exe -3 "%PROJECT_ROOT%\install\install.py"%CHECKER_ARGS%
         exit /b %errorlevel%
     )
 )
@@ -31,7 +32,7 @@ where python.exe >nul 2>nul
 if not errorlevel 1 (
     python.exe -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>nul
     if not errorlevel 1 (
-        python.exe "%~dp0install\install.py"%CHECKER_ARGS%
+        python.exe "%PROJECT_ROOT%\install\install.py"%CHECKER_ARGS%
         exit /b %errorlevel%
     )
 )
@@ -41,7 +42,7 @@ if "%INSTALL_PYTHON_IF_MISSING%"=="1" (
     set "INSTALL_PYTHON_IF_MISSING=0"
     if not errorlevel 1 (
         if defined PYTHON_INSTALLED_EXE (
-            "%PYTHON_INSTALLED_EXE%" "%~dp0install\install.py"%CHECKER_ARGS%
+            "%PYTHON_INSTALLED_EXE%" "%PROJECT_ROOT%\install\install.py"%CHECKER_ARGS%
             exit /b %errorlevel%
         )
         goto after_parse

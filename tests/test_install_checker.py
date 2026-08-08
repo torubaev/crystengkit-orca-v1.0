@@ -6,6 +6,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER_PATH = ROOT / "install" / "install.py"
+CHECKER_LAUNCHER_PATH = ROOT / "packaging" / "windows" / "run_install_checker.cmd"
+INNO_SETUP_PATH = ROOT / "packaging" / "windows" / "CrystEngKit_ORCA.iss"
 
 
 def load_installer_functions(*names):
@@ -31,6 +33,17 @@ class InstallationRootTests(unittest.TestCase):
         source = INSTALLER_PATH.read_text(encoding="utf-8")
         self.assertIn("if is_project_root(default_project_root):", source)
         self.assertNotIn("if project_root_arg and is_project_root(default_project_root):", source)
+
+    def test_windows_launcher_always_passes_installed_project_root(self):
+        launcher = CHECKER_LAUNCHER_PATH.read_text(encoding="utf-8")
+        self.assertIn('set "PROJECT_ROOT=%%~fI"', launcher)
+        self.assertIn('set "CHECKER_ARGS= "--project-root=%PROJECT_ROOT%""', launcher)
+
+    def test_windows_installer_uses_user_writable_installation_root(self):
+        setup = INNO_SETUP_PATH.read_text(encoding="utf-8")
+        self.assertIn("DefaultDirName={localappdata}\\Programs\\CrystEngKit_ORCA", setup)
+        self.assertIn("PrivilegesRequired=lowest", setup)
+        self.assertNotIn("DefaultDirName={autopf}", setup)
 
 
 if __name__ == "__main__":

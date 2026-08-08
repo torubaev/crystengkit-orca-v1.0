@@ -16,7 +16,10 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\CrystEngKit ORCA
+; Keep the application in a user-writable location. CrystEngKit creates its
+; managed .venv, checker report, and local settings beside the installed tools.
+; This matches the proven installation model used by the original web setup.
+DefaultDirName={localappdata}\Programs\CrystEngKit_ORCA
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\..\LICENSE
@@ -29,7 +32,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UseSetupLdr=x64
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\tools\images\orca_builder.ico
 
 [Languages]
