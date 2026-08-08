@@ -1,12 +1,18 @@
 {
-  "schema": 1,
-  "latest_version": "1.0.2",
-  "release_date": "2026-07-07",
+  "schema": 2,
+  "latest_version": "1.1.13",
+  "release_date": "2026-08-08",
   "title": "CrystEngKit-ORCA startup news",
-  "message": "Checkout the latest release for new functions. TD DFT module is on the way. ",
-  "details_url": "https://github.com/torubaev/crystengkit-orca-v1.0/releases",
+  "content": {
+    "type": "markdown",
+    "summary": "CrystEngKit-ORCA 1.1.13 improves NCI and QTAIM viewer reopening, tool switching, NCI+QTAIM overlays, Multiwfn discovery, ESP plotting, and installer reliability.",
+    "url": "https://github.com/torubaev/crystengkit-orca-v1.0/blob/main/app_metadata/NEWS.md",
+    "action_label": "Read news"
+  },
+  "message": "CrystEngKit-ORCA 1.1.13 improves NCI and QTAIM viewer reopening, tool switching, NCI+QTAIM overlays, Multiwfn discovery, ESP plotting, and installer reliability.",
+  "details_url": "https://github.com/torubaev/crystengkit-orca-v1.0/releases/tag/v1.1.13",
   "severity": "info",
-  "message_id": "2026-07-07-initial-startup-news",
-  "show_until": "2026-12-31",
+  "message_id": "2026-08-08-v1.1.13-release",
+  "show_until": "2026-10-31",
   "force_show": false
 }

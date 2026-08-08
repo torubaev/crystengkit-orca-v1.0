@@ -564,13 +564,35 @@ def validate_startup_news(raw: object) -> Dict:
             return {"title": "Startup news", "message": "No current online news available.", "severity": "info", "expired": True}
 
     title = normalize_news_text(raw.get("title", "Startup news"), STARTUP_NEWS_TITLE_LIMIT) or "Startup news"
-    message = normalize_news_text(raw.get("message", "No current online news available."), STARTUP_NEWS_MESSAGE_LIMIT)
+    content = raw.get("content", {})
+    if not isinstance(content, dict):
+        content = {}
+    content_type = str(content.get("type", "text")).strip().lower()
+    if content_type not in {"text", "markdown", "html", "image"}:
+        content_type = "text"
+    message = normalize_news_text(
+        content.get("summary", raw.get("message", "No current online news available.")),
+        STARTUP_NEWS_MESSAGE_LIMIT,
+    )
     latest_version = normalize_news_text(raw.get("latest_version", ""), 32)
     if latest_version and semantic_version_tuple(latest_version) > semantic_version_tuple(APP_VERSION):
         message = normalize_news_text(f"Update available: version {latest_version}. {message}", STARTUP_NEWS_MESSAGE_LIMIT)
     details_url = normalize_news_text(raw.get("details_url", ""), 240)
     if not is_valid_news_url(details_url):
         details_url = ""
+    content_url = normalize_news_text(content.get("url", details_url), 240)
+    if not is_valid_news_url(content_url):
+        content_url = details_url
+    default_action_labels = {
+        "text": "Read more",
+        "markdown": "Read news",
+        "html": "Open news",
+        "image": "View image",
+    }
+    action_label = normalize_news_text(
+        content.get("action_label", default_action_labels[content_type]),
+        32,
+    ) or default_action_labels[content_type]
     return {
         "schema": raw.get("schema", 1),
         "latest_version": latest_version,
@@ -578,6 +600,9 @@ def validate_startup_news(raw: object) -> Dict:
         "title": title,
         "message": message or "No current online news available.",
         "details_url": details_url,
+        "content_type": content_type,
+        "content_url": content_url,
+        "action_label": action_label,
         "severity": severity,
         "message_id": message_id,
         "show_until": show_until,
@@ -741,7 +766,7 @@ class StartupSplash:
         self.created_at = time.monotonic()
         self.window = tk.Toplevel(master)
         self.window.title("CrystEngKit-ORCA")
-        self.window.geometry("520x320")
+        self.window.geometry("600x300")
         self.window.resizable(False, False)
         self.window.attributes("-topmost", True)
         self.window.protocol("WM_DELETE_WINDOW", self.close)
@@ -754,37 +779,96 @@ class StartupSplash:
         self.fetch_thread.start()
 
     def _build(self):
-        outer = ttk.Frame(self.window, padding=16)
-        outer.pack(fill="both", expand=True)
-        header = ttk.Frame(outer)
+        style = ttk.Style(self.window)
+        style.configure("SplashPrimary.TButton", font=("Segoe UI", 10, "bold"), padding=(16, 8))
+        style.configure("SplashButton.TButton", font=("Segoe UI", 10), padding=(14, 8))
+        style.configure("SplashStatus.TLabel", font=("Segoe UI", 10), foreground="#24364b")
+        style.configure("SplashHint.TLabel", font=("Segoe UI", 9), foreground="#64748b")
+
+        header = tk.Frame(self.window, bg="#17375e", height=112)
         header.pack(fill="x")
+        header.pack_propagate(False)
+        header_inner = tk.Frame(header, bg="#17375e")
+        header_inner.pack(fill="both", expand=True, padx=24, pady=18)
         if ORCA_ICON_PATH.is_file():
             try:
                 self.logo_image = tk.PhotoImage(file=str(ORCA_ICON_PATH))
-                self.logo_image = self.logo_image.subsample(max(1, self.logo_image.width() // 54), max(1, self.logo_image.height() // 54))
-                ttk.Label(header, image=self.logo_image).pack(side="left", padx=(0, 12))
+                divisor = max(1, int(round(self.logo_image.width() / 64)))
+                self.logo_image = self.logo_image.subsample(divisor, divisor)
+                tk.Label(
+                    header_inner,
+                    image=self.logo_image,
+                    bg="#17375e",
+                    bd=0,
+                    highlightthickness=0,
+                ).pack(side="left", padx=(0, 18))
             except Exception:
                 self.logo_image = None
-        title_box = ttk.Frame(header)
-        title_box.pack(side="left", fill="x", expand=True)
-        ttk.Label(title_box, text="CrystEngKit-ORCA", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        ttk.Label(title_box, text="ORCA Input Builder", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(1, 0))
-        ttk.Label(title_box, text=f"Version: {APP_VERSION}", font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
+        title_box = tk.Frame(header_inner, bg="#17375e")
+        title_box.pack(side="left", fill="both", expand=True)
+        tk.Label(
+            title_box,
+            text="CrystEngKit-ORCA",
+            font=("Segoe UI", 19, "bold"),
+            fg="white",
+            bg="#17375e",
+        ).pack(anchor="w")
+        tk.Label(
+            title_box,
+            text="ORCA Input Builder",
+            font=("Segoe UI", 10),
+            fg="#dbeafe",
+            bg="#17375e",
+        ).pack(anchor="w", pady=(2, 0))
+        tk.Label(
+            header_inner,
+            text=f"v{APP_VERSION}",
+            font=("Segoe UI", 9, "bold"),
+            fg="#17375e",
+            bg="#dbeafe",
+            padx=10,
+            pady=4,
+        ).pack(side="right", anchor="n", pady=(4, 0))
 
-        news_box = ttk.Frame(outer, padding=10)
-        news_box.pack(fill="both", expand=True, pady=(12, 8))
-        self.news_message_var = tk.StringVar(value="Checking online news...")
-        ttk.Label(news_box, textvariable=self.news_message_var, font=("Segoe UI", 9, "bold"), wraplength=465, justify="left").pack(anchor="w", fill="x")
+        outer = ttk.Frame(self.window, padding=(24, 18, 24, 16))
+        outer.pack(fill="both", expand=True)
+        status_row = ttk.Frame(outer)
+        status_row.pack(fill="x")
+        tk.Label(status_row, text="●", font=("Segoe UI", 10), fg="#2563eb").pack(side="left", padx=(0, 8))
+        self.news_message_var = tk.StringVar(value="Preparing your workspace...")
+        ttk.Label(
+            status_row,
+            textvariable=self.news_message_var,
+            style="SplashStatus.TLabel",
+            wraplength=515,
+            justify="left",
+        ).pack(side="left", anchor="w", fill="x", expand=True)
+        ttk.Label(
+            outer,
+            text="Settings and release information are checked quietly in the background.",
+            style="SplashHint.TLabel",
+        ).pack(anchor="w", pady=(7, 0), padx=(20, 0))
 
         bottom = ttk.Frame(outer)
-        bottom.pack(fill="x")
+        bottom.pack(side="bottom", fill="x", pady=(18, 0))
         self.dismiss_var = tk.BooleanVar(value=False)
-        self.release_button = ttk.Button(bottom, text="Open release page", command=self.open_details, state="disabled")
-        self.release_button.pack(side="left")
-        ttk.Button(bottom, text="Update", command=lambda: start_application_update(self.master)).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(bottom, text="Don't show this message again", variable=self.dismiss_var).pack(side="left", padx=(12, 0))
-        self.close_button = ttk.Button(bottom, text="Close", command=self.close)
+        self.dismiss_check = ttk.Checkbutton(bottom, text="Don't show this message again", variable=self.dismiss_var)
+        self.dismiss_check.pack(side="left")
+        self.close_button = ttk.Button(bottom, text="Continue", command=self.close, style="SplashPrimary.TButton")
         self.close_button.pack(side="right")
+        ttk.Button(
+            bottom,
+            text="Check for update",
+            command=lambda: start_application_update(self.master),
+            style="SplashButton.TButton",
+        ).pack(side="right", padx=(0, 8))
+        self.release_button = ttk.Button(
+            bottom,
+            text="Release notes",
+            command=self.open_details,
+            style="SplashButton.TButton",
+        )
+        self.release_button.pack(side="right", padx=(0, 8))
 
     def _allow_close(self):
         if self.closed:
@@ -819,15 +903,18 @@ class StartupSplash:
         message_id = self.news.get("message_id", "")
         force_show = bool(self.news.get("force_show"))
         if message_id and message_id in dismissed and not force_show:
-            self.news_message_var.set("This startup message was dismissed earlier.")
+            self.news_message_var.set("CrystEngKit-ORCA is ready.")
         else:
-            self.news_message_var.set(self.news.get("message", "No current online news available."))
-        details_url = self.news.get("details_url", "")
-        self.release_button.configure(state="normal" if is_valid_news_url(details_url) else "disabled")
+            message = self.news.get("message", "")
+            if not message or message == "No current online news available.":
+                message = "CrystEngKit-ORCA is ready."
+            self.news_message_var.set(message)
+        self.release_button.configure(state="normal")
+        self.release_button.configure(text=self.news.get("action_label", "Release notes"))
         self.require_continue = force_show or self.news.get("severity") == "critical"
 
     def open_details(self):
-        url = self.news.get("details_url", "")
+        url = self.news.get("content_url", "") or self.news.get("details_url", "") or f"{GITHUB_URL}/releases"
         if is_valid_news_url(url):
             try:
                 webbrowser.open(url, new=2)
