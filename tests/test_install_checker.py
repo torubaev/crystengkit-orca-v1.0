@@ -52,6 +52,12 @@ class InstallationRootTests(unittest.TestCase):
         self.assertIn("tmp\\codex_work\\windows_installer_source", build)
         self.assertIn('"/DSourceRoot=$stageRoot"', build)
 
+    def test_checker_configures_locally_found_multiwfn(self):
+        source = INSTALLER_PATH.read_text(encoding="utf-8")
+        self.assertIn('default_settings["multiwfn_path"] = executable', source)
+        self.assertIn("ensure_settings_file(base_dir, external_info)", source)
+        self.assertIn("PATH is not required", source)
+
 
 if __name__ == "__main__":
     unittest.main()

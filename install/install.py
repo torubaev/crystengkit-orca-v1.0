@@ -686,9 +686,19 @@ def check_external_software(project_root: Path) -> List[Dict[str, object]]:
     return rows
 
 
-def ensure_settings_file(base_dir: Path) -> Dict[str, object]:
-    settings_file = base_dir / "tools" / "Orca_input" / SETTINGS_FILENAME
-    legacy_settings_file = base_dir / SETTINGS_FILENAME
+def user_settings_file() -> Path:
+    system = platform.system().lower()
+    if system == "windows":
+        root = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(root) / "CrystEngKit-ORCA" / SETTINGS_FILENAME
+    if system == "darwin":
+        return Path.home() / "Library" / "Application Support" / "CrystEngKit-ORCA" / SETTINGS_FILENAME
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "CrystEngKit-ORCA" / SETTINGS_FILENAME
+
+
+def ensure_settings_file(base_dir: Path, external_info: Optional[List[Dict[str, object]]] = None) -> Dict[str, object]:
+    settings_file = user_settings_file()
+    legacy_settings_file = base_dir / "tools" / "Orca_input" / SETTINGS_FILENAME
 
     default_settings = {
         "homo_lumo_script": "tools/HOMO_LUMO/HOMO_LUMO_v2.py",
@@ -703,6 +713,14 @@ def ensure_settings_file(base_dir: Path) -> Dict[str, object]:
         "ai_web_model_settings_version": 2,
     }
 
+    configured_paths: Dict[str, str] = {}
+    for row in external_info or []:
+        candidates = [str(row.get("path") or "")] + [str(item) for item in row.get("local_paths", [])]
+        executable = next((item for item in candidates if item and Path(item).is_file()), "")
+        if row.get("name") == "Multiwfn" and executable:
+            default_settings["multiwfn_path"] = executable
+            configured_paths["Multiwfn"] = executable
+
     try:
         settings_file.parent.mkdir(parents=True, exist_ok=True)
         created = not settings_file.exists()
@@ -714,19 +732,18 @@ def ensure_settings_file(base_dir: Path) -> Dict[str, object]:
             except Exception:
                 settings = {}
             for key, value in default_settings.items():
-                if not str(settings.get(key, "")).strip():
+                current = str(settings.get(key, "")).strip()
+                if not current or (key == "multiwfn_path" and not Path(current).is_file()):
                     settings[key] = value
         else:
             settings = default_settings
 
         settings_file.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-        if legacy_settings_file.exists():
-            legacy_settings_file.unlink()
         return {
             "ok": True,
             "created": created,
             "path": str(settings_file),
-            "message": "",
+            "message": "" if not configured_paths else "Configured " + ", ".join(f"{name}: {path}" for name, path in configured_paths.items()),
         }
     except Exception as exc:
         return {
@@ -869,7 +886,7 @@ def external_status_label(row: Dict[str, object]) -> str:
     if row["detected"]:
         return "Valid ORCA QM found" if row["name"] == "ORCA" else "Detected in PATH"
     if row["found_local_not_path"]:
-        return "Valid ORCA QM found locally, but not in PATH" if row["name"] == "ORCA" else "Found locally, but not in PATH"
+        return "Valid ORCA QM found locally" if row["name"] == "ORCA" else "Found locally and configured"
     if row.get("rejected_paths"):
         return "Executable named orca found but rejected"
     return "Not found"
@@ -896,12 +913,6 @@ def get_top_missing_items(
         if not row["required"] or row["detected"]:
             continue
         if row["found_local_not_path"]:
-            local_paths = row.get("local_paths", [])
-            local_path = str(local_paths[0] if local_paths else "")
-            top_missing_items.append(
-                f"{row['name']} was found locally but is not available from PATH. "
-                f"Use this path in Settings or add its folder to PATH: {local_path}"
-            )
             continue
         if row["name"] == "ORCA" and row.get("rejected_paths"):
             rejected = row["rejected_paths"][0]
@@ -949,7 +960,7 @@ def print_terminal_report(
             print(f"  - {row['name']}:")
             for path in row["local_paths"]:
                 print(f"      {path}")
-            print("    Add the executable folder to PATH or select it manually in the program settings.")
+            print("    Configured automatically in CrystEngKit settings; PATH is not required.")
 
     rejected_external = [row for row in external_info if row.get("rejected_paths")]
     if rejected_external:
@@ -1145,14 +1156,14 @@ def render_short_report(
 
     local_paths_html = ""
     if found_local_not_path_external:
-        local_paths_html += "<h3>Found locally but not in PATH</h3>"
-        local_paths_html += "<p>These programs appear to be installed, but the command line cannot find them.</p>"
+        local_paths_html += "<h3>Found and configured locally</h3>"
+        local_paths_html += "<p>These executables were saved in CrystEngKit settings. Adding them to PATH is optional.</p>"
         for row in found_local_not_path_external:
             local_paths_html += f"<h4>{esc(row['name'])}</h4><ul>"
             for path in row["local_paths"]:
                 local_paths_html += f"<li><code>{esc(path)}</code></li>"
             local_paths_html += "</ul>"
-            local_paths_html += "<p>Add the executable folder to PATH or select this executable manually in the program settings.</p>"
+            local_paths_html += "<p>CrystEngKit will use this executable directly.</p>"
 
     rejected_paths_html = ""
     rejected_external = [row for row in external_info if row.get("rejected_paths")]
@@ -1472,7 +1483,7 @@ def main() -> None:
     package_info["tkinter_info"] = check_tkinter()
     package_info["venv_info"] = venv_info
     external_info = check_external_software(base_dir)
-    settings_info = ensure_settings_file(base_dir)
+    settings_info = ensure_settings_file(base_dir, external_info)
     shortcut_info = create_desktop_shortcut(base_dir)
 
     report = render_short_report(
