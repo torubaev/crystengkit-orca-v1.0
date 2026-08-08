@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER_PATH = ROOT / "install" / "install.py"
 CHECKER_LAUNCHER_PATH = ROOT / "packaging" / "windows" / "run_install_checker.cmd"
 INNO_SETUP_PATH = ROOT / "packaging" / "windows" / "CrystEngKit_ORCA.iss"
+INSTALLER_BUILD_PATH = ROOT / "packaging" / "windows" / "build_installer.ps1"
 
 
 def load_installer_functions(*names):
@@ -44,6 +45,12 @@ class InstallationRootTests(unittest.TestCase):
         self.assertIn("DefaultDirName={localappdata}\\Programs\\CrystEngKit_ORCA", setup)
         self.assertIn("PrivilegesRequired=lowest", setup)
         self.assertNotIn("DefaultDirName={autopf}", setup)
+
+    def test_installer_build_uses_only_git_tracked_release_source(self):
+        build = INSTALLER_BUILD_PATH.read_text(encoding="utf-8")
+        self.assertIn("git -C $repoRoot archive", build)
+        self.assertIn("tmp\\codex_work\\windows_installer_source", build)
+        self.assertIn('"/DSourceRoot=$stageRoot"', build)
 
 
 if __name__ == "__main__":

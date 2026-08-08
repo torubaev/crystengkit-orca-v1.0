@@ -5,6 +5,9 @@
 #ifndef MyAppVersion
   #error MyAppVersion must be supplied by build_installer.ps1
 #endif
+#ifndef SourceRoot
+  #error SourceRoot must be supplied by build_installer.ps1
+#endif
 #define MyAppPublisher "CrystEngKit"
 #define MyAppURL "https://github.com/torubaev/crystengkit-orca-v1.0"
 
@@ -22,10 +25,10 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={localappdata}\Programs\CrystEngKit_ORCA
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-LicenseFile=..\..\LICENSE
+LicenseFile={#SourceRoot}\LICENSE
 OutputDir=..\..\install\releases
 OutputBaseFilename=CrystEngKit-ORCA-Setup-{#MyAppVersion}
-SetupIconFile=..\..\tools\images\orca_builder.ico
+SetupIconFile={#SourceRoot}\tools\images\orca_builder.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -45,20 +48,20 @@ Name: "installpython"; Description: "Install Python 3.12 with winget if Python 3
 Name: "setupvenv"; Description: "Create a local Python environment and install required packages"; GroupDescription: "Python setup:"; Flags: checkedonce
 
 [Files]
-Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\index.html"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\crystengkit_v1.0_1.png"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "..\..\app_metadata\*"; DestDir: "{app}\app_metadata"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.pyo"
-Source: "..\..\images\*"; DestDir: "{app}\images"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\install\*"; DestDir: "{app}\install"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "releases\*,__pycache__\*,*.pyc,*.pyo"
-Source: "..\..\tools\*"; DestDir: "{app}\tools"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.pyo,*.log,*_settings.json,orca_gaussian_builder_settings.json"
-Source: "..\..\benchmark_sets\*"; DestDir: "{app}\benchmark_sets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "..\..\S22_NCI_benchmark_set\*"; DestDir: "{app}\S22_NCI_benchmark_set"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "launch_orca_builder.cmd"; DestDir: "{app}"; Flags: ignoreversion
-Source: "run_install_checker.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\index.html"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\crystengkit_v1.0_1.png"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#SourceRoot}\app_metadata\*"; DestDir: "{app}\app_metadata"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceRoot}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.pyo"
+Source: "{#SourceRoot}\images\*"; DestDir: "{app}\images"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceRoot}\install\*"; DestDir: "{app}\install"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "releases\*,__pycache__\*,*.pyc,*.pyo"
+Source: "{#SourceRoot}\tools\*"; DestDir: "{app}\tools"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.pyo,*.log,*_settings.json,orca_gaussian_builder_settings.json"
+Source: "{#SourceRoot}\benchmark_sets\*"; DestDir: "{app}\benchmark_sets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "{#SourceRoot}\S22_NCI_benchmark_set\*"; DestDir: "{app}\S22_NCI_benchmark_set"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "{#SourceRoot}\packaging\windows\launch_orca_builder.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\packaging\windows\run_install_checker.cmd"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\ORCA Input Builder"; Filename: "{app}\launch_orca_builder.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\tools\images\orca_builder.ico"

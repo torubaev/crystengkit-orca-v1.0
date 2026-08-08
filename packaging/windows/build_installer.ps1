@@ -22,8 +22,23 @@ if (-not $iscc) {
     throw "Inno Setup 6 compiler was not found."
 }
 
+$stageRoot = Join-Path $repoRoot "tmp\codex_work\windows_installer_source"
+$archivePath = Join-Path $repoRoot "tmp\codex_work\windows_installer_source.zip"
+if (Test-Path -LiteralPath $stageRoot) {
+    Remove-Item -LiteralPath $stageRoot -Recurse -Force
+}
+if (Test-Path -LiteralPath $archivePath) {
+    Remove-Item -LiteralPath $archivePath -Force
+}
+New-Item -ItemType Directory -Path (Split-Path $stageRoot) -Force | Out-Null
+& git -C $repoRoot archive --format=zip --output=$archivePath HEAD
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not stage tracked release files from Git HEAD."
+}
+Expand-Archive -LiteralPath $archivePath -DestinationPath $stageRoot -Force
+
 New-Item -ItemType Directory -Path (Split-Path $outputPath) -Force | Out-Null
-& $iscc "/DMyAppVersion=$appVersion" $issPath
+& $iscc "/DMyAppVersion=$appVersion" "/DSourceRoot=$stageRoot" $issPath
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup compilation failed with exit code $LASTEXITCODE."
 }
