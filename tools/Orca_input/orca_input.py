@@ -115,6 +115,17 @@ MONITOR_ACTION_BUTTONS = (
     ("sparkle", "Ask AI about progress", "open_ai_progress_prompt"),
     ("clear", "Clear monitor", "clear_monitor"),
 )
+
+
+def monitor_action_grid_position(index: int) -> tuple[int, int, int]:
+    """Return row, column, and span for the balanced 4 + 3 action layout."""
+    if index < 0 or index >= len(MONITOR_ACTION_BUTTONS):
+        raise IndexError("Monitor action index is out of range.")
+    if index < 4:
+        return 0, index * 3, 3
+    return 1, (index - 4) * 4, 4
+
+
 README_LINK_TEXT = "README section: ORCA Input Builder"
 README_ANCHOR = "orca-input-builder"
 CITATION_REFERENCE = (
@@ -4453,18 +4464,26 @@ class App(tk.Tk):
 
         monbtn = ttk.Frame(output_box)
         monbtn.grid(row=4, column=0, sticky="ew", pady=(6, 0))
-        for i in range(len(MONITOR_ACTION_BUTTONS)):
+        for i in range(12):
             monbtn.columnconfigure(i, weight=1)
-        for column, (icon_name, label, command_name) in enumerate(MONITOR_ACTION_BUTTONS):
+        for index, (icon_name, label, command_name) in enumerate(MONITOR_ACTION_BUTTONS):
             icon = create_monitor_action_icon(self, icon_name)
             self.monitor_action_icons[icon_name] = icon
+            row, column, columnspan = monitor_action_grid_position(index)
             ttk.Button(
                 monbtn,
                 text=label,
                 image=icon,
                 compound="left",
                 command=getattr(self, command_name),
-            ).grid(row=0, column=column, sticky="ew", padx=((6 if column else 0), 0))
+            ).grid(
+                row=row,
+                column=column,
+                columnspan=columnspan,
+                sticky="ew",
+                padx=((6 if column else 0), 0),
+                pady=((5 if row else 0), 0),
+            )
         self.preview_text = ModeTextProxy(self, "preview")
         self.monitor_text = ModeTextProxy(self, "monitor")
         self._refresh_output_mode_buttons()

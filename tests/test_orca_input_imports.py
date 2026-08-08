@@ -483,6 +483,15 @@ $$$$
         for _icon, _label, handler in actions:
             self.assertTrue(callable(getattr(orca_input.App, handler)))
 
+    def test_monitor_actions_use_balanced_two_row_grid(self):
+        positions = [orca_input.monitor_action_grid_position(i) for i in range(7)]
+        self.assertEqual(positions[:4], [
+            (0, 0, 3), (0, 3, 3), (0, 6, 3), (0, 9, 3),
+        ])
+        self.assertEqual(positions[4:], [
+            (1, 0, 4), (1, 4, 4), (1, 8, 4),
+        ])
+
     def test_attached_process_recognizes_current_live_pid(self):
         executable = orca_input.process_executable_path(os.getpid())
         self.assertTrue(executable)

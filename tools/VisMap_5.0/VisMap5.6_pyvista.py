@@ -766,9 +766,23 @@ def safe_remove(path):
         pass
 
 
-def safe_move(src, dst):
+def safe_move(src, dst, *, stage=None, returncode=None, log_path=None):
     if not os.path.exists(src):
-        raise FileNotFoundError(f"Expected output file was not created: {src}")
+        details = [f"Expected output file was not created: {src}"]
+        if stage:
+            details.append(f"Stage: {stage}")
+        if returncode is not None:
+            details.append(f"Multiwfn exit code: {returncode}")
+        if log_path:
+            details.append(f"Multiwfn log: {log_path}")
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as log_file:
+                    tail = "".join(log_file.readlines()[-30:]).strip()
+                if tail:
+                    details.append("Last Multiwfn messages:\n" + tail)
+            except Exception:
+                pass
+        raise FileNotFoundError("\n\n".join(details))
     if os.path.exists(dst):
         os.remove(dst)
     shutil.move(src, dst)
@@ -871,33 +885,26 @@ def _viewer_window_size():
 # Multiwfn execution
 # ----------------------------
 
-def Run_MWFN(mytext, needout=False):
+def Run_MWFN(mytext, needout=False, log_path=None):
     inp_path = os.path.join(workdir, "myprog.inp")
-    out_path = os.path.join(workdir, "myprog.out")
+    out_path = log_path or os.path.join(workdir, "myprog.out")
 
     with open(inp_path, "w", newline="\n") as inp:
         inp.write("\n".join(mytext) + "\n")
 
-    with open(inp_path, "r") as fin:
-        if needout:
-            with open(out_path, "w", newline="\n") as fout:
-                proc = subprocess.run(
-                    [mwfn_exe, inputfile],
-                    stdin=fin,
-                    stdout=fout,
-                    stderr=subprocess.STDOUT,
-                    cwd=workdir,
-                    text=True,
-                    shell=False
-                )
-        else:
-            proc = subprocess.run(
-                [mwfn_exe, inputfile],
-                stdin=fin,
-                cwd=workdir,
-                text=True,
-                shell=False
-            )
+    # Always give Multiwfn a real output handle. The installed Builder is often
+    # launched with pythonw.exe, where inherited console handles do not exist;
+    # some Fortran builds become unreliable in that situation.
+    with open(inp_path, "r") as fin, open(out_path, "w", newline="\n", encoding="utf-8", errors="replace") as fout:
+        proc = subprocess.run(
+            [mwfn_exe, inputfile],
+            stdin=fin,
+            stdout=fout,
+            stderr=subprocess.STDOUT,
+            cwd=workdir,
+            text=True,
+            shell=False
+        )
 
     safe_remove(inp_path)
 
@@ -942,15 +949,22 @@ def CalcCub(IsCalced, fname_base):
         print("Calculating Density cube")
         update_progress(20, "Generating density cube with Multiwfn...")
         safe_remove(os.path.join(workdir, "density.cub"))
+        density_log = fname_base + "_Multiwfn_density.log"
 
         if IsCalced[1]:
             text = ["1000", "10", nproc, "5", "1", "8", esp_target, "2"]
-            Run_MWFN(text, False)
+            density_returncode = Run_MWFN(text, False, density_log)
         else:
             text = ["1000", "10", nproc, "5", "1", "2", "2"]
-            Run_MWFN(text, False)
+            density_returncode = Run_MWFN(text, False, density_log)
 
-        safe_move(os.path.join(workdir, "density.cub"), dens_target)
+        safe_move(
+            os.path.join(workdir, "density.cub"),
+            dens_target,
+            stage="density cube generation",
+            returncode=density_returncode,
+            log_path=density_log,
+        )
         IsCalced[0] = True
         update_progress(50, "Density cube generated.")
     else:
@@ -960,15 +974,22 @@ def CalcCub(IsCalced, fname_base):
         print("Calculating ESP cube")
         update_progress(55, "Generating ESP cube with Multiwfn...")
         safe_remove(os.path.join(workdir, "totesp.cub"))
+        esp_log = fname_base + "_Multiwfn_ESP.log"
 
         if IsCalced[0]:
             text = ["1000", "10", nproc, "5", "12", "8", dens_target, "2"]
-            Run_MWFN(text, False)
+            esp_returncode = Run_MWFN(text, False, esp_log)
         else:
             text = ["1000", "10", nproc, "5", "12", "2", "2"]
-            Run_MWFN(text, False)
+            esp_returncode = Run_MWFN(text, False, esp_log)
 
-        safe_move(os.path.join(workdir, "totesp.cub"), esp_target)
+        safe_move(
+            os.path.join(workdir, "totesp.cub"),
+            esp_target,
+            stage="ESP cube generation",
+            returncode=esp_returncode,
+            log_path=esp_log,
+        )
         IsCalced[1] = True
         update_progress(75, "ESP cube generated.")
     else:
