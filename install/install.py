@@ -1439,7 +1439,11 @@ def main() -> None:
     launcher_dir = Path(__file__).resolve().parent
     project_root_arg = arg_value("--project-root")
     default_project_root = Path(project_root_arg).expanduser().resolve() if project_root_arg else launcher_dir.parent
-    if project_root_arg and is_project_root(default_project_root):
+    # A packaged checker lives in <installation root>/install/install.py, so
+    # launcher_dir.parent is already the correct application root. Do not ask a
+    # user to locate it again after a normal install. The browser is only a
+    # recovery path for incomplete or manually relocated installations.
+    if is_project_root(default_project_root):
         base_dir = default_project_root
     else:
         base_dir = browse_for_installation_location(default_project_root)
