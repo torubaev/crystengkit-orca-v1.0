@@ -19,6 +19,16 @@ goto parse_args
 
 :after_parse
 
+rem Prefer the managed environment already installed beside CrystEngKit.
+rem This avoids treating every installer upgrade as a new environment setup.
+if exist "%PROJECT_ROOT%\.venv\Scripts\python.exe" (
+    "%PROJECT_ROOT%\.venv\Scripts\python.exe" -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>nul
+    if not errorlevel 1 (
+        "%PROJECT_ROOT%\.venv\Scripts\python.exe" "%PROJECT_ROOT%\install\install.py" --using-venv%CHECKER_ARGS%
+        exit /b %errorlevel%
+    )
+)
+
 where py.exe >nul 2>nul
 if not errorlevel 1 (
     py.exe -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>nul

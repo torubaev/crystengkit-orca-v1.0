@@ -4706,6 +4706,15 @@ class App(tk.Tk):
         }
         self._activate_workspace_action(action_labels.get(key, title))
 
+    def _prepare_visualizer_switch(self, key: str) -> None:
+        """Hide the active VTK tool before importing or creating the next one."""
+        if self.page_controller.active_key == key:
+            return
+        self.page_controller.show(key)
+        # Process viewer close/withdraw operations before another PyVista
+        # controller is constructed in this same Tk process.
+        self.update_idletasks()
+
     def _show_builder_workspace(self) -> None:
         """Raise the persistent Builder page."""
         self._save_workspace_state_safely(active_key="builder")
@@ -6490,11 +6499,14 @@ class App(tk.Tk):
             except ValueError:
                 wavefunction_path = None
             page = self._embedded_tool_page("nci")
+            self._prepare_visualizer_switch("nci")
             controller = self.embedded_tool_controllers.get("nci")
             if controller is None:
                 module = self._load_embedded_tool_module("nci", self.nci_script_var.get())
                 controller = module.NCIPlotterApp(page, wavefunction_path, embedded=True)
                 self.embedded_tool_controllers["nci"] = controller
+                page.on_show = controller.on_show
+                page.on_hide = controller.on_hide
                 self._restore_workspace_state()
             elif wavefunction_path and controller.wavefunction_path.get() != wavefunction_path:
                 controller.set_wavefunction_path(wavefunction_path)
@@ -6510,11 +6522,14 @@ class App(tk.Tk):
             except ValueError:
                 wavefunction_path = None
             page = self._embedded_tool_page("qtaim")
+            self._prepare_visualizer_switch("qtaim")
             panel = self.embedded_tool_controllers.get("qtaim")
             if panel is None or not panel.winfo_exists():
                 module = self._load_embedded_tool_module("qtaim", self.qtaim_script_var.get())
                 panel = module.QTAIMGui(wavefunction_path, parent=page, embedded=True)
                 self.embedded_tool_controllers["qtaim"] = panel
+                page.on_show = panel.on_show
+                page.on_hide = panel.on_hide
                 self._restore_workspace_state()
             elif wavefunction_path and panel.input_path.get() != wavefunction_path:
                 panel.set_input_path(wavefunction_path)

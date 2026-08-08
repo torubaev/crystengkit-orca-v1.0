@@ -2702,7 +2702,9 @@ class QTAIMGui(ttk.Frame):
         self.multiwfn_commands = DEFAULT_MULTIWFN_COMMANDS
         self._graphics_save_job = None
         self.live_plot_job = None
+        self._workspace_restore_after_id = None
         self.plot_update_in_progress = False
+        self._workspace_visible = True
         self.viewer_controls_window: Optional[tk.Toplevel] = None
         self.apply_graphics_settings(load_graphics_settings())
         self.bind_graphics_setting_traces()
@@ -3710,6 +3712,47 @@ class QTAIMGui(ttk.Frame):
         except Exception:
             return False
 
+    def on_show(self) -> None:
+        """Restore a released viewer directly from parsed QTAIM data."""
+        self._workspace_visible = True
+        if (
+            self.embedded
+            and (self.atoms or self.cps)
+            and not self.is_plotter_alive()
+            and self._workspace_restore_after_id is None
+        ):
+            self._workspace_restore_after_id = self.after_idle(self._restore_workspace_plot)
+
+    def _restore_workspace_plot(self) -> None:
+        self._workspace_restore_after_id = None
+        if self._workspace_visible and not self.is_plotter_alive():
+            self.log("Restoring QTAIM viewer from parsed analysis data.")
+            self.update_plot()
+
+    def on_hide(self) -> None:
+        """Release VTK resources before another embedded visualizer starts."""
+        self._workspace_visible = False
+        if self._workspace_restore_after_id is not None:
+            try:
+                self.after_cancel(self._workspace_restore_after_id)
+            except tk.TclError:
+                pass
+            self._workspace_restore_after_id = None
+        for job_name in ("live_plot_job", "pending_visualize_job"):
+            job = getattr(self, job_name, None)
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except tk.TclError:
+                    pass
+                setattr(self, job_name, None)
+        self.close_plotter_reference(close_window=True)
+        if self.viewer_controls_window is not None:
+            try:
+                self.viewer_controls_window.withdraw()
+            except tk.TclError:
+                pass
+
     def close_plotter_reference(self, close_window: bool = True) -> None:
         if self.plotter is None:
             return
@@ -3776,6 +3819,8 @@ class QTAIMGui(ttk.Frame):
         )
 
     def update_plot(self, live: bool = False):
+        if self.embedded and not self._workspace_visible:
+            return
         if self.plot_update_in_progress:
             return
         if not live and self.live_plot_job is not None:

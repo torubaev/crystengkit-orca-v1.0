@@ -40,6 +40,16 @@ class InstallationRootTests(unittest.TestCase):
         self.assertIn('set "PROJECT_ROOT=%%~fI"', launcher)
         self.assertIn('set "CHECKER_ARGS= "--project-root=%PROJECT_ROOT%""', launcher)
 
+    def test_windows_launcher_reuses_existing_managed_environment_first(self):
+        launcher = CHECKER_LAUNCHER_PATH.read_text(encoding="utf-8")
+        managed_python = '%PROJECT_ROOT%\\.venv\\Scripts\\python.exe'
+        self.assertIn(f'if exist "{managed_python}"', launcher)
+        self.assertIn(
+            f'"{managed_python}" "%PROJECT_ROOT%\\install\\install.py" --using-venv',
+            launcher,
+        )
+        self.assertLess(launcher.index(f'if exist "{managed_python}"'), launcher.index("where py.exe"))
+
     def test_windows_installer_uses_user_writable_installation_root(self):
         setup = INNO_SETUP_PATH.read_text(encoding="utf-8")
         self.assertIn("DefaultDirName={localappdata}\\Programs\\CrystEngKit_ORCA", setup)

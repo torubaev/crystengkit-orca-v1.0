@@ -991,10 +991,15 @@ class NCIPlotterApp:
         self.progress_bar: Optional[ttk.Progressbar] = None
 
         self.plotter = None
+        self.nci_surface_actor = None
         self.live_update_after_id = None
+        self.opacity_update_after_id = None
+        self._workspace_restore_after_id = None
         self.plot_update_in_progress = False
+        self._workspace_visible = True
         self.header_icon: Optional[tk.PhotoImage] = None
         self.viewer_controls_window: Optional[tk.Toplevel] = None
+        self.overlay_process: Optional[subprocess.Popen] = None
 
         self.build_gui()
         if initial_wavefunction_path:
@@ -1066,6 +1071,28 @@ class NCIPlotterApp:
             except tk.TclError:
                 pass
         self.live_update_after_id = self.root.after(220, self._run_live_plot_update)
+
+    def schedule_surface_opacity_update(self, *_args) -> None:
+        """Debounce an actor-only opacity change; never rebuild the scene."""
+        if self.opacity_update_after_id is not None:
+            try:
+                self.root.after_cancel(self.opacity_update_after_id)
+            except tk.TclError:
+                pass
+        self.opacity_update_after_id = self.root.after(40, self._apply_surface_opacity)
+
+    def _apply_surface_opacity(self) -> None:
+        self.opacity_update_after_id = None
+        if not self.is_plotter_alive() or self.nci_surface_actor is None:
+            return
+        try:
+            opacity = max(0.05, min(1.0, float(self.opacity.get())))
+            prop = self.nci_surface_actor.GetProperty()
+            prop.SetOpacity(opacity)
+            self.plotter.render()
+        except (TypeError, ValueError, AttributeError, tk.TclError):
+            # Partial text-entry values must leave the existing scene intact.
+            return
 
     def _run_live_plot_update(self) -> None:
         self.live_update_after_id = None
@@ -1242,8 +1269,8 @@ class NCIPlotterApp:
 
         ttk.Button(
             main,
-            text="Viewer controls...",
-            command=self.show_viewer_controls,
+            text="Open viewer / visual controls",
+            command=self.open_viewer_and_controls,
             style="Primary.TButton",
         ).pack(anchor="w", pady=(0, 8))
 
@@ -1342,7 +1369,6 @@ class NCIPlotterApp:
 
         for variable in (
             self.rdg_isovalue,
-            self.opacity,
             self.color_min,
             self.color_max,
             self.colormap,
@@ -1352,6 +1378,7 @@ class NCIPlotterApp:
             self.background,
         ):
             variable.trace_add("write", self.schedule_live_plot_update)
+        self.opacity.trace_add("write", self.schedule_surface_opacity_update)
 
         log_frame = ttk.LabelFrame(main, text="Status / log", padding=8)
         log_frame.pack(fill="both", expand=True)
@@ -1849,19 +1876,84 @@ class NCIPlotterApp:
             return False
 
         try:
+            if bool(getattr(self.plotter, "_closed", False)):
+                return False
+
             if getattr(self.plotter, "render_window", None) is None:
                 return False
 
-            if getattr(self.plotter, "iren", None) is None:
+            iren = getattr(self.plotter, "iren", None)
+            if iren is None:
                 return False
 
             if hasattr(self.plotter, "closed") and self.plotter.closed:
+                return False
+
+            vtk_interactor = getattr(iren, "interactor", None)
+            if vtk_interactor is None:
+                return False
+            get_done = getattr(vtk_interactor, "GetDone", None)
+            if callable(get_done) and bool(get_done()):
+                return False
+            get_initialized = getattr(vtk_interactor, "GetInitialized", None)
+            if callable(get_initialized) and not bool(get_initialized()):
+                return False
+
+            render_window = self.plotter.render_window
+            get_mapped = getattr(render_window, "GetMapped", None)
+            if callable(get_mapped) and not bool(get_mapped()):
                 return False
 
             return True
 
         except Exception:
             return False
+
+    def on_show(self) -> None:
+        """Restore a released viewer directly from already-loaded cube data."""
+        self._workspace_visible = True
+        if (
+            self.embedded
+            and self.rdg_cube is not None
+            and self.signrho_cube is not None
+            and not self.is_plotter_alive()
+            and self._workspace_restore_after_id is None
+        ):
+            self._workspace_restore_after_id = self.root.after_idle(self._restore_workspace_plot)
+
+    def _restore_workspace_plot(self) -> None:
+        self._workspace_restore_after_id = None
+        if self._workspace_visible and not self.is_plotter_alive():
+            self.log("Restoring NCI viewer from loaded cube data.")
+            self.update_plot()
+
+    def on_hide(self) -> None:
+        """Release VTK resources before another embedded visualizer starts."""
+        self._workspace_visible = False
+        if self._workspace_restore_after_id is not None:
+            try:
+                self.root.after_cancel(self._workspace_restore_after_id)
+            except tk.TclError:
+                pass
+            self._workspace_restore_after_id = None
+        if self.live_update_after_id is not None:
+            try:
+                self.root.after_cancel(self.live_update_after_id)
+            except tk.TclError:
+                pass
+            self.live_update_after_id = None
+        if self.opacity_update_after_id is not None:
+            try:
+                self.root.after_cancel(self.opacity_update_after_id)
+            except tk.TclError:
+                pass
+            self.opacity_update_after_id = None
+        self.close_dead_plotter_reference()
+        if self.viewer_controls_window is not None:
+            try:
+                self.viewer_controls_window.withdraw()
+            except tk.TclError:
+                pass
 
     def close_dead_plotter_reference(self) -> None:
         if self.plotter is None:
@@ -1873,8 +1965,11 @@ class NCIPlotterApp:
             pass
 
         self.plotter = None
+        self.nci_surface_actor = None
 
     def update_plot(self, live: bool = False) -> None:
+        if self.embedded and not self._workspace_visible:
+            return
         if self.plot_update_in_progress:
             return
         self.plot_update_in_progress = True
@@ -1941,6 +2036,7 @@ class NCIPlotterApp:
                 except Exception:
                     camera_position = None
                 self.plotter.clear()
+                self.nci_surface_actor = None
             else:
                 self.close_dead_plotter_reference()
 
@@ -1982,7 +2078,7 @@ class NCIPlotterApp:
                 "label_font_size": 12,
             }
 
-            self.plotter.add_mesh(
+            self.nci_surface_actor = self.plotter.add_mesh(
                 sampled,
                 scalars=NCI_SCALAR_NAME,
                 cmap=self.colormap.get(),
@@ -2163,10 +2259,15 @@ class NCIPlotterApp:
             messagebox.showerror("Save failed", str(exc))
 
     def open_nci_qtaim_overlay(self) -> None:
+        if self.overlay_process is not None and self.overlay_process.poll() is None:
+            self.log("NCI + QTAIM overlay is already open.")
+            return
+
         overlay_script = TOOLS_ROOT / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py"
         command = [sys.executable, str(overlay_script)]
 
         wavefunction = self.wavefunction_path.get().strip()
+        qtaim_cp_file = None
         qtaim_path_file = None
         if wavefunction and Path(wavefunction).is_file():
             command.append(wavefunction)
@@ -2176,10 +2277,16 @@ class NCIPlotterApp:
                 spec = importlib.util.spec_from_file_location("crystengkit_overlay_probe", str(overlay_module_path))
                 if spec is not None and spec.loader is not None:
                     overlay_probe = importlib.util.module_from_spec(spec)
+                    sys.modules[spec.name] = overlay_probe
                     spec.loader.exec_module(overlay_probe)
+                    qtaim_cp_file = overlay_probe.find_qtaim_cp_file(Path(wavefunction).parent, Path(wavefunction).stem)
                     qtaim_path_file = overlay_probe.find_qtaim_path_file(Path(wavefunction).parent, Path(wavefunction).stem)
-            except Exception:
+            except Exception as exc:
+                self.log(f"WARNING: QTAIM overlay file discovery failed: {exc}")
+                qtaim_cp_file = None
                 qtaim_path_file = None
+        if qtaim_cp_file is not None:
+            command.extend(["--cp", str(qtaim_cp_file)])
         if qtaim_path_file is not None:
             command.extend(["--paths", str(qtaim_path_file)])
         if self.rdg_cube_path and self.rdg_cube_path.is_file():
@@ -2208,11 +2315,86 @@ class NCIPlotterApp:
         )
 
         try:
-            subprocess.Popen(command, cwd=str(overlay_script.parent))
+            log_dir = Path(self.output_dir.get().strip()) if self.output_dir.get().strip() else overlay_script.parent
+            log_dir.mkdir(parents=True, exist_ok=True)
+            launch_log = log_dir / "nci_qtaim_overlay.log"
+            with launch_log.open("w", encoding="utf-8", errors="replace") as log_file:
+                self.overlay_process = subprocess.Popen(
+                    command,
+                    cwd=str(overlay_script.parent),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+            threading.Thread(
+                target=self._monitor_overlay_process,
+                args=(self.overlay_process, launch_log),
+                daemon=True,
+            ).start()
             self.log("Opened NCI + QTAIM overlay.")
+            self.log(f"Overlay process log: {launch_log}")
         except Exception as exc:
+            self.overlay_process = None
             self.log(f"ERROR: Could not open NCI + QTAIM overlay: {exc}")
             messagebox.showerror("Overlay failed", str(exc))
+
+    def _monitor_overlay_process(self, process: subprocess.Popen, launch_log: Path) -> None:
+        returncode = process.wait()
+
+        def finish() -> None:
+            if self.overlay_process is process:
+                self.overlay_process = None
+            if returncode == 0:
+                self.log("NCI + QTAIM overlay closed.")
+                return
+            try:
+                detail = launch_log.read_text(encoding="utf-8", errors="replace").strip()[-3000:]
+            except OSError:
+                detail = ""
+            message = f"Overlay process failed with exit code {returncode}."
+            if detail:
+                message += f"\n\n{detail}"
+            self.log(f"ERROR: {message}")
+            messagebox.showerror("Overlay failed", message, parent=self.root)
+
+        try:
+            self.root.after(0, finish)
+        except tk.TclError:
+            pass
+
+    def viewer_controls_are_visible(self) -> bool:
+        win = self.viewer_controls_window
+        if win is None:
+            return False
+        try:
+            return bool(win.winfo_exists() and win.state() != "withdrawn" and win.winfo_viewable())
+        except tk.TclError:
+            return False
+
+    def open_viewer_and_controls(self) -> None:
+        """Open only the missing parts of the NCI viewer/control pair."""
+        viewer_open = self.is_plotter_alive()
+        controls_open = self.viewer_controls_are_visible()
+
+        if not viewer_open:
+            if self.rdg_cube is not None and self.signrho_cube is not None:
+                self.log("Reopening PyVista viewer from loaded NCI cube data.")
+                self.update_plot()
+            else:
+                output_text = self.output_dir.get().strip()
+                rdg_path = signrho_path = None
+                if output_text:
+                    rdg_path, signrho_path = self.detect_nci_cubes(Path(output_text))
+                if rdg_path is not None and signrho_path is not None:
+                    self.log("Reopening PyVista viewer from existing NCI cube files.")
+                    self.load_cubes_and_plot()
+                else:
+                    self.log("No loaded or existing NCI cube pair is available to reopen.")
+
+        if not controls_open:
+            self.show_viewer_controls()
+
+        if self.is_plotter_alive():
+            bring_pyvista_window_to_front(self.plotter, delay_s=0.05)
 
     def edit_template_dialog(self) -> None:
         win = tk.Toplevel(self.root)
