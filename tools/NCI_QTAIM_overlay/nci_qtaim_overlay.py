@@ -557,10 +557,24 @@ def add_mesh_material(plotter, mesh, color: str, opacity: float = 1.0):
         color=color,
         opacity=opacity,
         smooth_shading=True,
-        ambient=0.34,
-        diffuse=0.72,
-        specular=0.34,
-        specular_power=38,
+        ambient=0.50,
+        diffuse=0.62,
+        specular=0.18,
+        specular_power=20,
+    )
+
+
+def add_builder_bond_material(plotter, mesh, color: str):
+    plotter.add_mesh(
+        mesh,
+        color=color,
+        opacity=1.0,
+        lighting=True,
+        smooth_shading=True,
+        ambient=0.50,
+        diffuse=0.62,
+        specular=0.18,
+        specular_power=20,
     )
 
 
@@ -632,6 +646,10 @@ def add_molecule(plotter, nci_module, atom_numbers, atom_coords, show_bonds=True
         symbol = ELEMENT_SYMBOLS.get(int(z), "")
         return BUILDER_ATOM_COLORS.get(symbol, atom_colors.get(int(z), "#E95FA5"))
 
+    def bond_end_color(z: int) -> str:
+        symbol = ELEMENT_SYMBOLS.get(int(z), "")
+        return "#8E8E8E" if symbol in {"C", "H"} else atom_color(z)
+
     def covalent_radius(z: int) -> float:
         symbol = ELEMENT_SYMBOLS.get(int(z), "")
         return float(BUILDER_COVALENT_RADII.get(symbol, covalent_radii.get(int(z), 0.77)))
@@ -646,13 +664,14 @@ def add_molecule(plotter, nci_module, atom_numbers, atom_coords, show_bonds=True
                 p1 = np.asarray(atom_coords[i], dtype=float)
                 p2 = np.asarray(atom_coords[j], dtype=float)
                 mid = (p1 + p2) / 2.0
-                for a, b, color in ((p1, mid, atom_color(atom_numbers[i])), (mid, p2, atom_color(atom_numbers[j]))):
+                for a, b, color in ((p1, mid, bond_end_color(atom_numbers[i])), (mid, p2, bond_end_color(atom_numbers[j]))):
                     cyl = cylinder_between(a, b, radius=bond_radius, color=color)
                     if cyl is not None:
-                        add_mesh_material(plotter, cyl, color=color, opacity=1.0)
+                        add_builder_bond_material(plotter, cyl, color=color)
 
     for z, coord in zip(atom_numbers, atom_coords):
-        radius = float(np.clip(covalent_radius(int(z)) * 0.42 * atom_scale, 0.16, 0.55))
+        scale = max(0.2, float(atom_scale) / 0.38)
+        radius = float(np.clip(covalent_radius(int(z)) * 0.42 * scale, 0.16, 0.55))
         sphere = pv.Sphere(
             radius=radius,
             center=tuple(float(x) for x in coord),

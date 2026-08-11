@@ -454,7 +454,7 @@ def material_parameters(settings: RenderSettings) -> Dict[str, object]:
     if settings.lighting_mode == "Stable Mercury-like":
         return {
             "lighting": True,
-            "smooth_shading": False,
+            "smooth_shading": True,
             "ambient": 0.50,
             "diffuse": 0.62,
             "specular": 0.18,
@@ -469,6 +469,21 @@ def material_parameters(settings: RenderSettings) -> Dict[str, object]:
         "specular": 0.28,
         "specular_power": 28,
     }
+
+
+def builder_bond_material_parameters() -> Dict[str, object]:
+    return {
+        "lighting": True,
+        "smooth_shading": True,
+        "ambient": 0.50,
+        "diffuse": 0.62,
+        "specular": 0.18,
+        "specular_power": 20,
+    }
+
+
+def bond_end_color(element: str) -> str:
+    return "#8E8E8E" if element in {"C", "H"} else atom_color(element)
 
 
 def add_atom(pv, plotter, atom: Atom, settings: RenderSettings) -> None:
@@ -496,15 +511,15 @@ def add_bond(pv, plotter, atom1: Atom, atom2: Atom, settings: RenderSettings) ->
     if settings.split_colored_bonds:
         midpoint = (p1 + p2) / 2.0
         segments = [
-            (p1, midpoint, atom_color(atom1.element)),
-            (midpoint, p2, atom_color(atom2.element)),
+            (p1, midpoint, bond_end_color(atom1.element)),
+            (midpoint, p2, bond_end_color(atom2.element)),
         ]
     else:
         segments = [
             (p1, p2, "#A8A8A8"),
         ]
 
-    params = material_parameters(settings)
+    params = builder_bond_material_parameters()
 
     for a, b, color in segments:
         cylinder = cylinder_between(

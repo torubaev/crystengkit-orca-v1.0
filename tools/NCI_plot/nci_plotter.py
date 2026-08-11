@@ -726,10 +726,21 @@ def molecule_material_parameters() -> dict[str, object]:
     return {
         "lighting": True,
         "smooth_shading": True,
-        "ambient": 0.34,
-        "diffuse": 0.72,
-        "specular": 0.34,
-        "specular_power": 38,
+        "ambient": 0.50,
+        "diffuse": 0.62,
+        "specular": 0.18,
+        "specular_power": 20,
+    }
+
+
+def builder_bond_material_parameters() -> dict[str, object]:
+    return {
+        "lighting": True,
+        "smooth_shading": True,
+        "ambient": 0.50,
+        "diffuse": 0.62,
+        "specular": 0.18,
+        "specular_power": 20,
     }
 
 
@@ -2174,8 +2185,8 @@ class NCIPlotterApp:
                 midpoint = (p1 + p2) / 2.0
 
                 for a, b, color in (
-                    (p1, midpoint, self.atom_color(numbers[i])),
-                    (midpoint, p2, self.atom_color(numbers[j])),
+                    (p1, midpoint, self.bond_end_color(numbers[i])),
+                    (midpoint, p2, self.bond_end_color(numbers[j])),
                 ):
                     direction = b - a
                     length = float(np.linalg.norm(direction))
@@ -2191,7 +2202,13 @@ class NCIPlotterApp:
                         resolution=HQ_BOND_RESOLUTION,
                         capping=True,
                     )
-                    self.add_molecule_mesh(plotter, cylinder, color)
+                    add_mesh_safe(
+                        plotter,
+                        cylinder,
+                        color=color,
+                        opacity=1.0,
+                        **builder_bond_material_parameters(),
+                    )
 
         for number, coord in zip(numbers, atoms):
             radius = self.atom_display_radius(number)
@@ -2212,6 +2229,10 @@ class NCIPlotterApp:
 
     def atom_color(self, atomic_number: int) -> str:
         return ATOM_COLORS.get(atomic_number, "#E95FA5")
+
+    def bond_end_color(self, atomic_number: int) -> str:
+        symbol = ELEMENT_SYMBOLS.get(int(atomic_number), "")
+        return "#8E8E8E" if symbol in {"C", "H"} else self.atom_color(atomic_number)
 
     def covalent_radius(self, atomic_number: int) -> float:
         return COVALENT_RADII.get(atomic_number, 0.77)

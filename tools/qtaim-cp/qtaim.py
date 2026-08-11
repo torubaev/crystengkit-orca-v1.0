@@ -2041,11 +2041,26 @@ def molecule_material_parameters() -> Dict[str, object]:
     return {
         "lighting": True,
         "smooth_shading": True,
-        "ambient": 0.34,
-        "diffuse": 0.72,
-        "specular": 0.34,
-        "specular_power": 38,
+        "ambient": 0.50,
+        "diffuse": 0.62,
+        "specular": 0.18,
+        "specular_power": 20,
     }
+
+
+def builder_bond_material_parameters() -> Dict[str, object]:
+    return {
+        "lighting": True,
+        "smooth_shading": True,
+        "ambient": 0.50,
+        "diffuse": 0.62,
+        "specular": 0.18,
+        "specular_power": 20,
+    }
+
+
+def molecule_bond_end_color(symbol: str) -> str:
+    return "#8E8E8E" if symbol in {"C", "H"} else ATOM_COLORS.get(symbol, "#E95FA5")
 
 
 def add_mesh_safe(plotter, mesh, **kwargs):
@@ -2096,7 +2111,7 @@ def add_split_colored_bond(pv_module, plotter, p1, p2, color1: str, color2: str,
     for a, b, color in ((p1, midpoint, color1), (midpoint, p2, color2)):
         cylinder = cylinder_between(pv_module, a, b, radius=radius, resolution=HQ_BOND_RESOLUTION)
         if cylinder is not None:
-            add_mesh_safe(plotter, cylinder, color=color, **molecule_material_parameters())
+            add_mesh_safe(plotter, cylinder, color=color, **builder_bond_material_parameters())
 
 
 def add_ball_and_stick_atom(
@@ -2136,9 +2151,9 @@ def add_molecule_layer(
             plotter,
             (ai.x, ai.y, ai.z),
             (aj.x, aj.y, aj.z),
-            ATOM_COLORS.get(ai.symbol, "#E95FA5"),
-            ATOM_COLORS.get(aj.symbol, "#E95FA5"),
-            radius=molecule_bond_radius(unit_factor, scale=max(0.2, bond_radius / 0.095)),
+            molecule_bond_end_color(ai.symbol),
+            molecule_bond_end_color(aj.symbol),
+            radius=molecule_bond_radius(unit_factor, scale=max(0.2, bond_radius / 0.075)),
         )
     for atom in atoms:
         add_ball_and_stick_atom(pv_module, plotter, atom, unit_factor, scale=max(0.2, atom_scale / 0.38))
@@ -2352,7 +2367,7 @@ def draw_qtaim_scene(
     bond_paths: Optional[List[BondPath]] = None,
     atom_scale: float = 0.38,
     cp_scale: float = 0.32,
-    bond_radius: float = 0.115,
+    bond_radius: float = 0.075,
     background: str = "black",
     cp_colors: Optional[Dict[str, str]] = None,
     bond_path_color: str = DEFAULT_BOND_PATH_COLOR,
@@ -2604,7 +2619,7 @@ def visualize_qtaim(
     bond_paths: Optional[List[BondPath]] = None,
     atom_scale: float = 0.38,
     cp_scale: float = 0.32,
-    bond_radius: float = 0.115,
+    bond_radius: float = 0.075,
     background: str = "black",
     cp_colors: Optional[Dict[str, str]] = None,
     bond_path_color: str = DEFAULT_BOND_PATH_COLOR,
