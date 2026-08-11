@@ -2048,17 +2048,6 @@ def molecule_material_parameters() -> Dict[str, object]:
     }
 
 
-def builder_bond_material_parameters() -> Dict[str, object]:
-    return {
-        "lighting": True,
-        "smooth_shading": True,
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
-    }
-
-
 def molecule_bond_end_color(symbol: str) -> str:
     return "#8E8E8E" if symbol in {"C", "H"} else ATOM_COLORS.get(symbol, "#E95FA5")
 
@@ -2111,7 +2100,7 @@ def add_split_colored_bond(pv_module, plotter, p1, p2, color1: str, color2: str,
     for a, b, color in ((p1, midpoint, color1), (midpoint, p2, color2)):
         cylinder = cylinder_between(pv_module, a, b, radius=radius, resolution=HQ_BOND_RESOLUTION)
         if cylinder is not None:
-            add_mesh_safe(plotter, cylinder, color=color, **builder_bond_material_parameters())
+            add_mesh_safe(plotter, cylinder, color=color, **molecule_material_parameters())
 
 
 def add_ball_and_stick_atom(

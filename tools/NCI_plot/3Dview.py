@@ -471,17 +471,6 @@ def material_parameters(settings: RenderSettings) -> Dict[str, object]:
     }
 
 
-def builder_bond_material_parameters() -> Dict[str, object]:
-    return {
-        "lighting": True,
-        "smooth_shading": True,
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
-    }
-
-
 def bond_end_color(element: str) -> str:
     return "#8E8E8E" if element in {"C", "H"} else atom_color(element)
 
@@ -519,7 +508,7 @@ def add_bond(pv, plotter, atom1: Atom, atom2: Atom, settings: RenderSettings) ->
             (p1, p2, "#A8A8A8"),
         ]
 
-    params = builder_bond_material_parameters()
+    params = material_parameters(settings)
 
     for a, b, color in segments:
         cylinder = cylinder_between(

@@ -733,17 +733,6 @@ def molecule_material_parameters() -> dict[str, object]:
     }
 
 
-def builder_bond_material_parameters() -> dict[str, object]:
-    return {
-        "lighting": True,
-        "smooth_shading": True,
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
-    }
-
-
 def add_mesh_safe(plotter, mesh, **kwargs):
     try:
         plotter.add_mesh(mesh, **kwargs)
@@ -2202,13 +2191,7 @@ class NCIPlotterApp:
                         resolution=HQ_BOND_RESOLUTION,
                         capping=True,
                     )
-                    add_mesh_safe(
-                        plotter,
-                        cylinder,
-                        color=color,
-                        opacity=1.0,
-                        **builder_bond_material_parameters(),
-                    )
+                    self.add_molecule_mesh(plotter, cylinder, color)
 
         for number, coord in zip(numbers, atoms):
             radius = self.atom_display_radius(number)
@@ -2231,8 +2214,7 @@ class NCIPlotterApp:
         return ATOM_COLORS.get(atomic_number, "#E95FA5")
 
     def bond_end_color(self, atomic_number: int) -> str:
-        symbol = ELEMENT_SYMBOLS.get(int(atomic_number), "")
-        return "#8E8E8E" if symbol in {"C", "H"} else self.atom_color(atomic_number)
+        return "#8E8E8E" if int(atomic_number) in {1, 6} else self.atom_color(atomic_number)
 
     def covalent_radius(self, atomic_number: int) -> float:
         return COVALENT_RADII.get(atomic_number, 0.77)

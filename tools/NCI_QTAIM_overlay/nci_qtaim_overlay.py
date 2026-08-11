@@ -564,20 +564,6 @@ def add_mesh_material(plotter, mesh, color: str, opacity: float = 1.0):
     )
 
 
-def add_builder_bond_material(plotter, mesh, color: str):
-    plotter.add_mesh(
-        mesh,
-        color=color,
-        opacity=1.0,
-        lighting=True,
-        smooth_shading=True,
-        ambient=0.50,
-        diffuse=0.62,
-        specular=0.18,
-        specular_power=20,
-    )
-
-
 def configure_hq_scene_lights(plotter, extent: float) -> None:
     try:
         plotter.remove_all_lights()
@@ -667,7 +653,7 @@ def add_molecule(plotter, nci_module, atom_numbers, atom_coords, show_bonds=True
                 for a, b, color in ((p1, mid, bond_end_color(atom_numbers[i])), (mid, p2, bond_end_color(atom_numbers[j]))):
                     cyl = cylinder_between(a, b, radius=bond_radius, color=color)
                     if cyl is not None:
-                        add_builder_bond_material(plotter, cyl, color=color)
+                        add_mesh_material(plotter, cyl, color=color, opacity=1.0)
 
     for z, coord in zip(atom_numbers, atom_coords):
         scale = max(0.2, float(atom_scale) / 0.38)
