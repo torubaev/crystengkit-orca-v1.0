@@ -2851,10 +2851,10 @@ class App(ttk.Frame):
                     draw.text((x + max(15, int(math.ceil(15 * scale))), y + detail_y), f"{orbital['energy_ev']:.4f} eV", fill="black", font=detail_font)
                 thumb_path = Path(orbital.get("thumbnail_path") or "")
                 image_path = Path(orbital.get("image_path") or "")
-                # Contact sheets do not need to decode every 6000 x 4500 source
-                # render. Prefer the existing 400 px thumbnail and fall back to
-                # the full image only for older metadata without thumbnails.
-                source_path = thumb_path if thumb_path.is_file() else image_path
+                # The contact sheet can be much larger than the 400 px GUI
+                # thumbnail.  Use the full saved render so the orbital fills its
+                # image box instead of remaining a tiny thumbnail in a large tile.
+                source_path = image_path if image_path.is_file() else thumb_path
                 if source_path.is_file():
                     with Image.open(source_path) as source:
                         img = source.convert("RGB")

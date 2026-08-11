@@ -1081,6 +1081,26 @@ class NCIPlotterApp:
                 pass
         self.opacity_update_after_id = self.root.after(40, self._apply_surface_opacity)
 
+    def apply_live_background(self, *_args) -> None:
+        """Change renderer colors without rebuilding actors, lights, or camera."""
+        if not self.is_plotter_alive():
+            return
+        try:
+            bg_color = self.background.get()
+            text_color = contrast_text_color(bg_color)
+            try:
+                self.plotter.set_background(
+                    bg_color,
+                    top=HQ_BACKGROUND_TOP.get(str(bg_color).strip().lower()),
+                )
+            except Exception:
+                self.plotter.set_background(bg_color)
+            if self.show_scalar_bar.get():
+                set_scalar_bar_text_color(self.plotter, text_color, NCI_SCALAR_BAR_TITLE)
+            self.plotter.render()
+        except (AttributeError, RuntimeError, tk.TclError):
+            return
+
     def _apply_surface_opacity(self) -> None:
         self.opacity_update_after_id = None
         if not self.is_plotter_alive() or self.nci_surface_actor is None:
@@ -1375,9 +1395,9 @@ class NCIPlotterApp:
             self.show_molecule,
             self.show_bonds,
             self.show_scalar_bar,
-            self.background,
         ):
             variable.trace_add("write", self.schedule_live_plot_update)
+        self.background.trace_add("write", self.apply_live_background)
         self.opacity.trace_add("write", self.schedule_surface_opacity_update)
 
         log_frame = ttk.LabelFrame(main, text="Status / log", padding=8)
