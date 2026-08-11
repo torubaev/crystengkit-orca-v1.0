@@ -361,7 +361,7 @@ def bind_mousewheel_to_canvas(canvas: tk.Canvas, *_hover_widgets: tk.Misc) -> No
     canvas.bind_all("<Button-5>", _on_mousewheel, add="+")
 
 
-def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_projection=True, antialiasing=None, extent=1.0):
+def configure_pyvista_defaults(pv_module, plotter, background="black", parallel_projection=True, antialiasing=None, extent=1.0):
     """Apply conservative PyVista defaults that work on limited OpenGL contexts."""
     try:
         pv_module.global_theme.multi_samples = 0
@@ -374,11 +374,11 @@ def configure_pyvista_defaults(pv_module, plotter, background="white", parallel_
         pass
 
     try:
-        bg = str(background or "white").strip().lower()
+        bg = str(background or "black").strip().lower()
         plotter.set_background(background, top=HQ_BACKGROUND_TOP.get(bg))
     except Exception:
         try:
-            plotter.set_background("white")
+            plotter.set_background("black")
         except Exception:
             pass
 
@@ -969,7 +969,7 @@ class NCIPlotterApp:
         self.show_molecule = tk.BooleanVar(value=True)
         self.show_bonds = tk.BooleanVar(value=True)
         self.show_scalar_bar = tk.BooleanVar(value=True)
-        self.background = tk.StringVar(value="white")
+        self.background = tk.StringVar(value="black")
         self.image_resolution = tk.StringVar(value=self.config.get("image_resolution", DEFAULT_IMAGE_PRESET))
 
         self.command_template = tk.StringVar(
@@ -2246,7 +2246,7 @@ class NCIPlotterApp:
         self.show_molecule.set(True)
         self.show_bonds.set(True)
         self.show_scalar_bar.set(True)
-        self.background.set("white")
+        self.background.set("black")
 
         self.log("Reset view: restored default visualization settings and redrawing clean plot window.")
         self.close_dead_plotter_reference()

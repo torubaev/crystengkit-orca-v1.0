@@ -134,7 +134,7 @@ class RenderSettings:
     sphere_resolution: int = 64
     cylinder_resolution: int = 48
     split_colored_bonds: bool = True
-    background: str = "white"
+    background: str = "black"
     show_axes: bool = False
     parallel_projection: bool = True
     antialiasing: str = "msaa"
@@ -342,7 +342,7 @@ def configure_quality(pv, plotter, settings: RenderSettings) -> None:
     try:
         plotter.set_background(settings.background)
     except Exception:
-        plotter.set_background("white")
+        plotter.set_background("black")
 
     if settings.antialiasing:
         try:
@@ -684,7 +684,7 @@ class XYZViewerApp(tk.Tk):
         self.parallel_projection = tk.BooleanVar(value=True)
         self.transparent_background = tk.BooleanVar(value=False)
 
-        self.background_choice = tk.StringVar(value="white")
+        self.background_choice = tk.StringVar(value="black")
         self.antialiasing_choice = tk.StringVar(value="msaa")
         self.lighting_choice = tk.StringVar(value="Stable Mercury-like")
 
