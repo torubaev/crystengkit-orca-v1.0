@@ -57,6 +57,9 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 from shared.window_layout import compute_visualization_layout, place_visualization_windows
+from shared.tk_helpers import bind_mousewheel_to_canvas, keep_entry_end_visible, load_header_icon
+from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
+from shared.molecule_style import cylinder_between
 
 ESP_ICON_PATH = TOOLS_ROOT / "images" / "tr_ESP_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -109,61 +112,6 @@ HQ_BACKGROUND_TOP = {
 def selected_image_size(var=None):
     name = var.get() if var is not None else DEFAULT_IMAGE_PRESET
     return IMAGE_PRESETS.get(name, IMAGE_PRESETS[DEFAULT_IMAGE_PRESET])
-
-
-def should_use_transparent_png(path, background):
-    return str(path).lower().endswith(".png") and str(background or "").strip().lower() == "white"
-
-
-def save_pyvista_screenshot(plotter, path, background, **kwargs):
-    if should_use_transparent_png(path, background):
-        try:
-            return plotter.screenshot(path, transparent_background=True, **kwargs)
-        except TypeError:
-            pass
-    return plotter.screenshot(path, **kwargs)
-
-
-def bring_pyvista_window_to_front(plotter, delay_s=0.25):
-    def worker():
-        try:
-            if delay_s > 0:
-                time.sleep(delay_s)
-            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
-            if render_window is None:
-                return
-            handle = None
-            for attr in ("GetGenericWindowId", "GetWindowId"):
-                getter = getattr(render_window, attr, None)
-                if callable(getter):
-                    handle = getter()
-                    if handle:
-                        break
-            if not handle or os.name != "nt":
-                return
-            hwnd = int(handle)
-            import ctypes
-
-            user32 = ctypes.windll.user32
-            flags = 0x0001 | 0x0002 | 0x0040
-            user32.ShowWindow(hwnd, 5)
-            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
-            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
-            user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-
-    threading.Thread(target=worker, daemon=True).start()
-
-
-def load_header_icon(path, max_size=56):
-    if not path.is_file():
-        return None
-    img = tk.PhotoImage(file=str(path))
-    factor = max(1, int(max(img.width() / max_size, img.height() / max_size) + 0.999))
-    if factor > 1:
-        img = img.subsample(factor, factor)
-    return img
 
 
 def open_about_dialog(parent, title, icon_path, purpose):
@@ -224,65 +172,6 @@ def open_about_dialog(parent, title, icon_path, purpose):
     win.geometry("640x470")
     win.minsize(570, 430)
     win.grab_set()
-
-
-def keep_entry_end_visible(entry, variable=None):
-    def show_end(*_args):
-        try:
-            entry.icursor("end")
-            entry.xview_moveto(1.0)
-        except tk.TclError:
-            pass
-
-    entry.bind("<Configure>", lambda _event: entry.after_idle(show_end), add="+")
-    entry.bind("<FocusOut>", lambda _event: entry.after_idle(show_end), add="+")
-    if variable is not None:
-        variable.trace_add("write", lambda *_args: entry.after_idle(show_end))
-    entry.after_idle(show_end)
-    return entry
-
-
-def bind_mousewheel_to_canvas(canvas, *_hover_widgets):
-    def _pointer_is_over_canvas():
-        try:
-            x = canvas.winfo_pointerx()
-            y = canvas.winfo_pointery()
-            left = canvas.winfo_rootx()
-            top = canvas.winfo_rooty()
-            return left <= x < left + canvas.winfo_width() and top <= y < top + canvas.winfo_height()
-        except tk.TclError:
-            return False
-
-    def _can_scroll():
-        try:
-            first, last = canvas.yview()
-            return first > 0.0 or last < 1.0
-        except tk.TclError:
-            return False
-
-    def _wheel_units(event):
-        if getattr(event, "num", None) == 4:
-            return -5
-        if getattr(event, "num", None) == 5:
-            return 5
-        delta = getattr(event, "delta", 0)
-        if delta == 0:
-            return 0
-        if abs(delta) >= 120:
-            return int(-delta / 120) * 5
-        return -5 if delta > 0 else 5
-
-    def _on_mousewheel(event):
-        if not _pointer_is_over_canvas() or not _can_scroll():
-            return None
-        units = _wheel_units(event)
-        if units:
-            canvas.yview_scroll(units, "units")
-        return "break"
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-4>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-5>", _on_mousewheel, add="+")
 
 
 def load_recent_files():
@@ -511,22 +400,6 @@ def atom_color_from_number(atomic_number):
         symbol = ""
     return hex_to_rgb01(ELEMENT_COLORS.get(symbol, "#E95FA5"))
 
-
-def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=HQ_BOND_RESOLUTION):
-    p1 = np.asarray(p1, dtype=float)
-    p2 = np.asarray(p2, dtype=float)
-    vector = p2 - p1
-    length = float(np.linalg.norm(vector))
-    if length <= 1.0e-8:
-        return None
-    return pv_module.Cylinder(
-        center=tuple((p1 + p2) / 2.0),
-        direction=tuple(vector / length),
-        radius=radius,
-        height=length,
-        resolution=resolution,
-        capping=True,
-    )
 
 # dictionary of (nuclear_charge : Nucleus, vdW radii in Angstroms)
 dnc2all = {1: ['H', 1.09, 0.23, 1.00794, 0.99609375, 0.9765625, 0.80078125],
@@ -792,17 +665,6 @@ def base_name_no_ext(path):
     return os.path.splitext(os.path.abspath(path))[0]
 
 
-def run_command_capture(cmd, cwd=None):
-    proc = subprocess.run(
-        cmd,
-        cwd=cwd,
-        text=True,
-        capture_output=True,
-        shell=False
-    )
-    return proc.returncode, proc.stdout, proc.stderr
-
-
 # ----------------------------
 # Global runtime variables
 # ----------------------------
@@ -849,14 +711,6 @@ def _get_screen_size():
         return width, height
     except Exception:
         return 1920, 1080
-
-
-def _main_window_size():
-    screen_w, screen_h = _get_screen_size()
-    width = int(screen_w * 0.95)
-    height = int(screen_h * 0.80)
-    width = min(width, 1400)
-    return width, height
 
 
 def _viewer_window_size():
@@ -1959,7 +1813,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
             midpoint = (np.asarray(p1, dtype=float) + np.asarray(p2, dtype=float)) / 2.0
             colors = (atom_color_from_number(CENTERS[i][0]), atom_color_from_number(CENTERS[j][0]))
             for a, b, color in ((p1, midpoint, colors[0]), (midpoint, p2, colors[1])):
-                cylinder = cylinder_between(pv, a, b)
+                cylinder = cylinder_between(pv, a, b, resolution=HQ_BOND_RESOLUTION)
                 if cylinder is None:
                     continue
                 actor = _make_overlay_actor(cylinder, color)

@@ -28,6 +28,8 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 import app_identity as _app_identity
+from shared.multiwfn_locator import auto_detect_multiwfn_path
+from shared.tk_helpers import load_header_icon
 try:
     from .td_dft_naming import identified_output_stem
 except ImportError:
@@ -46,10 +48,12 @@ def install_dev_reload_shortcut(window, script_path, **kwargs):
 try:
     from .td_dft_cube_viewer import SignedCubeViewer
     from .td_dft_multiwfn_runner import MultiwfnTDDFTRunner
+    from .orca_calculation_workspace import OrcaCalculationWorkspace
 except ImportError:
     # Keep direct `python td_dft_module.py` execution working from this folder.
     from td_dft_cube_viewer import SignedCubeViewer
     from td_dft_multiwfn_runner import MultiwfnTDDFTRunner
+    from orca_calculation_workspace import OrcaCalculationWorkspace
 
 HC_EV_NM = 1239.841984
 MODULE_SETTINGS = Path(__file__).with_name("td_dft_settings.json")
@@ -233,14 +237,6 @@ def configure_builder_ui_style(widget: tk.Misc) -> None:
         bordercolor="#93c5fd",
         thickness=14,
     )
-
-
-def load_header_icon(path: Path, max_size: int = 56) -> Optional[tk.PhotoImage]:
-    if not path.is_file():
-        return None
-    image = tk.PhotoImage(file=str(path))
-    factor = max(1, int(max(image.width() / max_size, image.height() / max_size) + 0.999))
-    return image.subsample(factor, factor) if factor > 1 else image
 
 
 def bind_mousewheel_to_canvas(canvas: tk.Canvas) -> None:
@@ -639,45 +635,6 @@ def load_saved_multiwfn_path() -> str:
     return auto_detect_multiwfn_path()
 
 
-def auto_detect_multiwfn_path(saved: str = "") -> str:
-    names = ("Multiwfn.exe", "Multiwfn", "multiwfn")
-    candidates: List[Path] = []
-    for value in (saved, os.environ.get("Multiwfnpath", "")):
-        value = str(value or "").strip().strip('"')
-        if not value:
-            continue
-        path = Path(value).expanduser()
-        candidates.extend([path / name for name in names] if path.is_dir() else [path])
-    for root in (
-        os.environ.get("ProgramFiles", ""),
-        os.environ.get("ProgramFiles(x86)", ""),
-        os.environ.get("LOCALAPPDATA", ""),
-        "C:\\Multiwfn",
-        "C:\\Program Files\\Multiwfn",
-    ):
-        if str(root).strip():
-            base = Path(root).expanduser()
-            candidates.extend(base / name for name in names)
-            candidates.extend(base / "Multiwfn" / name for name in names)
-    for name in names:
-        found = shutil.which(name)
-        if found:
-            candidates.append(Path(found))
-    seen = set()
-    for candidate in candidates:
-        try:
-            resolved = candidate.resolve()
-        except Exception:
-            resolved = candidate
-        key = os.path.normcase(str(resolved))
-        if key in seen:
-            continue
-        seen.add(key)
-        if resolved.is_file():
-            return str(resolved)
-    return ""
-
-
 class TDDFTPanel(ttk.Frame):
     """Reusable TD-DFT workspace.
 
@@ -951,12 +908,78 @@ class TDDFTPanel(ttk.Frame):
         for column, (text, command) in enumerate([("Display", self._display_mode), ("Reset camera", self._display_mode), ("Save screenshot", self._save_screenshot), ("Export cubes", self._export_cubes)]):
             ttk.Button(display_actions, text=text, command=command, style="Primary.TButton" if column == 0 else "TButton").grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 5, 0)); display_actions.columnconfigure(column, weight=1)
 
+        self.calculation_workspace = OrcaCalculationWorkspace(
+            root,
+            input_provider=self._prepare_workspace_input,
+            orca_path_provider=self._workspace_orca_path,
+            initial_path_provider=self._workspace_input_path,
+            completed_callback=self._workspace_run_completed,
+        )
+        self.calculation_workspace.grid(row=7, column=0, sticky="nsew", pady=(8, 0))
+
         footer = ttk.Frame(self, style="Panel.TFrame", padding=(12, 6))
         footer.pack(fill="x")
         ttk.Label(footer, text=COPYRIGHT_NOTE, style="Muted.TLabel").pack(anchor="w")
-        self.input_sections = (connection_box, setup)
+        self.input_sections = (connection_box, setup, self.calculation_workspace)
         self.post_sections = (spectrum, progress_frame, tablebox, emission, viz)
         self._set_ui_mode("input")
+
+    def _prepare_workspace_input(self) -> str:
+        """Prepare a complete input without coupling this panel to Builder internals."""
+        data = self._settings()
+        data["source_absorption_output"] = ""
+        data["source_absorption_gbw"] = ""
+        block = build_tddft_orca_fragment(data, "")
+        self._confirm_tddft_memory_risk(data)
+        if self.on_apply:
+            if not self.builder_enabled:
+                raise ValueError("TD-DFT is disabled in ORCA Input Builder. Enable it before preparing input.")
+            self.on_apply(block, data)
+            provider = self.builder_context.get("input_provider")
+            if callable(provider):
+                return str(provider())
+            raise ValueError("The connected Builder did not provide an ORCA input preview.")
+
+        atoms = list(self.builder_context.get("atoms") or [])
+        if not atoms:
+            raise ValueError(
+                "Standalone TD-DFT needs molecular coordinates. Open it from Input Builder, "
+                "or open an existing .inp file in the calculation workspace."
+            )
+        method = str(self.builder_context.get("functional") or "B3LYP").strip()
+        basis = str(self.builder_context.get("basis") or "def2-SVP").strip()
+        keywords = " ".join(item for item in (method, basis, "TightSCF") if item)
+        charge = int(self.builder_context.get("charge", 0))
+        multiplicity = int(self.builder_context.get("multiplicity", 1))
+        coordinate_lines = []
+        for atom in atoms:
+            try:
+                symbol, x, y, z = atom[:4]
+            except (TypeError, ValueError):
+                symbol = getattr(atom, "symbol", getattr(atom, "element", ""))
+                x, y, z = atom.x, atom.y, atom.z
+            coordinate_lines.append(f"{symbol:<3} {float(x): .10f} {float(y): .10f} {float(z): .10f}")
+        return f"! {keywords}\n\n{block}\n\n* xyz {charge} {multiplicity}\n" + "\n".join(coordinate_lines) + "\n*\n"
+
+    def _workspace_orca_path(self) -> str:
+        provider = self.builder_context.get("orca_path_provider")
+        if callable(provider):
+            return str(provider() or "")
+        return str(self.builder_context.get("orca_path", "") or "")
+
+    def _workspace_input_path(self) -> str:
+        provider = self.builder_context.get("input_path_provider")
+        if callable(provider):
+            return str(provider() or "")
+        source = str(self.builder_context.get("structure_source_path", "") or "")
+        return str(Path(source).with_suffix(".inp")) if source else "tddft.inp"
+
+    def _workspace_run_completed(self, output_path: str) -> None:
+        try:
+            self._set_loaded_output(output_path)
+            self._set_ui_mode("post")
+        except Exception as exc:
+            self.update_progress(0, f"ORCA finished; output could not be loaded automatically: {exc}", "red")
 
     def _set_ui_mode(self, mode: str) -> None:
         if mode not in {"input", "post"}:

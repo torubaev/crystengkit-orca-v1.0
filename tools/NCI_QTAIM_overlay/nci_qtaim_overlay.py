@@ -23,10 +23,7 @@ import importlib.util
 import json
 import math
 import fnmatch
-import os
 import sys
-import threading
-import time
 import tkinter as tk
 from collections import Counter
 from dataclasses import dataclass
@@ -47,6 +44,8 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import install_dev_reload_shortcut
+from shared.tk_helpers import keep_entry_end_visible
+from shared.pyvista_window import bring_pyvista_window_to_front
 NCI_MODULE_PATH = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 QTAIM_GRAPHICS_SETTINGS_PATH = Path.home() / ".qtaim_graphics_settings.json"
 QTAIM_MODULE_CANDIDATES = [
@@ -518,22 +517,6 @@ def screen_fraction_window_size(width: int, fallback_height: int, fraction: floa
         return width, fallback_height
 
 
-def keep_entry_end_visible(entry: tk.Entry, variable: Optional[tk.Variable] = None) -> tk.Entry:
-    def show_end(*_args) -> None:
-        try:
-            entry.icursor("end")
-            entry.xview_moveto(1.0)
-        except tk.TclError:
-            pass
-
-    entry.bind("<Configure>", lambda _event: entry.after_idle(show_end), add="+")
-    entry.bind("<FocusOut>", lambda _event: entry.after_idle(show_end), add="+")
-    if variable is not None:
-        variable.trace_add("write", lambda *_args: entry.after_idle(show_end))
-    entry.after_idle(show_end)
-    return entry
-
-
 def cylinder_between(p1, p2, radius: float, color: str, opacity: float = 1.0):
     p1 = np.asarray(p1, dtype=float)
     p2 = np.asarray(p2, dtype=float)
@@ -590,38 +573,6 @@ def configure_hq_scene_lights(plotter, extent: float) -> None:
             plotter.add_light(light)
         except Exception:
             pass
-
-
-def bring_pyvista_window_to_front(plotter, delay_s: float = 0.25) -> None:
-    def worker() -> None:
-        try:
-            if delay_s > 0:
-                time.sleep(delay_s)
-            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
-            if render_window is None:
-                return
-            handle = None
-            for attr in ("GetGenericWindowId", "GetWindowId"):
-                getter = getattr(render_window, attr, None)
-                if callable(getter):
-                    handle = getter()
-                    if handle:
-                        break
-            if not handle or os.name != "nt":
-                return
-            hwnd = int(handle)
-            import ctypes
-
-            user32 = ctypes.windll.user32
-            flags = 0x0001 | 0x0002 | 0x0040
-            user32.ShowWindow(hwnd, 5)
-            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
-            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
-            user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-
-    threading.Thread(target=worker, daemon=True).start()
 
 
 def add_molecule(plotter, nci_module, atom_numbers, atom_coords, show_bonds=True, atom_scale=1.0, bond_radius=0.075):

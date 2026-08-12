@@ -32,7 +32,7 @@ pv = None
 _pyvista_import_error = None
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     import gemmi  # optional, preferred CIF parser
@@ -44,6 +44,10 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from shared.tk_helpers import bind_mousewheel_to_canvas, keep_entry_end_visible
+from shared.pyvista_window import bring_pyvista_window_to_front
+from shared.molecule_style import add_mesh_safe, cylinder_between, molecule_material_parameters
+from shared.multiwfn_locator import auto_detect_multiwfn_path
 from app_updater import (
     download_verified_installer,
     fetch_latest_installer,
@@ -1154,45 +1158,6 @@ def classify_orca_failure_file(out_path: str) -> Dict:
         return {"category": "", "module": "", "message": "", "recommendations": []}
 
 
-def auto_detect_multiwfn_path(saved: str = "") -> str:
-    names = ("Multiwfn.exe", "Multiwfn", "multiwfn")
-    candidates: List[Path] = []
-    for value in (saved, os.environ.get("Multiwfnpath", "")):
-        value = str(value or "").strip().strip('"')
-        if not value:
-            continue
-        path = Path(value).expanduser()
-        candidates.extend([path / name for name in names] if path.is_dir() else [path])
-    for root in (
-        os.environ.get("ProgramFiles", ""),
-        os.environ.get("ProgramFiles(x86)", ""),
-        os.environ.get("LOCALAPPDATA", ""),
-        "C:\\Multiwfn",
-        "C:\\Program Files\\Multiwfn",
-    ):
-        if str(root).strip():
-            base = Path(root).expanduser()
-            candidates.extend(base / name for name in names)
-            candidates.extend(base / "Multiwfn" / name for name in names)
-    for name in names:
-        found = shutil.which(name)
-        if found:
-            candidates.append(Path(found))
-    seen = set()
-    for candidate in candidates:
-        try:
-            resolved = candidate.resolve()
-        except Exception:
-            resolved = candidate
-        key = os.path.normcase(str(resolved))
-        if key in seen:
-            continue
-        seen.add(key)
-        if resolved.is_file():
-            return str(resolved)
-    return ""
-
-
 def app_relative_path(path: str) -> str:
     """Store repo-owned paths relative to APP_ROOT so settings travel between machines."""
     if not path:
@@ -1363,38 +1328,6 @@ def bring_window_title_to_front(title: str):
             pass
 
     threading.Thread(target=_raise_when_created, daemon=True).start()
-
-
-def bring_pyvista_window_to_front(plotter, delay_s: float = 0.25) -> None:
-    def worker() -> None:
-        try:
-            if delay_s > 0:
-                time.sleep(delay_s)
-            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
-            if render_window is None:
-                return
-            handle = None
-            for attr in ("GetGenericWindowId", "GetWindowId"):
-                getter = getattr(render_window, attr, None)
-                if callable(getter):
-                    handle = getter()
-                    if handle:
-                        break
-            if not handle or os.name != "nt":
-                return
-            hwnd = int(handle)
-            import ctypes
-
-            user32 = ctypes.windll.user32
-            flags = 0x0001 | 0x0002 | 0x0040
-            user32.ShowWindow(hwnd, 5)
-            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
-            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
-            user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-
-    threading.Thread(target=worker, daemon=True).start()
 
 
 def default_python312_command() -> str:
@@ -1584,65 +1517,6 @@ def executable_filetypes(label: str = "Executable files"):
     if os.name == "nt":
         return [(label, "*.exe"), ("All files", "*.*")]
     return [(label, "*"), ("All files", "*.*")]
-
-
-def keep_entry_end_visible(entry: tk.Entry, variable: Optional[tk.Variable] = None) -> tk.Entry:
-    def show_end(*_args) -> None:
-        try:
-            entry.icursor("end")
-            entry.xview_moveto(1.0)
-        except tk.TclError:
-            pass
-
-    entry.bind("<Configure>", lambda _event: entry.after_idle(show_end), add="+")
-    entry.bind("<FocusOut>", lambda _event: entry.after_idle(show_end), add="+")
-    if variable is not None:
-        variable.trace_add("write", lambda *_args: entry.after_idle(show_end))
-    entry.after_idle(show_end)
-    return entry
-
-
-def bind_mousewheel_to_canvas(canvas: tk.Canvas, *_hover_widgets: tk.Misc) -> None:
-    def _pointer_is_over_canvas() -> bool:
-        try:
-            x = canvas.winfo_pointerx()
-            y = canvas.winfo_pointery()
-            left = canvas.winfo_rootx()
-            top = canvas.winfo_rooty()
-            return left <= x < left + canvas.winfo_width() and top <= y < top + canvas.winfo_height()
-        except tk.TclError:
-            return False
-
-    def _can_scroll() -> bool:
-        try:
-            first, last = canvas.yview()
-            return first > 0.0 or last < 1.0
-        except tk.TclError:
-            return False
-
-    def _wheel_units(event) -> int:
-        if getattr(event, "num", None) == 4:
-            return -5
-        if getattr(event, "num", None) == 5:
-            return 5
-        delta = getattr(event, "delta", 0)
-        if delta == 0:
-            return 0
-        if abs(delta) >= 120:
-            return int(-delta / 120) * 5
-        return -5 if delta > 0 else 5
-
-    def _on_mousewheel(event):
-        if not _pointer_is_over_canvas() or not _can_scroll():
-            return None
-        units = _wheel_units(event)
-        if units:
-            canvas.yview_scroll(units, "units")
-        return "break"
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-4>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-5>", _on_mousewheel, add="+")
 
 
 ELEMENT_SYMBOLS = (
@@ -2680,45 +2554,6 @@ def covalent_radius(symbol: str) -> float:
 
 def display_atom_radius(symbol: str) -> float:
     return float(np.clip(covalent_radius(symbol) * 0.42, 0.16, 0.55))
-
-
-def molecule_material_parameters() -> Dict[str, object]:
-    return {
-        "lighting": True,
-        "smooth_shading": True,
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
-    }
-
-
-def add_mesh_safe(plotter, mesh, **kwargs):
-    try:
-        return plotter.add_mesh(mesh, **kwargs)
-    except TypeError:
-        safe_kwargs = dict(kwargs)
-        safe_kwargs.pop("pbr", None)
-        safe_kwargs.pop("metallic", None)
-        safe_kwargs.pop("roughness", None)
-        return plotter.add_mesh(mesh, **safe_kwargs)
-
-
-def cylinder_between(pv_module, p1, p2, radius=0.075, resolution=48):
-    p1 = np.asarray(p1, dtype=float)
-    p2 = np.asarray(p2, dtype=float)
-    vector = p2 - p1
-    length = float(np.linalg.norm(vector))
-    if length <= 1.0e-8:
-        return None
-    return pv_module.Cylinder(
-        center=tuple((p1 + p2) / 2.0),
-        direction=tuple(vector / length),
-        radius=radius,
-        height=length,
-        resolution=resolution,
-        capping=True,
-    )
 
 
 def add_ball_and_stick_atom(pv_module, plotter, symbol, point, color=None, name=None):
@@ -4918,6 +4753,11 @@ class App(tk.Tk):
             "freeze_heavy": bool(self.freeze_heavy_var.get()),
             "freeze_all": bool(self.freeze_all_var.get()),
             "job_freq": bool(self.job_freq_var.get()),
+            # Live providers keep the embedded TD-DFT workspace synchronized
+            # without making TD-DFT import or reach into the Builder class.
+            "input_provider": self.refresh_full_orca_input,
+            "input_path_provider": lambda: self.current_input_path or self.suggest_input_save_path(),
+            "orca_path_provider": lambda: self.orca_path_var.get().strip().strip('"'),
         }
 
     def _refresh_open_tddft_absorption_source(self, out_path: str) -> None:

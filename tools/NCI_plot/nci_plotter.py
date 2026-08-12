@@ -64,6 +64,10 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, keep_entry_end_visible, load_header_icon
+from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
+from shared.molecule_style import add_mesh_safe, molecule_material_parameters
+from shared.multiwfn_locator import find_multiwfn, find_multiwfn_deep
 from shared.window_layout import compute_visualization_layout, place_visualization_windows
 
 NCI_ICON_PATH = TOOLS_ROOT / "images" / "tr_NCI_icon.png"
@@ -129,236 +133,6 @@ def element_symbol_from_wfn_label(label: str) -> Optional[str]:
         if candidate in ELEMENT_SYMBOLS:
             return candidate
     return None
-
-
-def find_multiwfn() -> Optional[str]:
-    candidates = [
-        r"C:\Multiwfn_2026.2.2_bin_Win64\Multiwfn.exe",
-        r"C:\Multiwfn\Multiwfn.exe",
-        r"C:\Multiwfn_3.8_dev_bin_Win64\Multiwfn.exe",
-    ]
-    for candidate in candidates:
-        if Path(candidate).exists():
-            return candidate
-    return shutil.which("Multiwfn") or shutil.which("Multiwfn.exe") or shutil.which("multiwfn")
-
-
-def likely_multiwfn_search_roots() -> list[Path]:
-    roots: list[Path] = []
-    home = Path.home()
-
-    def add(path: Path) -> None:
-        try:
-            if path.exists() and path.is_dir():
-                roots.append(path)
-        except OSError:
-            pass
-
-    for item in [
-        Path.cwd(),
-        Path(__file__).resolve().parents[1],
-        home / "Desktop",
-        home / "Downloads",
-        home / "Documents",
-        home / "Applications",
-        home / "bin",
-        home / ".local" / "bin",
-    ]:
-        add(item)
-
-    if os.name == "nt":
-        for env_name in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
-            env_value = os.environ.get(env_name)
-            if env_value:
-                env_path = Path(env_value)
-                add(env_path)
-                try:
-                    for item in env_path.glob("*Multiwfn*"):
-                        add(item)
-                    for item in env_path.glob("*multiwfn*"):
-                        add(item)
-                except OSError:
-                    pass
-        add(Path("C:/"))
-    else:
-        for item in [Path("/"), Path("/opt"), Path("/usr/local"), Path("/usr/local/bin"), Path("/usr/bin")]:
-            add(item)
-
-    unique: list[Path] = []
-    seen = set()
-    for root in roots:
-        try:
-            key = str(root.resolve()).lower()
-        except OSError:
-            key = str(root).lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(root)
-    return unique
-
-
-def find_multiwfn_deep(max_seconds: float = 18.0, max_visited: int = 70000, max_depth: int = 6) -> Optional[str]:
-    quick = find_multiwfn()
-    if quick:
-        return quick
-
-    target_names = {"multiwfn", "multiwfn.exe"}
-    skip_dirs = {
-        "$Recycle.Bin", ".git", ".hg", ".svn", "__pycache__", "node_modules",
-        "System Volume Information", "Windows", "WinSxS", "Microsoft", "Packages", "Temp", "tmp",
-    }
-    started = time.monotonic()
-    visited = 0
-
-    def timed_out() -> bool:
-        return (time.monotonic() - started) > max_seconds
-
-    def scan(folder: Path, depth: int) -> Optional[str]:
-        nonlocal visited
-        if timed_out() or visited >= max_visited or depth > max_depth:
-            return None
-        try:
-            with os.scandir(folder) as iterator:
-                entries = list(iterator)
-        except (OSError, PermissionError):
-            return None
-        for entry in entries:
-            if timed_out() or visited >= max_visited:
-                return None
-            visited += 1
-            try:
-                if entry.is_file(follow_symlinks=False) and entry.name.lower() in target_names:
-                    return str(Path(entry.path).resolve())
-                if entry.is_dir(follow_symlinks=False) and entry.name not in skip_dirs:
-                    found = scan(Path(entry.path), depth + 1)
-                    if found:
-                        return found
-            except (OSError, PermissionError):
-                continue
-        return None
-
-    for root in likely_multiwfn_search_roots():
-        found = scan(root, 0)
-        if found:
-            return found
-        if timed_out():
-            break
-    return None
-
-
-def configure_builder_ui_style(widget: tk.Misc) -> None:
-    style = ttk.Style(widget)
-    try:
-        style.theme_use("clam")
-    except tk.TclError:
-        pass
-
-    try:
-        widget.configure(background="#f4f6f9")
-    except tk.TclError:
-        pass
-
-    style.configure("TFrame", background="#f4f6f9")
-    style.configure("Panel.TFrame", background="#f4f6f9")
-    style.configure("Header.TFrame", background="#1e3a5f")
-    style.configure("HeaderTitle.TLabel", background="#1e3a5f", foreground="#f8fafc", font=("Segoe UI", 15, "bold"))
-    style.configure("HeaderSub.TLabel", background="#1e3a5f", foreground="#d7e1ee", font=("Segoe UI", 10, "bold"))
-    style.configure("HeaderAction.TLabel", background="#1e3a5f", foreground="#d7e1ee", font=("Segoe UI", 9, "bold"))
-    style.configure("HeaderLink.TLabel", background="#1e3a5f", foreground="#ffffff", font=("Segoe UI", 11, "bold"))
-    style.configure("TLabelframe", background="#f8fafc", bordercolor="#d8dee8", relief="solid", padding=8)
-    style.configure("TLabelframe.Label", background="#f8fafc", foreground="#172033", font=("Segoe UI", 10, "bold"))
-    style.configure("TButton", padding=(9, 5), font=("Segoe UI", 9))
-    style.configure("Primary.TButton", padding=(14, 8), font=("Segoe UI", 10, "bold"))
-    style.configure(
-        "HeaderCTA.TButton",
-        background="#2f80c8",
-        foreground="#ffffff",
-        bordercolor="#61a5e8",
-        lightcolor="#2f80c8",
-        darkcolor="#2f80c8",
-        focusthickness=0,
-        padding=(14, 7),
-        relief="flat",
-        font=("Segoe UI", 9, "bold"),
-    )
-    style.map(
-        "HeaderCTA.TButton",
-        background=[("active", "#3b94df"), ("pressed", "#1f68a8")],
-        foreground=[("active", "#ffffff"), ("pressed", "#ffffff")],
-        bordercolor=[("active", "#8ac4f4"), ("pressed", "#1f68a8")],
-    )
-    style.configure("Info.TButton", padding=(3, 1), font=("Segoe UI", 9, "bold"))
-    style.configure("TCheckbutton", background="#f8fafc", padding=(1, 2), font=("Segoe UI", 9))
-    style.configure("TLabel", background="#f8fafc", foreground="#263348", padding=(1, 1), font=("Segoe UI", 9))
-    style.configure("Muted.TLabel", background="#f4f6f9", foreground="#53627a", font=("Segoe UI", 9))
-    style.configure(
-        "Blue.Horizontal.TProgressbar",
-        troughcolor="#dbeafe",
-        background="#2563eb",
-        lightcolor="#3b82f6",
-        darkcolor="#1d4ed8",
-        bordercolor="#93c5fd",
-        thickness=14,
-    )
-
-
-def keep_entry_end_visible(entry: tk.Entry, variable: Optional[tk.Variable] = None) -> tk.Entry:
-    def show_end(*_args) -> None:
-        try:
-            entry.icursor("end")
-            entry.xview_moveto(1.0)
-        except tk.TclError:
-            pass
-
-    entry.bind("<Configure>", lambda _event: entry.after_idle(show_end), add="+")
-    entry.bind("<FocusOut>", lambda _event: entry.after_idle(show_end), add="+")
-    if variable is not None:
-        variable.trace_add("write", lambda *_args: entry.after_idle(show_end))
-    entry.after_idle(show_end)
-    return entry
-
-
-def bind_mousewheel_to_canvas(canvas: tk.Canvas, *_hover_widgets: tk.Misc) -> None:
-    def _pointer_is_over_canvas() -> bool:
-        try:
-            x = canvas.winfo_pointerx()
-            y = canvas.winfo_pointery()
-            left = canvas.winfo_rootx()
-            top = canvas.winfo_rooty()
-            return left <= x < left + canvas.winfo_width() and top <= y < top + canvas.winfo_height()
-        except tk.TclError:
-            return False
-
-    def _can_scroll() -> bool:
-        try:
-            first, last = canvas.yview()
-            return first > 0.0 or last < 1.0
-        except tk.TclError:
-            return False
-
-    def _wheel_units(event) -> int:
-        if getattr(event, "num", None) == 4:
-            return -5
-        if getattr(event, "num", None) == 5:
-            return 5
-        delta = getattr(event, "delta", 0)
-        if delta == 0:
-            return 0
-        if abs(delta) >= 120:
-            return int(-delta / 120) * 5
-        return -5 if delta > 0 else 5
-
-    def _on_mousewheel(event):
-        if not _pointer_is_over_canvas() or not _can_scroll():
-            return None
-        units = _wheel_units(event)
-        if units:
-            canvas.yview_scroll(units, "units")
-        return "break"
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-4>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-5>", _on_mousewheel, add="+")
 
 
 def configure_pyvista_defaults(pv_module, plotter, background="black", parallel_projection=True, antialiasing=None, extent=1.0):
@@ -438,50 +212,6 @@ def configure_pyvista_defaults(pv_module, plotter, background="black", parallel_
         except Exception:
             pass
 
-
-def should_use_transparent_png(path: str, background: str) -> bool:
-    return str(path).lower().endswith(".png") and str(background or "").strip().lower() == "white"
-
-
-def save_pyvista_screenshot(plotter, path: str, background: str, **kwargs):
-    if should_use_transparent_png(path, background):
-        try:
-            return plotter.screenshot(path, transparent_background=True, **kwargs)
-        except TypeError:
-            pass
-    return plotter.screenshot(path, **kwargs)
-
-
-def bring_pyvista_window_to_front(plotter, delay_s: float = 0.25) -> None:
-    def worker() -> None:
-        try:
-            if delay_s > 0:
-                time.sleep(delay_s)
-            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
-            if render_window is None:
-                return
-            handle = None
-            for attr in ("GetGenericWindowId", "GetWindowId"):
-                getter = getattr(render_window, attr, None)
-                if callable(getter):
-                    handle = getter()
-                    if handle:
-                        break
-            if not handle or os.name != "nt":
-                return
-            hwnd = int(handle)
-            import ctypes
-
-            user32 = ctypes.windll.user32
-            flags = 0x0001 | 0x0002 | 0x0040
-            user32.ShowWindow(hwnd, 5)
-            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
-            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
-            user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-
-    threading.Thread(target=worker, daemon=True).start()
 
 LEGACY_SAFE_MULTIWFN_TEMPLATE = """\
 # Multiwfn batch-command template.
@@ -722,28 +452,6 @@ def contrast_text_color(background: str) -> str:
     return "black"
 
 
-def molecule_material_parameters() -> dict[str, object]:
-    return {
-        "lighting": True,
-        "smooth_shading": True,
-        "ambient": 0.50,
-        "diffuse": 0.62,
-        "specular": 0.18,
-        "specular_power": 20,
-    }
-
-
-def add_mesh_safe(plotter, mesh, **kwargs):
-    try:
-        plotter.add_mesh(mesh, **kwargs)
-    except TypeError:
-        safe_kwargs = dict(kwargs)
-        safe_kwargs.pop("pbr", None)
-        safe_kwargs.pop("metallic", None)
-        safe_kwargs.pop("roughness", None)
-        plotter.add_mesh(mesh, **safe_kwargs)
-
-
 def set_scalar_bar_text_color(plotter, text_color: str, title: str | None = None) -> None:
     try:
         scalar_bars = getattr(plotter, "scalar_bars", {})
@@ -877,16 +585,6 @@ def screen_fraction_height(widget: tk.Misc, fraction: float = 0.80, fallback: in
         return max(1, int(widget.winfo_screenheight() * fraction))
     except Exception:
         return fallback
-
-
-def load_header_icon(path: Path, max_size: int = 56) -> Optional[tk.PhotoImage]:
-    if not path.is_file():
-        return None
-    img = tk.PhotoImage(file=str(path))
-    factor = max(1, int(max(img.width() / max_size, img.height() / max_size) + 0.999))
-    if factor > 1:
-        img = img.subsample(factor, factor)
-    return img
 
 
 def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str) -> None:

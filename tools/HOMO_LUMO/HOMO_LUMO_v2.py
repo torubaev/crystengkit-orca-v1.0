@@ -66,6 +66,9 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from shared.tk_helpers import bind_mousewheel_to_canvas, keep_entry_end_visible, load_header_icon
+from shared.pyvista_window import bring_pyvista_window_to_front
+from shared.molecule_style import add_mesh_safe, cylinder_between
 
 HOMO_LUMO_ICON_PATH = TOOLS_ROOT / "images" / "tr_homo_lumo_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -220,65 +223,6 @@ def xlsx_inline_cell(row: int, col: int, text: str, style: int = 0) -> str:
     return f'<c r="{ref}" t="inlineStr"{style_attr}><is><t>{xml_escape(str(text))}</t></is></c>'
 
 
-def keep_entry_end_visible(entry: tk.Entry, variable: Optional[tk.Variable] = None) -> tk.Entry:
-    def show_end(*_args) -> None:
-        try:
-            entry.icursor("end")
-            entry.xview_moveto(1.0)
-        except tk.TclError:
-            pass
-
-    entry.bind("<Configure>", lambda _event: entry.after_idle(show_end), add="+")
-    entry.bind("<FocusOut>", lambda _event: entry.after_idle(show_end), add="+")
-    if variable is not None:
-        variable.trace_add("write", lambda *_args: entry.after_idle(show_end))
-    entry.after_idle(show_end)
-    return entry
-
-
-def bind_mousewheel_to_canvas(canvas: tk.Canvas, *_hover_widgets: tk.Misc) -> None:
-    def _pointer_is_over_canvas() -> bool:
-        try:
-            x = canvas.winfo_pointerx()
-            y = canvas.winfo_pointery()
-            left = canvas.winfo_rootx()
-            top = canvas.winfo_rooty()
-            return left <= x < left + canvas.winfo_width() and top <= y < top + canvas.winfo_height()
-        except tk.TclError:
-            return False
-
-    def _can_scroll() -> bool:
-        try:
-            first, last = canvas.yview()
-            return first > 0.0 or last < 1.0
-        except tk.TclError:
-            return False
-
-    def _wheel_units(event) -> int:
-        if getattr(event, "num", None) == 4:
-            return -5
-        if getattr(event, "num", None) == 5:
-            return 5
-        delta = getattr(event, "delta", 0)
-        if delta == 0:
-            return 0
-        if abs(delta) >= 120:
-            return int(-delta / 120) * 5
-        return -5 if delta > 0 else 5
-
-    def _on_mousewheel(event):
-        if not _pointer_is_over_canvas() or not _can_scroll():
-            return None
-        units = _wheel_units(event)
-        if units:
-            canvas.yview_scroll(units, "units")
-        return "break"
-
-    canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-4>", _on_mousewheel, add="+")
-    canvas.bind_all("<Button-5>", _on_mousewheel, add="+")
-
-
 def is_png_path(path: str | Path) -> bool:
     return str(path).lower().endswith(".png")
 
@@ -290,38 +234,6 @@ def pyvista_screenshot(plotter: Any, path: Optional[str] = None, **kwargs: Any) 
         except TypeError:
             pass
     return plotter.screenshot(path, **kwargs) if path else plotter.screenshot(**kwargs)
-
-
-def bring_pyvista_window_to_front(plotter: Any, delay_s: float = 0.25) -> None:
-    def worker() -> None:
-        try:
-            if delay_s > 0:
-                time.sleep(delay_s)
-            render_window = getattr(plotter, "ren_win", None) or getattr(plotter, "render_window", None)
-            if render_window is None:
-                return
-            handle = None
-            for attr in ("GetGenericWindowId", "GetWindowId"):
-                getter = getattr(render_window, attr, None)
-                if callable(getter):
-                    handle = getter()
-                    if handle:
-                        break
-            if not handle or os.name != "nt":
-                return
-            hwnd = int(handle)
-            import ctypes
-
-            user32 = ctypes.windll.user32
-            flags = 0x0001 | 0x0002 | 0x0040
-            user32.ShowWindow(hwnd, 5)
-            user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
-            user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
-            user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-
-    threading.Thread(target=worker, daemon=True).start()
 
 
 def add_pyvista_keypress_observer(plotter: Any, key: str, callback: Any) -> None:
@@ -1076,37 +988,9 @@ def wireframe_material_parameters() -> Dict[str, object]:
     )
 
 
-def add_mesh_safe(plotter, mesh, **kwargs):
-    try:
-        return plotter.add_mesh(mesh, **kwargs)
-    except TypeError:
-        safe_kwargs = dict(kwargs)
-        safe_kwargs.pop("pbr", None)
-        safe_kwargs.pop("metallic", None)
-        safe_kwargs.pop("roughness", None)
-        return plotter.add_mesh(mesh, **safe_kwargs)
-
-
 def display_atom_radius(symbol: str, unit_scale: float = 1.0) -> float:
     radius_ang = float(np.clip(COVALENT_RADII.get(symbol, 0.77) * 0.42, 0.16, 0.55))
     return radius_ang * unit_scale
-
-
-def cylinder_between(pv_module, p1, p2, radius, resolution=48):
-    p1 = np.asarray(p1, dtype=float)
-    p2 = np.asarray(p2, dtype=float)
-    vector = p2 - p1
-    length = float(np.linalg.norm(vector))
-    if length <= 1.0e-8:
-        return None
-    return pv_module.Cylinder(
-        center=tuple((p1 + p2) / 2.0),
-        direction=tuple(vector / length),
-        radius=radius,
-        height=length,
-        resolution=resolution,
-        capping=True,
-    )
 
 
 def add_split_colored_bond(pv_module, plotter, p1, p2, color1, color2, radius, resolution=48, material=None):
@@ -1320,16 +1204,6 @@ def screen_fraction_height(widget: tk.Misc, fraction: float = 0.80, fallback: in
         return max(1, int(widget.winfo_screenheight() * fraction))
     except Exception:
         return fallback
-
-
-def load_header_icon(path: Path, max_size: int = 56) -> Optional[tk.PhotoImage]:
-    if not path.is_file():
-        return None
-    img = tk.PhotoImage(file=str(path))
-    factor = max(1, int(max(img.width() / max_size, img.height() / max_size) + 0.999))
-    if factor > 1:
-        img = img.subsample(factor, factor)
-    return img
 
 
 def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str) -> None:
