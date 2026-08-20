@@ -48,6 +48,7 @@ from shared.tk_helpers import bind_mousewheel_to_canvas, keep_entry_end_visible
 from shared.pyvista_window import bring_pyvista_window_to_front
 from shared.molecule_style import add_mesh_safe, cylinder_between, molecule_material_parameters
 from shared.multiwfn_locator import auto_detect_multiwfn_path
+from shared.orca_parallel import add_mpi_to_path, default_orca_nprocs
 from app_updater import (
     download_verified_installer,
     fetch_latest_installer,
@@ -1088,7 +1089,7 @@ def subprocess_env_with_executable_dir(executable_path: str) -> Dict[str, str]:
     path_parts = current_path.split(os.pathsep) if current_path else []
     if exe_dir and exe_dir not in path_parts:
         env["PATH"] = exe_dir + (os.pathsep + current_path if current_path else "")
-    return env
+    return add_mpi_to_path(env)
 
 
 def validate_orca_qm_executable(path: str, timeout: float = 5.0) -> Tuple[bool, str]:
@@ -2894,6 +2895,21 @@ class StructureParser:
             stripped = raw.strip()
             lower = stripped.lower()
             if not in_xyz_block:
+                xyzfile_match = re.match(
+                    r"^\*\s*xyzfile\s+\S+\s+\S+\s+(.+?)\s*$",
+                    stripped,
+                    flags=re.IGNORECASE,
+                )
+                if xyzfile_match:
+                    referenced = xyzfile_match.group(1).strip().strip('"').strip("'")
+                    xyz_path = Path(referenced)
+                    if not xyz_path.is_absolute():
+                        xyz_path = Path(path).resolve().parent / xyz_path
+                    if not xyz_path.is_file():
+                        raise ValueError(f"Referenced ORCA xyzfile was not found: {xyz_path}")
+                    structure = StructureParser.parse_xyz(str(xyz_path))
+                    structure.title = f"{os.path.basename(path)} (ORCA input; {xyz_path.name})"
+                    return structure
                 if lower.startswith("* xyz "):
                     in_xyz_block = True
                 continue
@@ -2911,7 +2927,7 @@ class StructureParser:
                 raise ValueError(f"Invalid ORCA xyz atom line: {raw}") from exc
 
         if not atoms:
-            raise ValueError('No embedded ORCA "* xyz charge multiplicity" coordinate block was found.')
+            raise ValueError('No ORCA "* xyz" or "* xyzfile" coordinate specification was found.')
         return Structure(atoms, title=f"{os.path.basename(path)} (ORCA input)")
 
     @staticmethod
@@ -4576,6 +4592,8 @@ class App(tk.Tk):
         self._show_output_mode("preview")
         if self._show_running_job_input_preview():
             return
+        if self._load_existing_orca_input_if_selected():
+            return
         self.preview()
 
     def _on_tddft_toggle(self):
@@ -4802,7 +4820,7 @@ class App(tk.Tk):
             "absorption_gbw": absorption_gbw,
             "absorption_state_count": absorption_state_count,
             "maxcore_mb": 2000,
-            "nprocs": 4,
+            "nprocs": default_orca_nprocs(),
             "basis_functions": basis_functions,
             "orca_path": self.orca_path_var.get().strip().strip('"'),
             "structure_source_path": self.structure_source_path,
@@ -4941,6 +4959,7 @@ class App(tk.Tk):
             ),
             excited_states=ExcitedStatesConfig(
                 use_tda=str(options["td_method"]).upper() == "TDA", nroots=int(options["nroots"]),
+                optimization_nroots=int(options["nroots"]),
                 target_root=int(options["target_root"]),
                 target_multiplicity=str(options["target_manifold"]).lower(), request_nto=True,
                 maxdim=int(options["maxdim"]), maxiter=int(options["maxiter"]),

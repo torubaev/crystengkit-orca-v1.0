@@ -1629,7 +1629,7 @@ CrystEngKit uses external chemistry programs that must be installed separately:
 - **[orca_2aim](https://www.faccts.de/orca/)**, from the ORCA package, for creating wavefunction files
 - **[Multiwfn](http://sobereva.com/multiwfn/)**, for ESP, NCI, and QTAIM analysis
 
-The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again.
+The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again. On Windows, setup offers the Microsoft MPI Runtime as a checked optional component for parallel ORCA calculations. If MPI is skipped or cannot be installed, CrystEngKit automatically defaults generated ORCA inputs to one process.
 
 ### Manual installation
 
@@ -2131,7 +2131,10 @@ A marker at the end lets the AI detect a truncated paste; successful completenes
    - the number of roots; and
    - the target state/root.
 
-   NTO preparation is enabled automatically.
+   The root count defaults to `5`. `MaxDim` starts as `4 × NRoots` and is
+   recalculated whenever the root count changes. `MaxDim` remains editable, so
+   an experienced user can override the suggested value before generating the input.
+   NTO preparation is enabled automatically for vertical calculations.
 5. Choose whether to validate S0 with a separate frequency calculation. Set `Processes = 1` for a serial ORCA installation, or use more processes only when MPI is configured.
 6. Click **Run complete workflow...**, then:
 
@@ -2537,9 +2540,12 @@ Builder stores that fragment once, regenerates the complete ORCA input, opens
 its existing input preview, and returns focus to the Builder. Change settings
 freely; the Builder changes only after **Show ORCA Block** is selected again.
 
-Every generated fragment enables ORCA natural transition orbitals for all
-calculated roots with `DoNTO true` and `NTOThresh 1e-4`. The matching `.gbw`
-and `.out` files can then be loaded in TD-DFT post-processing to generate and
+Vertical absorption and emission fragments enable ORCA natural transition
+orbitals for all calculated roots with `DoNTO true` and `NTOThresh 1e-4`.
+Excited-state optimization omits repeated NTO generation and uses a compact
+five-root window by default, expanded automatically when necessary to keep two
+roots above the selected target. The matching `.gbw` and `.out` files from a
+vertical calculation can be loaded in TD-DFT post-processing to generate and
 display the dominant NTO hole/electron cube pair for a selected state.
 
 TD-DFT calculation names follow
@@ -2571,37 +2577,37 @@ changed.
 
 ## Vertical excitation only
 
-For 10 singlet roots with TD-DFT, **Show ORCA block** generates:
+For the default 5 singlet roots with TD-DFT, **Show ORCA block** generates:
 
 ```text
 %tddft
-  NRoots 10
+  NRoots 5
   TDA false
-  MaxDim 10
+  MaxDim 20
   MaxIter 300
   DoNTO true
   NTOThresh 1e-4
 end
 ```
 
-## Vertical excitation plus excited-state optimization
+## Excited-state optimization
 
 The module contributes:
 
 ```text
 %tddft
-  NRoots 10
+  NRoots 5
   TDA false
-  MaxDim 10
+  MaxDim 20
   MaxIter 300
-  DoNTO true
-  NTOThresh 1e-4
   IRoot 1
   IRootMult singlet
 end
 ```
 
-The connected Builder adds `Opt` to its complete ORCA keyword line.
+The connected Builder adds `Opt` to its complete ORCA keyword line. Changing
+`NRoots` recalculates `MaxDim` as four times the root count. `MaxDim` remains
+editable, and the generated input respects a subsequent manual override.
 
 ## Vertical excitation, optimization, and excited-state frequencies
 
@@ -2609,9 +2615,10 @@ The TD-DFT fragment is the same targeted block above. The connected Builder
 adds `Opt Freq` to the complete ORCA keyword line, so frequencies are evaluated
 after the excited-state optimization in the same ORCA job.
 
-`DoNTO true` is included in every generated TD-DFT/TDA block. Because
+`DoNTO true` is included in vertical absorption and emission blocks. Because
 `NTOStates` is intentionally omitted, ORCA generates NTOs for all calculated
-states. `NTOThresh 1e-4` controls the printed NTO occupation threshold.
+states in those analysis-producing stages. `NTOThresh 1e-4` controls the
+printed NTO occupation threshold. Optimization blocks omit NTO generation.
 
 ## Absorption and UV-Vis analysis
 
@@ -2654,10 +2661,11 @@ outputs remain distinguishable.
 
 ## NTO preparation and analysis
 
-- Every Builder and standalone TD-DFT/TDA block includes `DoNTO true` and
+- Vertical absorption and emission blocks include `DoNTO true` and
   `NTOThresh 1e-4`; omitting `NTOStates` requests every calculated state.
-- Legacy saved `print_ntos: false` values are migrated to the required enabled
-  behavior.
+- Excited-state optimization omits repeated NTO generation and uses a compact
+  root window while retaining a two-root buffer above the target state.
+- Explicit saved `print_ntos: false` values are respected for vertical jobs.
 - The validated Multiwfn workflow generates the dominant selected-state NTO
   hole/electron cube pair from the matching `.gbw` and reuses valid cached
   cubes unless regeneration is requested.

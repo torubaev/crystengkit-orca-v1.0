@@ -358,7 +358,7 @@
 <li><strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">orca_2aim</a></strong>, from the ORCA package, for creating wavefunction files</li>
 <li><strong><a href="http://sobereva.com/multiwfn/" target="_blank" rel="noopener noreferrer">Multiwfn</a></strong>, for ESP, NCI, and QTAIM analysis</li>
 </ul>
-<p>The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again.</p>
+<p>The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again. On Windows, setup offers the Microsoft MPI Runtime as a checked optional component for parallel ORCA calculations. If MPI is skipped or cannot be installed, CrystEngKit automatically defaults generated ORCA inputs to one process.</p>
 <h3 id="manual-installation">Manual installation</h3>
 <p>Use manual installation only if the web installer is not suitable for your computer, or if you are installing on Linux or macOS.</p>
 <p>You need:</p>
@@ -759,7 +759,7 @@ restarts/</code></pre></div>
 <li>the number of roots; and</li>
 <li>the target state/root.</li>
 </ul>
-<p>NTO preparation is enabled automatically.</p>
+<p>The root count defaults to <code>5</code>. <code>MaxDim</code> starts as <code>4 × NRoots</code> and is recalculated whenever the root count changes. <code>MaxDim</code> remains editable, so an experienced user can override the suggested value before generating the input. NTO preparation is enabled automatically for vertical calculations.</p>
 <ol>
 <li>Choose whether to validate S0 with a separate frequency calculation. Set <code>Processes = 1</code> for a serial ORCA installation, or use more processes only when MPI is configured.</li>
 <li>Click <strong>Run complete workflow...</strong>, then:</li>

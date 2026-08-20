@@ -3,7 +3,9 @@
 The full offline Inno Setup package contains the
 repository files needed by the tools and does not contact GitHub during setup.
 ORCA, Multiwfn, Python, and optional Python packages retain their own separate
-installation and licensing requirements.
+installation and licensing requirements. Setup offers Microsoft MPI Runtime as
+a checked optional component for parallel ORCA calculations. If it is skipped
+or unavailable, CrystEngKit defaults ORCA inputs to one process.
 
 Build the offline installer from the repository root:
 

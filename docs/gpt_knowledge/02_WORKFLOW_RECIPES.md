@@ -677,37 +677,37 @@ These exercises define structural and procedural success criteria. They delibera
 
 ## Vertical excitation only
 
-For 10 singlet roots with TD-DFT, **Show ORCA block** generates:
+For the default 5 singlet roots with TD-DFT, **Show ORCA block** generates:
 
 ```text
 %tddft
-  NRoots 10
+  NRoots 5
   TDA false
-  MaxDim 10
+  MaxDim 20
   MaxIter 300
   DoNTO true
   NTOThresh 1e-4
 end
 ```
 
-## Vertical excitation plus excited-state optimization
+## Excited-state optimization
 
 The module contributes:
 
 ```text
 %tddft
-  NRoots 10
+  NRoots 5
   TDA false
-  MaxDim 10
+  MaxDim 20
   MaxIter 300
-  DoNTO true
-  NTOThresh 1e-4
   IRoot 1
   IRootMult singlet
 end
 ```
 
-The connected Builder adds `Opt` to its complete ORCA keyword line.
+The connected Builder adds `Opt` to its complete ORCA keyword line. Changing
+`NRoots` recalculates `MaxDim` as four times the root count. `MaxDim` remains
+editable, and the generated input respects a subsequent manual override.
 
 ## Vertical excitation, optimization, and excited-state frequencies
 
@@ -715,9 +715,10 @@ The TD-DFT fragment is the same targeted block above. The connected Builder
 adds `Opt Freq` to the complete ORCA keyword line, so frequencies are evaluated
 after the excited-state optimization in the same ORCA job.
 
-`DoNTO true` is included in every generated TD-DFT/TDA block. Because
+`DoNTO true` is included in vertical absorption and emission blocks. Because
 `NTOStates` is intentionally omitted, ORCA generates NTOs for all calculated
-states. `NTOThresh 1e-4` controls the printed NTO occupation threshold.
+states in those analysis-producing stages. `NTOThresh 1e-4` controls the
+printed NTO occupation threshold. Optimization blocks omit NTO generation.
 
 ## Absorption and UV-Vis analysis
 

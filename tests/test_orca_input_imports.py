@@ -110,6 +110,31 @@ class ImportHelperTests(unittest.TestCase):
     def test_generic_inp_is_not_gaussian(self):
         self.assertEqual(orca_input.structure_input_format("job.inp"), "ORCA input")
 
+    def test_orca_xyzfile_is_resolved_relative_to_input(self):
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            folder = Path(tmpdir)
+            (folder / "restart geometry.xyz").write_text(
+                "2\nrestart\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8"
+            )
+            inp = folder / "restart.inp"
+            inp.write_text(
+                '! B3LYP\n* xyzfile 0 1 "restart geometry.xyz"\n', encoding="utf-8"
+            )
+            structure = orca_input.StructureParser.parse_orca_input(str(inp))
+            self.assertEqual(len(structure.atoms), 2)
+            self.assertIn("restart geometry.xyz", structure.title)
+
+    def test_orca_xyzfile_reports_missing_reference(self):
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            inp = Path(tmpdir) / "restart.inp"
+            inp.write_text("! B3LYP\n* xyzfile 0 1 absent.xyz\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Referenced ORCA xyzfile was not found"):
+                orca_input.StructureParser.parse_orca_input(str(inp))
+
     def test_valid_and_invalid_xyz_output(self):
         xyz = "2\nwater fragment\nO 0 0 0\nH 0 0 1\n"
         structure = orca_input.validate_xyz_text(xyz)

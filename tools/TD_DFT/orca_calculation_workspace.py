@@ -12,12 +12,14 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
+from shared.orca_parallel import add_mpi_to_path
+
 
 def subprocess_environment(executable: str) -> dict[str, str]:
     env = os.environ.copy()
     folder = str(Path(executable).resolve().parent)
     env["PATH"] = folder + os.pathsep + env.get("PATH", "")
-    return env
+    return add_mpi_to_path(env)
 
 
 def orca_stage(text: str) -> str:

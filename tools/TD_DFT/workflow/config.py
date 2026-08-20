@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import json
 
+from shared.orca_parallel import default_orca_nprocs
+
 
 @dataclass
 class SystemConfig:
@@ -39,11 +41,11 @@ class MethodConfig:
 @dataclass
 class ExcitedStatesConfig:
     use_tda: bool = True
-    nroots: int = 10
+    nroots: int = 5
     optimization_nroots: int = 5
     target_root: int = 1
     target_multiplicity: str = "singlet"
-    maxdim: int = 10
+    maxdim: int = 20
     maxiter: int = 300
     request_nto: bool = True
     selection_rule: str = "user_selected"
@@ -67,7 +69,7 @@ class FrequencyConfig:
 
 @dataclass
 class ResourcesConfig:
-    nprocs: int = 4
+    nprocs: int = field(default_factory=default_orca_nprocs)
     maxcore_mb: int = 2000
 
 
@@ -251,11 +253,11 @@ method:
   excited_state_geometry_convergence: ""
 excited_states:
   use_tda: true
-  nroots: 10
+  nroots: 5
   optimization_nroots: 5
   target_root: 1
   target_multiplicity: singlet
-  maxdim: 10
+  maxdim: 20
   maxiter: 300
   request_nto: true
   selection_rule: user_selected

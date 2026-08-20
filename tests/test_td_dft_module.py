@@ -13,6 +13,7 @@ from TD_DFT.td_dft_module import (  # noqa: E402
     build_tddft_orca_fragment,
     classify_orca_tddft_failure_text,
     estimate_tddft_expansion_vectors,
+    recommended_tddft_maxdim,
     migrate_legacy_tddft_settings,
     tddft_memory_risk_warnings,
     validate_tddft_settings,
@@ -52,15 +53,15 @@ class TDDFTModuleTests(unittest.TestCase):
         block = build_tddft_block({"nroots": 12, "root": 1, "td_method": "TDA", "manifold": "Both"})
         self.assertIn("NRoots 12", block)
         self.assertIn("TDA true", block)
-        self.assertIn("MaxDim 10", block)
+        self.assertIn("MaxDim 48", block)
         self.assertIn("MaxIter 300", block)
         self.assertIn("Triplets true", block)
         self.assertNotIn("Singlets", block)
 
     def test_default_maxdim_is_safe_small_multiplier(self):
         block = build_tddft_block({})
-        self.assertIn("NRoots 10", block)
-        self.assertIn("MaxDim 10", block)
+        self.assertIn("NRoots 5", block)
+        self.assertIn("MaxDim 20", block)
         self.assertIn("DoNTO true", block)
         self.assertIn("NTOThresh 1e-4", block)
         self.assertNotIn("NTOStates", block)
@@ -71,18 +72,16 @@ class TDDFTModuleTests(unittest.TestCase):
         self.assertFalse(settings["print_ntos"])
         self.assertNotIn("DoNTO true", build_tddft_block(settings))
 
-    def test_maxdim_is_independent_of_nroots(self):
+    def test_maxdim_defaults_from_roots_but_allows_manual_override(self):
         settings = validate_tddft_settings({"nroots": 10, "maxdim": 5})
         self.assertEqual(settings["maxdim"], 5)
         settings = validate_tddft_settings({"nroots": 20, "root": 1, "maxdim": 3})
         self.assertEqual(settings["maxdim"], 3)
-        settings = validate_tddft_settings({"nroots": 20, "root": 1, "maxdim": 1})
-        self.assertEqual(settings["maxdim"], 1)
+        self.assertEqual(validate_tddft_settings({"nroots": 7})["maxdim"], 28)
+        self.assertEqual(recommended_tddft_maxdim(7), 28)
 
     def test_invalid_tddft_solver_values_are_rejected(self):
         for settings in (
-            {"maxdim": 0},
-            {"maxdim": -1},
             {"nroots": 0},
             {"nroots": 2, "root": 3},
             {"maxiter": 0},
@@ -94,7 +93,7 @@ class TDDFTModuleTests(unittest.TestCase):
     def test_expansion_estimate_and_warnings(self):
         self.assertEqual(estimate_tddft_expansion_vectors(10, 5), 50)
         self.assertEqual(estimate_tddft_expansion_vectors(10, 120), 1200)
-        self.assertFalse(tddft_memory_risk_warnings({"nroots": 10, "maxdim": 5}))
+        self.assertFalse(tddft_memory_risk_warnings({"nroots": 5, "maxdim": 20}))
         warning = "\n".join(tddft_memory_risk_warnings({"nroots": 10, "maxdim": 120}))
         self.assertIn("approximately 1200 vectors", warning)
         self.assertIn("MaxCore", warning)
@@ -103,7 +102,7 @@ class TDDFTModuleTests(unittest.TestCase):
 
     def test_legacy_maxdim_default_migrates(self):
         migrated, warnings = migrate_legacy_tddft_settings({"maxdim": 120, "nroots": 10})
-        self.assertEqual(migrated["maxdim"], 10)
+        self.assertEqual(migrated["maxdim"], 40)
         self.assertTrue(warnings)
         explicit, warnings = migrate_legacy_tddft_settings({"maxdim": 96, "nroots": 10})
         self.assertEqual(explicit["maxdim"], 96)
@@ -117,7 +116,7 @@ class TDDFTModuleTests(unittest.TestCase):
         )
         self.assertEqual(result["category"], "tddft_memory")
         self.assertEqual(result["module"], "CIS/TD-DFT")
-        self.assertIn("Reduce MaxDim", result["recommendations"][0])
+        self.assertIn("Reduce NRoots", result["recommendations"][0])
 
     def test_singlet_only_block_omits_rejected_singlets_keyword(self):
         block = build_tddft_block({"nroots": 12, "root": 1, "td_method": "TDDFT", "manifold": "Singlets"})
@@ -141,7 +140,7 @@ class TDDFTModuleTests(unittest.TestCase):
         self.assertIn("%tddft", block)
         self.assertIn("IRoot 2", block)
         self.assertIn("IRootMult triplet", block)
-        self.assertIn("NRoots 5", block)
+        self.assertIn("NRoots 8", block)
         self.assertNotIn("DoNTO", block)
         self.assertNotIn("FollowIRoot", block)
 

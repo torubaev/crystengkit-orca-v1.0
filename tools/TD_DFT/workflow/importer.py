@@ -79,10 +79,10 @@ def _parse_source_config(inp: Path, out: Path, orca_executable: str, target_root
         method=MethodConfig(functional, basis, auxiliary, dispersion, "rijcosx" in {t.lower() for t in tokens}, grid, scf, extra_keywords=extras),
         excited_states=ExcitedStatesConfig(
             use_tda=not tda_match or tda_match.group(1).lower() == "true",
-            nroots=int(nroots_match.group(1)) if nroots_match else max(10, target_root),
+            nroots=int(nroots_match.group(1)) if nroots_match else max(5, target_root),
             target_root=int(iroot_match.group(1)) if iroot_match else target_root,
             target_multiplicity=iroot_mult_match.group(1).lower() if iroot_mult_match else "singlet",
-            maxdim=int(maxdim_match.group(1)) if maxdim_match else 10,
+            maxdim=int(maxdim_match.group(1)) if maxdim_match else 4 * max(5, target_root),
             maxiter=int(maxiter_match.group(1)) if maxiter_match else 300,
         ),
         solvent=SolventConfig(bool(solvent_name), "SMD" if smd else "CPCM", solvent_name, smd),

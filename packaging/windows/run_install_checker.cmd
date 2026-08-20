@@ -4,6 +4,7 @@ for %%I in ("%~dp0.") do set "PROJECT_ROOT=%%~fI"
 cd /d "%PROJECT_ROOT%"
 
 set "INSTALL_PYTHON_IF_MISSING=0"
+set "INSTALL_MSMPI_IF_MISSING=0"
 set "CHECKER_ARGS= "--project-root=%PROJECT_ROOT%""
 set "PYTHON_INSTALLED_EXE="
 
@@ -11,6 +12,8 @@ set "PYTHON_INSTALLED_EXE="
 if "%~1"=="" goto after_parse
 if /i "%~1"=="--install-python-if-missing" (
     set "INSTALL_PYTHON_IF_MISSING=1"
+) else if /i "%~1"=="--install-msmpi-if-missing" (
+    set "INSTALL_MSMPI_IF_MISSING=1"
 ) else (
     set "CHECKER_ARGS=%CHECKER_ARGS% %~1"
 )
@@ -18,6 +21,8 @@ shift
 goto parse_args
 
 :after_parse
+
+if "%INSTALL_MSMPI_IF_MISSING%"=="1" call :install_msmpi
 
 rem Prefer the managed environment already installed beside CrystEngKit.
 rem This avoids treating every installer upgrade as a new environment setup.
@@ -94,4 +99,25 @@ if exist "%LocalAppData%\Programs\Python\Python312\python.exe" (
 
 echo.
 echo Python installation finished. Continuing with the CrystEngKit checker...
+exit /b 0
+
+:install_msmpi
+where mpiexec.exe >nul 2>nul
+if not errorlevel 1 exit /b 0
+if exist "%ProgramFiles%\Microsoft MPI\Bin\mpiexec.exe" exit /b 0
+
+echo Microsoft MPI was not found. Installing the Runtime for parallel ORCA calculations...
+where winget.exe >nul 2>nul
+if errorlevel 1 (
+    echo winget was not found. ORCA inputs will default to one process.
+    echo Install Microsoft MPI Runtime manually to enable parallel calculations.
+    exit /b 0
+)
+
+winget.exe install --id Microsoft.msmpi -e --source winget --accept-package-agreements --accept-source-agreements
+if errorlevel 1 (
+    echo Microsoft MPI installation failed. ORCA inputs will default to one process.
+    exit /b 0
+)
+echo Microsoft MPI Runtime installed. Restart CrystEngKit before running parallel ORCA jobs.
 exit /b 0

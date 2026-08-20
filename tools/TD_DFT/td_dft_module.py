@@ -29,6 +29,7 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 import app_identity as _app_identity
 from shared.multiwfn_locator import auto_detect_multiwfn_path
+from shared.orca_parallel import default_orca_nprocs
 from shared.tk_helpers import load_header_icon
 try:
     from .td_dft_naming import identified_output_stem
@@ -85,10 +86,10 @@ DEFAULT_TDDFT_SETTINGS = {
     "excited_state_optimization": False,
     "excited_state_frequencies": False,
     "td_method": "TDDFT",
-    "nroots": 10,
+    "nroots": 5,
     "optimization_nroots": 5,
     "root": 1,
-    "maxdim": 10,
+    "maxdim": 20,
     "maxiter": 300,
     "manifold": "Singlets",
     "target_manifold": "Singlet",
@@ -104,14 +105,19 @@ DEFAULT_TDDFT_SETTINGS = {
 }
 
 LEGACY_ERRONEOUS_MAXDIM_DEFAULT = 120
-SAFE_DEFAULT_MAXDIM = 10
-MAXDIM_STRONG_WARNING_THRESHOLD = 20
+SAFE_DEFAULT_MAXDIM = 20
+MAXDIM_STRONG_WARNING_THRESHOLD = 80
 EXPANSION_WARNING_THRESHOLD = 300
 
 
 def estimate_tddft_expansion_vectors(nroots: int, maxdim: int) -> int:
     """Return ORCA's practical iterative expansion-space indicator."""
     return int(nroots) * int(maxdim)
+
+
+def recommended_tddft_maxdim(nroots: int) -> int:
+    """Return the automatically scaled Davidson dimension for a root count."""
+    return 4 * int(nroots)
 
 
 def migrate_legacy_tddft_settings(settings: Dict) -> Tuple[Dict, List[str]]:
@@ -123,10 +129,10 @@ def migrate_legacy_tddft_settings(settings: Dict) -> Tuple[Dict, List[str]]:
     except Exception:
         return data, warnings
     if maxdim == LEGACY_ERRONEOUS_MAXDIM_DEFAULT:
-        data["maxdim"] = SAFE_DEFAULT_MAXDIM
+        data["maxdim"] = recommended_tddft_maxdim(int(data.get("nroots", 5)))
         warnings.append(
-            "The legacy TD-DFT MaxDim default of 120 was corrected to 10 "
-            "to reduce excessive TD-DFT expansion-space memory use."
+            "The legacy TD-DFT MaxDim default of 120 was replaced by the automatic "
+            "four-times-NRoots setting."
         )
     return data, warnings
 
@@ -146,7 +152,7 @@ def tddft_memory_risk_warnings(settings: Dict, context: Optional[Dict] = None) -
             f"Estimated maximum expansion space: approximately {expansion} vectors.\n\n"
             "Large MaxDim values can require excessive memory and may cause ORCA to fail with:\n\n"
             "Not a single batch is possible with the present MaxCore.\n\n"
-            "A typical MaxDim value is approximately 10."
+            "MaxDim is normally set automatically to four times NRoots."
         )
     maxcore = context.get("maxcore_mb")
     basis_functions = context.get("basis_functions")
@@ -164,7 +170,7 @@ def tddft_memory_risk_warnings(settings: Dict, context: Optional[Dict] = None) -
             f"Global MaxCore: {maxcore_value} MB per process\n"
             f"Basis functions: {basis_count if basis_count is not None else 'not known'}\n\n"
             "This setup may be memory-limited for TD-DFT. Consider increasing MaxCore "
-            "according to available physical RAM and reducing MaxDim to approximately 10."
+            "according to available physical RAM and reducing the requested root count."
         )
     return warnings
 
@@ -181,7 +187,7 @@ def classify_orca_tddft_failure_text(text: str) -> Dict:
                 "within the available MaxCore memory."
             ),
             "recommendations": [
-                "Reduce MaxDim to approximately 10.",
+                "Reduce NRoots so the automatic MaxDim and expansion space become smaller.",
                 "Increase MaxCore according to available physical RAM.",
                 "Check NRoots.",
                 "Check the number of ORCA processes.",
@@ -285,7 +291,10 @@ def validate_tddft_settings(settings: Dict) -> Dict:
     data["nroots"] = int(data["nroots"])
     data["optimization_nroots"] = int(data["optimization_nroots"])
     data["root"] = int(data["root"])
-    data["maxdim"] = int(data["maxdim"])
+    if "maxdim" not in (settings or {}) or (settings or {}).get("maxdim") in (None, ""):
+        data["maxdim"] = recommended_tddft_maxdim(data["nroots"])
+    else:
+        data["maxdim"] = int(data["maxdim"])
     data["maxiter"] = int(data["maxiter"])
     data["broadening_ev"] = float(data["broadening_ev"])
     data["wavelength_min_nm"] = float(data["wavelength_min_nm"])
@@ -368,11 +377,12 @@ def build_tddft_block(settings: Dict) -> str:
     is_optimization = bool(data["excited_state_optimization"] or data["excited_state_frequencies"])
     nroots = data["nroots"]
     if is_optimization:
-        nroots = max(data["optimization_nroots"], data["root"] + 2)
+        nroots = max(data["nroots"], data["root"] + 2)
+    maxdim = data["maxdim"]
     lines = ["%tddft", f"  NRoots {nroots}"]
     lines.extend([
         f"  TDA {'true' if data['td_method'] == 'TDA' else 'false'}",
-        f"  MaxDim {data['maxdim']}",
+        f"  MaxDim {maxdim}",
         f"  MaxIter {data['maxiter']}",
     ])
     if data["print_ntos"] and not is_optimization:
@@ -690,11 +700,14 @@ class TDDFTPanel(ttk.Frame):
         self.workflow_summary_var = tk.StringVar()
         self.strict_s0_frequency_var = tk.BooleanVar(value=True)
         self.strict_imaginary_threshold_var = tk.StringVar(value="-30")
-        self.strict_nprocs_var = tk.StringVar(value=str((builder_context or {}).get("nprocs") or 4))
+        self.strict_nprocs_var = tk.StringVar(
+            value=str((builder_context or {}).get("nprocs") or default_orca_nprocs())
+        )
         self.strict_maxcore_var = tk.StringVar(value=str((builder_context or {}).get("maxcore_mb") or 2000))
         self.strict_status_var = tk.StringVar(value="Uses the current Builder geometry/method and the TD-DFT settings above.")
         self.workflow_var.trace_add("write", lambda *_args: self._apply_workflow_selection())
-        for key in ("nroots", "root", "td_method", "manifold", "maxdim"):
+        self.vars["nroots"].trace_add("write", lambda *_args: self._on_nroots_changed())
+        for key in ("root", "td_method", "manifold", "maxdim"):
             self.vars[key].trace_add("write", lambda *_args: self._sync_calculation_dependencies())
         self._build()
         self._apply_workflow_selection()
@@ -1153,6 +1166,15 @@ class TDDFTPanel(ttk.Frame):
                 variable.set(value)
         self._sync_calculation_dependencies()
 
+    def _on_nroots_changed(self):
+        try:
+            automatic_maxdim = str(recommended_tddft_maxdim(int(self.vars["nroots"].get())))
+            if self.vars["maxdim"].get() != automatic_maxdim:
+                self.vars["maxdim"].set(automatic_maxdim)
+        except (TypeError, ValueError):
+            pass
+        self._sync_calculation_dependencies()
+
     def _sync_calculation_dependencies(self):
         manifold = self.vars["manifold"].get()
         if manifold == "Singlets" and self.vars["target_manifold"].get() != "Singlet":
@@ -1168,7 +1190,7 @@ class TDDFTPanel(ttk.Frame):
             prefix = "S" if self.vars["target_manifold"].get() == "Singlet" else "T"
             try:
                 opt_roots = max(
-                    int(DEFAULT_TDDFT_SETTINGS["optimization_nroots"]),
+                    int(self.vars["nroots"].get()),
                     int(self.vars["root"].get()) + 2,
                 )
                 steps.append(f"Opt {prefix}{self.vars['root'].get()} ({opt_roots} roots, no NTOs)")

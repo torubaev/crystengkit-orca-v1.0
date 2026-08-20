@@ -27,6 +27,20 @@ class TDDFTCalculationWorkspaceTests(unittest.TestCase):
         self.assertIn("'input_provider': self.refresh_full_orca_input", rendered)
         self.assertIn("'active_job_provider': self.get_active_orca_job_status", rendered)
 
+    def test_existing_orca_input_preview_is_loaded_without_regeneration(self):
+        source = (ROOT / "tools" / "Orca_input" / "orca_input.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        method = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "activate_input_preview"
+        )
+        rendered = ast.unparse(method)
+        self.assertIn("self._load_existing_orca_input_if_selected()", rendered)
+        self.assertLess(
+            rendered.index("self._load_existing_orca_input_if_selected()"),
+            rendered.index("self.preview()"),
+        )
+
     def test_tddft_has_separate_setup_calculation_and_post_modes(self):
         source = (ROOT / "tools" / "TD_DFT" / "td_dft_module.py").read_text(encoding="utf-8")
         tree = ast.parse(source)

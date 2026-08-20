@@ -115,7 +115,7 @@ CrystEngKit uses external chemistry programs that must be installed separately:
 - **[orca_2aim](https://www.faccts.de/orca/)**, from the ORCA package, for creating wavefunction files
 - **[Multiwfn](http://sobereva.com/multiwfn/)**, for ESP, NCI, and QTAIM analysis
 
-The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again.
+The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again. On Windows, setup offers the Microsoft MPI Runtime as a checked optional component for parallel ORCA calculations. If MPI is skipped or cannot be installed, CrystEngKit automatically defaults generated ORCA inputs to one process.
 
 ### Manual installation
 
@@ -617,7 +617,10 @@ A marker at the end lets the AI detect a truncated paste; successful completenes
    - the number of roots; and
    - the target state/root.
 
-   NTO preparation is enabled automatically.
+   The root count defaults to `5`. `MaxDim` starts as `4 × NRoots` and is
+   recalculated whenever the root count changes. `MaxDim` remains editable, so
+   an experienced user can override the suggested value before generating the input.
+   NTO preparation is enabled automatically for vertical calculations.
 5. Choose whether to validate S0 with a separate frequency calculation. Set `Processes = 1` for a serial ORCA installation, or use more processes only when MPI is configured.
 6. Click **Run complete workflow...**, then:
 

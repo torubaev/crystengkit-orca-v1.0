@@ -2,13 +2,13 @@
 
 ## Vertical excitation only
 
-For 10 singlet roots with TD-DFT, **Show ORCA block** generates:
+For the default 5 singlet roots with TD-DFT, **Show ORCA block** generates:
 
 ```text
 %tddft
-  NRoots 10
+  NRoots 5
   TDA false
-  MaxDim 10
+  MaxDim 20
   MaxIter 300
   DoNTO true
   NTOThresh 1e-4
@@ -23,16 +23,16 @@ The module contributes:
 %tddft
   NRoots 5
   TDA false
-  MaxDim 10
+  MaxDim 20
   MaxIter 300
   IRoot 1
   IRootMult singlet
 end
 ```
 
-The connected Builder adds `Opt` to its complete ORCA keyword line. The compact
-optimization root window expands automatically to keep at least two roots above
-the selected target.
+The connected Builder adds `Opt` to its complete ORCA keyword line. Changing
+`NRoots` recalculates `MaxDim` as four times the root count. `MaxDim` remains
+editable, and the generated input respects a subsequent manual override.
 
 ## Vertical excitation, optimization, and excited-state frequencies
 
