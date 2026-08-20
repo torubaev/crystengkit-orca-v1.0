@@ -82,7 +82,7 @@ class TDDFTEmissionSequenceTests(unittest.TestCase):
         self.assertIn("! CAM-B3LYP def2-TZVP TightSCF Opt", text)
         self.assertNotIn(" SP", text)
         self.assertIn('%cpcm\n  smd true\n  SMDsolvent "CHLOROFORM"\nend', text)
-        self.assertIn("NRoots 10", text)
+        self.assertIn("NRoots 5", text)
         self.assertIn("TDA false", text)
         self.assertIn("IRoot 1", text)
         self.assertIn("IRootMult singlet", text)

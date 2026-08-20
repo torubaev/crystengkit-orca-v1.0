@@ -44,12 +44,19 @@ explicitly requests external submission.
 
 ## TD-DFT workspace
 
-Builder and use **Run complete workflow...**. Functional, basis, dispersion,
+Builder and use **Start automated sequence...**. Functional, basis, dispersion,
 Normally no command line is needed. Select **TD-DFT** in the Builder's top
-navigation and use **Run complete workflow...**. Functional, basis, dispersion,
+navigation and use **Start automated sequence...**. Functional, basis, dispersion,
 grid, solvent, charge, multiplicity, constraints, geometry, and ORCA path come
 from the Builder. Roots, target state, TDA/TD-DFT, MaxDim, and MaxIter come from
 the TD-DFT page.
+
+The requested root count is retained for vertical absorption and emission.
+Excited-state optimization uses five roots by default, or the selected target
+root plus two when that is larger, and omits NTO generation during optimization
+cycles. S0 optimization retains `TightOpt`; excited-state optimization uses
+ordinary `Opt` by default. Local workflows default to four ORCA processes with
+2000 MB MaxCore per process (approximately 8 GB requested in total).
 
 Every complete workflow starts from the geometry currently loaded in Builder
 and creates all stages inside the selected project directory. External `.out`

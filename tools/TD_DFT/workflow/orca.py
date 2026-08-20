@@ -47,7 +47,14 @@ def _simple_keywords(config, job: str) -> List[str]:
     if config.solvent.enabled and not config.solvent.smd and config.solvent.model.upper() == "CPCM":
         words.append(f"CPCM({config.solvent.name})")
     if job in {"s0_opt", "es_opt"}:
-        words.extend(["Opt", method.geometry_convergence])
+        convergence = (
+            method.geometry_convergence
+            if job == "s0_opt"
+            else method.excited_state_geometry_convergence
+        )
+        words.append("Opt")
+        if convergence:
+            words.append(convergence)
     elif job == "s0_freq":
         words.append("Freq")
     else:
@@ -70,11 +77,19 @@ def _blocks(config, job: str, moinp: Optional[str], atoms: Optional[Sequence[Tup
             lines.extend(["", "%cpcm", "  smd true", f'  SMDsolvent "{config.solvent.name}"', "end"])
     if job in {"absorption", "es_opt", "emission"}:
         es = config.excited_states
+        nroots = es.nroots
+        if job == "es_opt":
+            # Keep a small state window for root separation without repeatedly
+            # solving every state requested for the vertical spectra.
+            nroots = max(es.optimization_nroots, es.target_root + 2)
         lines.extend([
-            "", "%tddft", f"  NRoots {es.nroots}", f"  TDA {'true' if es.use_tda else 'false'}",
+            "", "%tddft", f"  NRoots {nroots}", f"  TDA {'true' if es.use_tda else 'false'}",
             f"  MaxDim {es.maxdim}", f"  MaxIter {es.maxiter}",
         ])
-        if es.request_nto:
+        # NTOs are useful analysis products for vertical absorption/emission.
+        # Recomputing every NTO at every optimization cycle adds no useful
+        # workflow product and can be expensive for many requested roots.
+        if es.request_nto and job != "es_opt":
             lines.extend(["  DoNTO true", "  NTOThresh 1e-4"])
         if job == "es_opt":
             lines.extend([f"  IRoot {es.target_root}", f"  IRootMult {es.target_multiplicity.lower()}"])

@@ -62,12 +62,14 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
         input_provider: Callable[[], str],
         orca_path_provider: Callable[[], str],
         initial_path_provider: Optional[Callable[[], str]] = None,
+        active_job_provider: Optional[Callable[[], dict]] = None,
         completed_callback: Optional[Callable[[str], None]] = None,
     ):
         super().__init__(parent, text="Input preview / ORCA job monitor", padding=8)
         self.input_provider = input_provider
         self.orca_path_provider = orca_path_provider
         self.initial_path_provider = initial_path_provider
+        self.active_job_provider = active_job_provider
         self.completed_callback = completed_callback
         self.input_path = ""
         self.output_path = ""
@@ -77,6 +79,7 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
         self.mode = "input"
         self.input_buffer = ""
         self.monitor_buffer = ""
+        self.external_monitor = False
         self.status_var = tk.StringVar(value="Status: Idle")
         self.elapsed_var = tk.StringVar(value="Elapsed: 00:00:00")
         self._build()
@@ -87,13 +90,13 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
         toolbar = ttk.Frame(self)
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         toolbar.columnconfigure(6, weight=1)
-        ttk.Button(toolbar, text="Input", command=lambda: self.show_mode("input")).grid(row=0, column=0)
-        ttk.Button(toolbar, text="Monitor", command=lambda: self.show_mode("monitor")).grid(row=0, column=1, padx=(4, 0))
+        ttk.Button(toolbar, text="Input", command=self.show_input).grid(row=0, column=0)
+        ttk.Button(toolbar, text="Monitor", command=self.show_monitor).grid(row=0, column=1, padx=(4, 0))
         ttk.Button(toolbar, text="Prepare / refresh", command=self.refresh_input).grid(row=0, column=2, padx=(10, 0))
         ttk.Button(toolbar, text="Open input...", command=self.open_input).grid(row=0, column=3, padx=(4, 0))
         ttk.Button(toolbar, text="Save input...", command=self.save_input).grid(row=0, column=4, padx=(4, 0))
         ttk.Button(toolbar, text="View summary", command=self.show_summary).grid(row=0, column=5, padx=(4, 0))
-        self.run_button = ttk.Button(toolbar, text="Run ORCA", command=self.run_orca, style="Primary.TButton")
+        self.run_button = ttk.Button(toolbar, text="Run this input", command=self.run_orca, style="Primary.TButton")
         self.run_button.grid(row=0, column=7, padx=(10, 0))
         self.stop_button = ttk.Button(toolbar, text="Stop", command=self.stop_orca, state="disabled")
         self.stop_button.grid(row=0, column=8, padx=(4, 0))
@@ -132,6 +135,55 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
         self.text.configure(state="normal" if mode == "input" else "disabled")
         self.text.see("1.0" if mode == "input" else "end")
 
+    def show_input(self) -> None:
+        """Show the editor and fetch prepared input when it has no content yet."""
+        if not self.input_buffer.strip():
+            self.refresh_input()
+        else:
+            self.show_mode("input")
+
+    def show_monitor(self) -> None:
+        """Show local output or attach to the current Builder-launched job."""
+        if self.process and self.process.poll() is None:
+            self.show_mode("monitor")
+            return
+        job = self.active_job_provider() if callable(self.active_job_provider) else {}
+        output_path = str((job or {}).get("output_path", "") or "")
+        if output_path:
+            changed_source = os.path.normcase(output_path) != os.path.normcase(self.output_path or "")
+            if self.external_monitor and not changed_source:
+                self.show_mode("monitor")
+                return
+            self.output_path = output_path
+            self.input_path = str((job or {}).get("input_path", "") or self.input_path)
+            fallback_started = Path(output_path).stat().st_mtime if Path(output_path).is_file() else time.time()
+            self.started_at = float((job or {}).get("started_at", 0.0) or fallback_started)
+            if changed_source or not self.external_monitor:
+                self.monitor_buffer = ""
+                self.monitor_offset = 0
+            self.external_monitor = True
+            self.show_mode("monitor")
+            self.status_var.set(f"Status: {(job or {}).get('stage') or 'Attached to Builder output'}")
+            self._poll()
+            return
+        self.show_mode("monitor")
+        self.status_var.set("Status: No Builder or TD-DFT output is available")
+
+    def set_input(self, text: str, path: str = "", *, status: str = "Input synchronized") -> bool:
+        """Adopt an existing input without regenerating or overwriting local edits."""
+        value = str(text or "")
+        if not value.strip():
+            return False
+        self.input_buffer = value
+        if path:
+            self.input_path = str(path)
+        if self.mode == "input":
+            self.text.configure(state="normal")
+            self.text.delete("1.0", "end")
+            self.text.insert("1.0", value)
+        self.status_var.set(f"Status: {status}")
+        return True
+
     def refresh_input(self) -> bool:
         try:
             self.input_buffer = self.input_provider()
@@ -158,6 +210,8 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
     def save_input(self) -> str:
         if self.mode == "input":
             self._capture()
+        if not self.input_buffer.strip() and not self.refresh_input():
+            return ""
         suggested = self.input_path or (self.initial_path_provider() if self.initial_path_provider else "")
         initial = Path(suggested) if suggested else Path("tddft.inp")
         path = filedialog.asksaveasfilename(parent=self, defaultextension=".inp", initialdir=str(initial.parent), initialfile=initial.name, filetypes=[("ORCA input", "*.inp")])
@@ -212,6 +266,7 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
                 self.input_path = path
                 output_path = safe_input.with_suffix(".out")
             self.output_path = str(output_path)
+            self.external_monitor = False
             self.monitor_buffer = ""
             self.monitor_offset = 0
             self.started_at = time.time()
@@ -227,7 +282,7 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
             self.status_var.set("Status: Starting ORCA")
             self.after(250, self._poll)
         except Exception as exc:
-            messagebox.showerror("Run ORCA", str(exc), parent=self)
+            messagebox.showerror("Run this ORCA input", str(exc), parent=self)
 
     def _poll(self) -> None:
         if self.output_path and Path(self.output_path).is_file():
@@ -244,6 +299,18 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
         self.elapsed_var.set(f"Elapsed: {elapsed // 3600:02d}:{elapsed % 3600 // 60:02d}:{elapsed % 60:02d}")
         if self.process and self.process.poll() is None:
             self.after(750, self._poll)
+            return
+        if self.external_monitor:
+            job = self.active_job_provider() if callable(self.active_job_provider) else {}
+            if bool((job or {}).get("running")):
+                self.status_var.set(f"Status: {(job or {}).get('stage') or 'Running in Input Builder'}")
+                self.after(750, self._poll)
+                return
+            self.external_monitor = False
+            normal = "ORCA TERMINATED NORMALLY" in self.monitor_buffer.upper()
+            self.status_var.set("Status: Finished normally" if normal else f"Status: {(job or {}).get('stage') or 'Builder job stopped'}")
+            if self.completed_callback and self.output_path and Path(self.output_path).is_file():
+                self.completed_callback(self.output_path)
             return
         code = self.process.poll() if self.process else -1
         self.process = None

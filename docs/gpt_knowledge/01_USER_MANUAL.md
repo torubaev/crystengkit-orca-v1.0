@@ -1097,21 +1097,10 @@ folder, summary, AI-progress, and clear controls. Named queues are described in
 The Builder records each active ORCA process in the user's CrystEngKit
 configuration folder. If the Builder is closed while ORCA remains active, the
 next Builder session offers to reconnect after verifying that the saved PID
-still belongs to the same ORCA executable. **Reconnect** performs this
+still belongs to the same ORCA executable. **Reconnect job** performs this
 check manually and resumes output monitoring without relaunching ORCA. A
 reconnected queue pauses after the current calculation; inspect it before
 starting the remaining jobs.
-
-Before rerunning a successfully completed job, the Builder displays an
-attention warning because rerunning under the same basename can overwrite the
-completed `.out`, `.gbw`, `.xyz`, `.opt`, and related files. The recommended
-choice opens a Save As dialog prefilled with the next unused name
-(`filename_01.inp`, `filename_02.inp`, and so on). The user may accept or edit
-the filename; ORCA starts only after the copied input is saved. The user can
-instead request an overwrite, which opens a second **ATTENTION — Are you
-sure?** confirmation. On that second screen, **No** opens the safe Save As
-workflow and **Cancel** stops the run. Cancelling a queued rerun also pauses
-the queue.
 
 ## During execution
 
@@ -1547,18 +1536,53 @@ screenshot dialogs suggest descriptive names but remain editable.
 
 ## Overview
 
-CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers prepare ORCA/Gaussian input files, run ORCA calculations, monitor results, and turn finished calculations into figures and summary text.
+CrystEngKit is a practical GUI suite for basic quantum-chemical computations and visualization in supramolecular chemistry and crystal engineering. It helps experimental researchers:
 
-Typical input formats are `.xyz`, existing ORCA `.inp` files, `.cif` files from single-crystal X-ray diffraction, publications or Cambridge Structural Database (CSD)[^csd], and 3D `.mol`, `.sdf`, or `.sd` files. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
+- prepare ORCA/Gaussian input files;
+- run ORCA calculations;
+- monitor results; and
+- turn finished calculations into figures and summary text.
 
-The suite is built around widely used, freely available academic/freeware programs. ORCA[^orca-site] is used for quantum-chemical calculations, and Multiwfn[^multiwfn-site] is used for wavefunction analysis, ESP/NCI cube generation, and QTAIM critical-point analysis. CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into publication-ready images, tables, and text.
+Typical input formats are:
+
+- `.xyz` files;
+- existing ORCA `.inp` files;
+- `.cif` files from single-crystal X-ray diffraction, publications, or the Cambridge Structural Database (CSD)[^csd];
+- 3D `.mol`, `.sdf`, or `.sd` files; and
+- ChemDraw `.cdxml`, `.cdxm`, or binary `.cdx` files.
+
+CDXML/CDXM files with complete stored `xyz` coordinates are imported natively; 2D-only ChemDraw drawings and binary CDX use Open Babel for conversion and optional 3D generation. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
+
+The suite is built around widely used, freely available academic/freeware programs. ORCA[^orca-site] is used for quantum-chemical calculations. Multiwfn[^multiwfn-site] is used for:
+
+- wavefunction analysis;
+- ESP/NCI cube generation; and
+- QTAIM critical-point analysis.
+
+CrystEngKit does not replace these programs; it provides a practical shell that helps experimental chemists make the first steps into quantum-chemical calculations and convert results into:
+
+- publication-ready images;
+- tables; and
+- text.
 ![CrystEngKit-ORCA](images/wiki/crystengkit_v1.0_1.png)
-CrystEngKit is intended to run on Windows, Linux, and macOS with Python 3.9 or newer. The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as ESP, NCI, and QTAIM viewers. ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.
+CrystEngKit is intended to run with Python 3.9 or newer on:
+
+- Windows;
+- Linux; and
+- macOS.
+
+The Orca Input Builder checks for installed Python interpreters on startup and uses the newest suitable Python it finds for companion tools such as:
+
+- ESP;
+- NCI; and
+- QTAIM viewers.
+
+ORCA, Multiwfn, and optional external tools must still be installed in versions suitable for your operating system.
 ![Orca Input builder](images/wiki/orca-input_1.png)
 
 The main GUI is the **ORCA Input Builder**[^orca]. It can:
 
-- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, 3D MOL/SDF files, Gaussian input files, and external ORCA/Gaussian `.out` / `.log` files
+- read molecular structures from `.cif`, `.xyz`, ORCA `.inp`, 3D MOL/SDF files, ChemDraw CDXML/CDXM/CDX files, Gaussian input files, and external ORCA/Gaussian `.out` / `.log` files
 - prepare ORCA and Gaussian[^gaussian] input files
 - run ORCA and show live output
 - organize saved ORCA inputs into named, persistent job queues and run them sequentially
@@ -1577,7 +1601,25 @@ For most Windows users, use the web `.exe` installer from the latest GitHub rele
 
 <https://github.com/torubaev/crystengkit-orca-v1.0/releases>
 
-Download the newest `CrystEngKit-ORCA-Setup-*_web.exe`, run it, and follow the setup window. The installer prepares CrystEngKit, checks for Python and required Python packages, and looks for ORCA and Multiwfn on your computer.
+Download the newest `CrystEngKit-ORCA-Setup-*_web.exe`, run it, and follow the setup window. The installer:
+
+- prepares CrystEngKit;
+- checks for Python and the required Python packages; and
+- looks for ORCA and Multiwfn on your computer.
+
+The same release package handles both installation and updating. The small web
+EXE downloads and SHA-256-verifies the full versioned installer. If the stable
+CrystEngKit application identity is already registered, setup performs an
+in-place update; otherwise it creates a new installation. Program files are
+updated while projects, user configuration, and the compatible managed `.venv`
+remain in place. The environment checker adds only requirements that are
+missing from the installed release.
+
+Installed builds provide **Update** on the startup screen and in **About**. It
+checks the latest GitHub release, requires a published SHA-256 digest or
+checksum asset, downloads the web installer, and closes Builder only after the
+verified external updater starts. Development Git checkouts are never
+overwritten by this action.
 
 If Windows warns about running a downloaded app, check that the file came from the official release page above before continuing. If your institution blocks downloaded installers, ask your local IT support to approve the file from the GitHub release page.
 
@@ -1644,27 +1686,246 @@ the Builder from opening.
 
 ## Tools
 
-The analysis tools can be opened from the top panel of the Builder after a calculation, or launched directly.
+The Builder's top navigation changes the central workspace between:
+
+- **Input**;
+- **HOMO LUMO**;
+- **ESP map**;
+- **NCI plot**;
+- **QTAIM CP**; and
+- **TD-DFT**.
+
+The active
+tool is highlighted and its name is shown at the left. Tool pages remain mounted
+while you switch, so the following remain available during the session:
+
+- loaded files;
+- selections;
+- results; and
+- scroll positions.
+
+The **Input** button returns to
+the Builder without closing the active analysis page.
+
+Molecular graphics use native PyVista viewer windows for:
+
+- ESP;
+- NCI; and
+- QTAIM.
+
+the visualization controls open in a narrow always-on-top panel beside the
+viewer. Changes are applied to the displayed model in real time. Closing the
+control panel does not close the viewer; use **Viewer controls** on the tool page
+to show it again. File choosers, confirmations, and error messages may still
+appear as ordinary dialogs.
 
 ### ORCA Input Builder
 
-![ORCA Input Builder main working window](images/wiki/orca-input_1.png)The main working window. Use it to prepare ORCA input files from `.cif`, `.xyz`, existing `.inp` files, or external ORCA/Gaussian `.out` / `.log` files, run ORCA, monitor the output, generate computation summaries, and prepare dimer intermolecular-interaction jobs. When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output: the final optimized geometry for optimization jobs, or the printed input geometry for single-point jobs. The right panel uses one large shared text window with a `Show input` / `Job monitor` switch. During a run, `Show input` displays the exact input being executed without regenerating or replacing it; `Job monitor` shows live output, estimated stage progress, and elapsed time. The monitor also provides output/folder access, summary display, queue controls, and privacy-redacted AI progress-prompt generation. Active jobs are recorded in the user configuration folder: if the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process, and **Reconnect** provides the same action manually. A reconnected queue pauses after its current calculation. Before rerunning a successfully completed job, the Builder warns that all same-basename result files may be overwritten and recommends a next unused name, such as `filename_01.inp` or `filename_02.inp`. Accepting the recommendation opens a Save As dialog prefilled with that name; ORCA starts only after the user saves the copied input under the suggested or another unused name. Choosing overwrite opens a second **ATTENTION — Are you sure?** confirmation. The Builder tries to generate `.wfn` and `.wfx` files automatically after every successful ORCA run; for older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
+![ORCA Input Builder main working window](images/wiki/orca-input_1.png)
+
+The main working window can:
+
+- prepare ORCA input files from `.cif`, `.xyz`, existing `.inp`, or external ORCA/Gaussian `.out` / `.log` files;
+- run ORCA;
+- monitor the output;
+- generate computation summaries; and
+- prepare dimer intermolecular-interaction jobs.
+
+When an external output file is loaded, the Builder extracts the Cartesian coordinates printed in that output:
+
+- the final optimized geometry for optimization jobs; or
+- the printed input geometry for single-point jobs.
+
+The right panel uses one large shared text window with a `Show input` / `Job monitor` switch. During a run, `Show input` displays the exact input being executed without regenerating or replacing it. `Job monitor` shows:
+
+- live output;
+- estimated stage progress; and
+- elapsed time.
+
+The monitor also provides:
+
+- output and folder access;
+- summary display;
+- queue controls; and
+- privacy-redacted AI progress-prompt generation.
+
+Active jobs are recorded in the user configuration folder. If the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process; **Reconnect** provides the same action manually. A reconnected queue pauses after its current calculation.
+
+Before rerunning a successfully completed job, the Builder warns that all same-basename result files may be overwritten and recommends a next unused name, such as `filename_01.inp` or `filename_02.inp`. Accepting the recommendation opens a Save As dialog prefilled with that name; ORCA starts only after the user saves the copied input under the suggested or another unused name. Choosing overwrite opens a second **ATTENTION — Are you sure?** confirmation.
+
+The Builder tries to generate `.wfn` and `.wfx` files automatically after every successful ORCA run. For older calculations, use `Generate WFN/WFX` when the matching `.out` and `.gbw` files are available.
+
+#### ChemDraw CDXML/CDXM import
+
+The Builder natively reads ChemDraw .CDXML files. The structure must be
+checked in **Structure preview** before calculation.
 
 ### TD-DFT Setup, Analysis, and Visualization
 
-The TD-DFT module configures ORCA TD-DFT or TDA vertical excitations, singlet/triplet manifolds, target roots, excited-state optimization, excited-state frequencies, and absorption-to-emission sequences. When opened from the Builder, validated settings are synchronized into exactly one `%tddft` block while the Builder retains ownership of the functional, basis set, solvent, charge, multiplicity, and complete ORCA input.
+The TD-DFT workspace can prepare one calculation or run a complete absorption-to-emission workflow. It reuses these settings from Input:
 
-Every generated TD-DFT/TDA block requests natural transition orbitals with `DoNTO true` and `NTOThresh 1e-4`. Post-processing can parse excited states and oscillator strengths, plot stick or Gaussian-broadened UV-Vis spectra, export tables and images, generate selected-state NTO hole/electron cubes through a validated Multiwfn workflow, and display signed cubes with molecule, bond, label, isovalue, opacity, screenshot, and cube-export controls. Associated `.gbw`, `.wfn`, `.wfx`, Molden, and cube files are detected beside the ORCA output where applicable.
+- molecular structure;
+- functional and basis set;
+- dispersion correction;
+- solvent;
+- charge and multiplicity;
+- constraints; and
+- ORCA executable.
 
-TD-DFT input and emission-sequence filenames encode the structure, functional, basis, optional solvent, actual `td-dft`/`tda` method, and analysis step. CSV, spectrum, and screenshot dialogs suggest descriptive filenames while remaining editable.
+The TD-DFT page supplies:
+
+- the TD-DFT/TDA choice;
+- number of roots;
+- target state; and
+- solver settings.
+
+The complete workflow runs one required calculation at a time:
+
+```text
+Starting molecular structure
+    -> S0 geometry optimization
+    -> optional S0 frequency check
+    -> vertical absorption at the optimized S0 geometry
+    -> optimization of the selected S1/Sn state
+    -> vertical emission at the optimized excited-state geometry
+    -> results and provenance report
+```
+
+To start, use **Run complete workflow...** and:
+
+- choose a project directory;
+- review the summary; and
+- confirm.
+
+A later stage starts only after the preceding stage terminates normally and produces its required geometry and `.gbw` wavefunction. Any of the following stops the sequence instead of launching downstream jobs:
+
+- a failed optimization;
+- a missing file;
+- an important imaginary frequency; or
+- an inconsistent method.
+
+Every generated TD-DFT/TDA job requests natural transition orbitals. After absorption or emission finishes, load its `.out` in **Post-processing**, select a state, and use **Generate all analyses** to prepare the NTO hole/electron cubes and the other supported density analyses. Spectrum tables and plots do not require Multiwfn; NTO cube generation requires the matching `.gbw` and a validated Multiwfn executable.
+
+<details>
+<summary><strong>More details: inputs, outputs, continuation, and safeguards</strong></summary>
+
+#### Starting inputs
+
+For a new workflow, first load and inspect a molecular `.cif`, `.xyz`, or another supported structure in the Builder. The complete workflow reads the current Builder geometry and method directly; it does not require a second copy of those settings in TD-DFT.
+
+Complete TD-DFT workflows always start from the molecular geometry currently loaded in Builder (`.cif`, `.xyz`, or another accepted geometry source) and write every stage into the newly selected project folder. Drop-in continuation from an external `.out` is disabled to prevent another molecule, geometry, or wavefunction from being mixed into the project. Existing `.out` files can still be loaded in **Post-processing** for analysis, but they cannot become a workflow starting stage.
+
+#### Calculation sequence
+
+- `01_S0_opt`: optimizes the electronic ground-state geometry.
+- `02_S0_freq`: optionally checks that the optimized S0 structure is a minimum. A substantial imaginary frequency changes the workflow to `NEEDS_REVIEW`.
+- `03_absorption`: calculates vertical excited states at the optimized S0 geometry without `Opt`.
+- `04_S1_opt`: optimizes the selected excited-state root starting from the optimized S0 geometry. For another selected root, the same stage represents Sn rather than necessarily S1.
+- `05_emission`: calculates vertical emission at the optimized excited-state geometry without reusing the S0 geometry.
+
+All principal stages use one consistent set of applicable settings:
+
+- functional;
+- basis set and auxiliary basis;
+- dispersion correction;
+- RIJCOSX choice;
+- solvent treatment;
+- grid;
+- SCF setting; and
+- TD-DFT/TDA choice.
+
+Geometry and wavefunction handoffs are explicit: S0 products feed absorption and excited-state optimization, and excited-state products feed emission.
+
+#### Project outputs
+
+Each numbered directory contains, where applicable:
+
+- the stage-specific `.inp`;
+- the `.out`;
+- the `.gbw`; and
+- the extracted geometry.
+
+The project also contains:
+
+```text
+config.yaml
+workflow_status.json
+input/initial_geometry.xyz
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_absorption-states.csv
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_emission-summary.csv
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_workflow-summary.json
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_workflow-summary.csv
+results/<compound>_<functional>_<basis>_<solvent>_<tda-or-td-dft>_provenance.json
+restarts/
+```
+
+`workflow_status.json` records these states:
+
+- `NOT_STARTED`;
+- `RUNNING`;
+- `COMPLETED`;
+- `FAILED`; or
+- `NEEDS_REVIEW`.
+
+Completed calculations are not silently overwritten. Failed or interrupted artifacts are preserved under `restarts/` before regeneration.
+
+#### Processes and memory
+
+Workflow stages are always sequential, but each individual ORCA job may use several processes. `Processes = 1` runs serially and does not require an MPI launcher. Values above 1 require a working ORCA-compatible `mpiexec` installation. `MaxCore` is specified in MB per process, so the approximate requested memory increases with the number of processes.
+
+#### Analysis outputs
+
+Post-processing reads the following from a completed TD-DFT/TDA output:
+
+- excitation energies;
+- wavelengths;
+- oscillator strengths; and
+- printed orbital contributions.
+
+When the required source files and external tools are available, it can export:
+
+- state tables;
+- broadened spectra;
+- images and screenshots;
+- NTO hole/electron cubes;
+- difference and transition densities; and
+- attachment/detachment results.
+
+TD-DFT calculation and analysis filenames carry the calculation identity:
+
+```text
+<compound>_<functional>_<basis>_[solvent]_<tda-or-td-dft>_<calculation-or-artifact>.<extension>
+```
+
+Examples include:
+
+- `B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption.out`;
+- `B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption_uv-vis-spectrum.png`; and
+- `B-OH_CAM-B3LYP_def2-SVP_CHLOROFORM_tda_absorption_NTO-pair.png`.
+
+The solvent part is omitted for gas-phase calculations. Export dialogs suggest these traceable names but still allow them to be edited before saving.
+
+</details>
 
 ### HOMO-LUMO Plotter
 
-![HOMO-LUMO energy diagram tool](images/wiki/orca_homo-lumo_2.png)Creates frontier-orbital energy diagrams[^frontier-orbitals] from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also generate MO cube files with `orca_plot`, render HOMO/LUMO surface images, and collect saved orbital views into a table.
+![HOMO-LUMO energy diagram tool](images/wiki/orca_homo-lumo_2.png)
+
+Creates frontier-orbital energy diagrams[^frontier-orbitals] from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also:
+
+- generate MO cube files with `orca_plot`;
+- render HOMO/LUMO surface images; and
+- collect saved orbital views into a table.
 
 ![HOMO-LUMO molecular orbital surface table](images/wiki/orca_homo-lumo_3.png)
 
-MO-surface tools use capped-sticks molecule rendering by default and provide optional colored wireframe or ball-and-stick overlays. In the table, each saved MO tile can be reopened with its saved camera, style, and scale. The `Use view for all` button applies the selected tile's saved orientation and zoom/scale to every MO surface in the current table.
+MO-surface tools use capped-sticks molecule rendering by default and provide optional colored wireframe or ball-and-stick overlays. In the table, each saved MO tile can be reopened with its saved:
+
+- camera;
+- style; and
+- scale.
+
+The `Use view for all` button applies the selected tile's saved orientation and zoom/scale to every MO surface in the current table.
 
 ### ESP / VisMap
 
@@ -1675,19 +1936,61 @@ Resulting ESP map Image
 
 ![ESP map](images/wiki/orca_vismap_output_2.png)
 
-This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for ESP data generation and plotting, extrema plotting, and PyVista visualization instead of Mayavi. It uses wavefunction files such as `.wfn`, `.wfx`, or `.fchk`.
+This version is based on the original VisMap code by aaan1s (<https://github.com/aaan1s/VisMap>) and adapts it for this suite with a GUI for:
+
+- ESP data generation and plotting;
+- extrema plotting; and
+- PyVista visualization instead of Mayavi.
+
+It uses wavefunction files such as:
+
+- `.wfn`;
+- `.wfx`; or
+- `.fchk`.
+
+When the ESP map viewer opens, its visualization-control panel opens beside it. Use the panel to adjust:
+
+- surface;
+- molecule style;
+- colors;
+- range;
+- opacity; and
+- image output.
+
+Changes appear immediately in PyVista. If the panel is closed, **Viewer controls** restores it.
 
 ### NCI Plotter
 
 ![NCI plotter visualization of noncovalent interaction surfaces](images/wiki/orca_nci_output_1.png)
 
-Creates noncovalent-interaction surfaces[^nci] from `.wfn` or `.wfx` files. It is useful for visualizing weak contacts, attractive regions, and repulsive regions in molecular associates, and it can open the NCI + QTAIM overlay viewer when matching topology files are available.
+Creates noncovalent-interaction surfaces[^nci] from `.wfn` or `.wfx` files. It is useful for visualizing:
+
+- weak contacts;
+- attractive regions; and
+- repulsive regions in molecular associates.
+
+It can also open the NCI + QTAIM overlay viewer when matching topology files are available.
+
+The NCI viewer uses the same side-by-side control arrangement. Surface and
+molecule controls update the existing PyVista scene in real time; NCI opacity
+changes only the interaction surface, not the molecular model.
 
 ### QTAIM Critical Points Viewer
 
 ![QTAIM critical points viewer](images/wiki/orca_qtaim_1.png)
 
-Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output. The visualization settings include separate `Strong interaction CPs` and `Weak interaction CPs` checkboxes for BCP filtering, plus `CP energy` with `kJ/mol` or `kcal/mol` labels when `CPprop.txt` provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
+Shows these QTAIM critical points[^qtaim] from `.wfn` or `.wfx` files and Multiwfn QTAIM output:
+
+- bond;
+- ring; and
+- cage critical points.
+
+The visualization settings include separate `Strong interaction CPs` and `Weak interaction CPs` checkboxes for BCP filtering, plus `CP energy` with `kJ/mol` or `kcal/mol` labels when `CPprop.txt` provides the required values. The color swatches in the visualization settings are clickable and can be used to change CP and QTAIM bond-path colors.
+
+QTAIM visualization controls are kept in the narrow panel beside the PyVista
+viewer. Filtering, colors, labels, sizes, and display choices update the current
+scene without rebuilding the tool page. Use **Viewer controls** to restore a
+closed panel.
 
 ![QTAIM critical point visualization settings](images/wiki/orca_qtaim_2.png)
 
@@ -1695,13 +1998,36 @@ Shows QTAIM bond, ring, and cage critical points[^qtaim] from `.wfn` or `.wfx` f
 
 ![NCI and QTAIM overlay visualization](images/wiki/orca_qtaim_nci_overlay.png)
 
-Combines the molecular structure, NCI surface, QTAIM bond critical points, and bond paths in one PyVista view. Use it when the NCI and QTAIM output files have already been generated for the same structure.
+Combines the following in one PyVista view:
+
+- molecular structure;
+- NCI surface;
+- QTAIM bond critical points; and
+- bond paths.
+
+Use it when the NCI and QTAIM output files have already been generated for the same structure.
 
 ## How to Use the Tools
 
 ### Build and Run an ORCA Job
 
-1. Load a supported structure file in the Builder. Native `.xyz`, `.cif`, ORCA `.inp`, and 3D `.mol`/`.sdf`/`.sd` files are read directly. Gaussian `.gjf`, `.com`, `.gau`, and `.gjc` files with ordinary Cartesian coordinates are also supported. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
+1. Load a supported structure file in the Builder.
+
+   Files read directly include:
+
+   - native `.xyz` and `.cif` files;
+   - ORCA `.inp` files;
+   - 3D `.mol`, `.sdf`, and `.sd` files; and
+   - ChemDraw `.cdxml` and `.cdxm` files.
+
+   Gaussian files with ordinary Cartesian coordinates are also supported:
+
+   - `.gjf`;
+   - `.com`;
+   - `.gau`; and
+   - `.gjc`.
+
+   Binary `.cdx` and 2D-only ChemDraw XML use Open Babel. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
    
    ![ORCA Input Builder job setup window](images/wiki/orca-input_1.png)
 
@@ -1709,46 +2035,153 @@ Combines the molecular structure, NCI surface, QTAIM bond critical points, and b
    
    ![Structure preview window for checking imported geometry](images/wiki/orca-input_viewer_1.png)
 
-3. Choose the calculation setup: functional, basis set, dispersion correction, solvent (or gas phase if no solvent is chosen or entered), charge, and multiplicity.
+3. Choose the calculation setup:
 
-4. Choose the target calculation, such as single-point energy, optimization, frequencies, ESP package, TD-DFT, NMR, or dimer interaction energy.
+   - functional;
+   - basis set;
+   - dispersion correction;
+   - solvent, or gas phase if no solvent is chosen or entered;
+   - charge; and
+   - multiplicity.
+
+4. Choose the target calculation, such as:
+
+   - single-point energy;
+   - optimization;
+   - frequencies;
+   - ESP package;
+   - TD-DFT;
+   - NMR; or
+   - dimer interaction energy.
 
 5. Use `Input preview` in the shared right panel to generate or refresh the current `.inp` text, then use `Save input file`.
 
-6. Click `Run Orca`. The shared right panel switches automatically to `Job monitor`, where live output, status, progress, elapsed time, output-folder buttons, summary display, and monitor clearing are available. To view an existing or generated summary, click `Show summary`; the text is shown in the `Job monitor` view.
+6. Click `Run Orca`. The shared right panel switches automatically to `Job monitor`, where the following are available:
+
+   - live output;
+   - status and progress;
+   - elapsed time;
+   - output-folder buttons;
+   - summary display; and
+   - monitor clearing.
+
+   To view an existing or generated summary, click `Show summary`; the text is shown in the `Job monitor` view.
 
 ### Run ORCA Job Queues
 
-Use `Add to Queue` to save the current input and add it to the active named queue. `Queue Jobs` opens the queue manager, where queues can be created, selected, saved, loaded, reordered, and reset. Jobs run sequentially and retain pending, running, completed, failed, or stopped status. Queue state is stored in JSON so an interrupted list can be inspected or resumed after restarting the Builder.
+Use `Add to Queue` to save the current input and add it to the active named queue. `Queue Jobs` opens the queue manager, where queues can be:
+
+- created;
+- selected;
+- saved;
+- loaded;
+- reordered; and
+- reset.
+
+Jobs run sequentially and retain one of these statuses:
+
+- pending;
+- running;
+- completed;
+- failed; or
+- stopped.
+
+Queue state is stored in JSON so an interrupted list can be inspected or resumed after restarting the Builder.
 
 ### Request an AI Progress Comment
 
-In `Settings`, choose the browser AI service; ChatGPT is the default. While an ORCA output is available, click `Ask AI about progress`. CrystEngKit reads the complete available `.out`, removes Cartesian-coordinate lines, absolute Windows paths, common filenames, and obvious credential fields, then builds a short progress-analysis prompt and copies it to the clipboard before opening the selected website. Paste the prompt and submit it in the browser.
+In `Settings`, choose the browser AI service; ChatGPT is the default. While an ORCA output is available, click `Ask AI about progress`. CrystEngKit reads the complete available `.out` and removes:
 
-The prompt asks only for the current stage and convergence trend, evidence of looping or failure, the expected remaining stages, a cautious timing forecast, and whether to continue, monitor, or stop. A marker at the end lets the AI detect a truncated paste; successful completeness checks stay out of the report, while missing-marker truncation must be reported. Redaction is a convenience filter, not a guarantee: review the prompt before sending confidential calculations to an external service.
+- Cartesian-coordinate lines;
+- absolute Windows paths;
+- common filenames; and
+- obvious credential fields.
+
+It then builds a short progress-analysis prompt and copies it to the clipboard before opening the selected website. Paste the prompt and submit it in the browser.
+
+The prompt asks only for:
+
+- the current stage and convergence trend;
+- evidence of looping or failure;
+- the expected remaining stages;
+- a cautious timing forecast; and
+- whether to continue, monitor, or stop.
+
+A marker at the end lets the AI detect a truncated paste; successful completeness checks stay out of the report, while missing-marker truncation must be reported. Redaction is a convenience filter, not a guarantee: review the prompt before sending confidential calculations to an external service.
 
 ### Configure and Analyze a TD-DFT Job
 
-1. Select `TD-DFT / UV-Vis` in the Builder and configure TD-DFT or TDA, roots, manifold, and the required vertical/optimization/frequency steps.
-2. Select `Show ORCA Block` to validate the settings, synchronize the `%tddft` block, and return to the complete Builder input preview.
-3. Run the absorption job. For fluorescence, load the completed absorption output in TD-DFT post-processing and prepare the excited-state optimization and vertical-emission sequence for the selected root.
-4. Load a completed output to inspect the state table and UV-Vis spectrum. Select a state to generate its analysis package and dominant NTO hole/electron cubes when the matching `.gbw` and validated Multiwfn executable are available.
-5. Use the CSV, image, screenshot, and cube export controls; the proposed artifact names can be edited before saving.
+#### Complete workflow: short version
+
+1. Load the starting structure in the Builder and verify the molecule with **Structure preview**.
+2. Set these options in the Builder:
+
+   - functional;
+   - basis;
+   - dispersion;
+   - solvent;
+   - charge and multiplicity;
+   - grid;
+   - TightSCF; and
+   - RIJCOSX.
+3. Enable **TD-DFT / UV-Vis** and select **TD-DFT** in the top navigation.
+4. Choose:
+
+   - TD-DFT or TDA;
+   - the number of roots; and
+   - the target state/root.
+
+   NTO preparation is enabled automatically.
+5. Choose whether to validate S0 with a separate frequency calculation. Set `Processes = 1` for a serial ORCA installation, or use more processes only when MPI is configured.
+6. Click **Run complete workflow...**, then:
+
+   - choose a project directory;
+   - review the summary; and
+   - confirm.
+
+7. Let the program run these stages sequentially:
+
+   - S0 optimization;
+   - optional frequencies;
+   - absorption;
+   - excited-state optimization; and
+   - emission.
+
+   If a required stage fails or needs review, the workflow stops.
+
+8. Load the completed absorption or emission `.out` in **Post-processing** to:
+
+   - plot the spectrum;
+   - export states; and
+   - generate NTO or density analyses.
+
+For a single manually configured TD-DFT job instead of the full sequence, use **Show ORCA Block** to synchronize exactly one `%tddft` block with the Builder and run it normally.
 
 ### Make Figures After a Calculation
-
+![****ORCA TERMINATED NORMALLY****](images/wiki/orca_finish.png)
 Use the top-panel buttons after the ORCA job finishes:
 
-![ORCA Input Builder top panel analysis buttons](images/wiki/orca_top_panel_1.png)
+The currently active tool is highlighted in the top panel, and its name appears on the left side of the panel, so you can always see which workspace is open.
 
+![ORCA Input Builder top panel analysis buttons](images/wiki/orca_top_panel_1.png)
 - `HOMO LUMO` for orbital energy diagrams and, from ORCA `.out` / `.gbw` pairs, MO surface images and contact sheets
 - `ESP map` for electrostatic-potential surfaces
 - `NCI plot` for RDG / sign(lambda2)rho noncovalent-interaction surfaces
 - `QTAIM CP` for critical-point inspection
 
-ESP, NCI, and QTAIM analyses require real wavefunction files such as `.wfn` or `.wfx`. In CrystEngKit they are generated automatically by default after the ORCA job finishes. If an older project does not contain them, load or select the corresponding ORCA output and click `Generate WFN/WFX`; this uses `orca_2aim` and requires the matching `.gbw` file to be present.
+These analyses require real wavefunction files such as `.wfn` or `.wfx`:
 
-MO surface rendering requires a finished ORCA `.out` file, its matching `.gbw` file, and `orca_plot` from the ORCA installation.
+- ESP;
+- NCI; and
+- QTAIM.
+
+In CrystEngKit they are generated automatically by default after the ORCA job finishes. If an older project does not contain them, load or select the corresponding ORCA output and click `Generate WFN/WFX`; this uses `orca_2aim` and requires the matching `.gbw` file to be present.
+
+MO surface rendering requires:
+
+- a finished ORCA `.out` file;
+- its matching `.gbw` file; and
+- `orca_plot` from the ORCA installation.
 
 For consistent MO surface figures, orient and zoom one saved contact-sheet tile, press `S` in the MO viewer to save it, then use `Use view for all` from that tile to regenerate the rest of the current contact sheet with the same view and scale.
 
@@ -1762,14 +2195,12 @@ For consistent MO surface figures, orient and zoom one saved contact-sheet tile,
 
 4. Use the viewer to check the fragment assignment.
    
-   ![Dimer fragment assignment in the structure viewer](images/wiki/orca-input_viewer_2.png)
+   ![Dimer fragment assignment in the structure viewer](images/wiki/orca-input_viewer_1.png)
 
 5. Choose whether to include relaxed binding analysis and thermodynamic terms.
 
 6. Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.
    ![ORCA dimer interaction energy output summary](images/wiki/orca-output_3.png)
-   ![ORCA calculation summary text for experimental section](images/wiki/orca-output_4.png)
-
 As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&id=4&state=show&order=ASC&by=name_m&method=
 
 ### Modeling of Solvation Effects
@@ -2000,7 +2431,13 @@ In that case, the summary should still preserve the successful interaction terms
 
 ### TD-DFT spectrum or NTO analysis is unavailable
 
-Check that the selected file is a completed ORCA TD-DFT/TDA `.out`. Spectrum plotting needs parsed excited-state energies and oscillator strengths. NTO generation additionally needs the matching `.gbw`, a validated Multiwfn executable, and ORCA output produced with the module's NTO defaults. Use `Refresh files` after copying associated files beside the output. A status marked disabled is intentional when the required files or a release-verified workflow are unavailable.
+Check that the selected file is a completed ORCA TD-DFT/TDA `.out`. Spectrum plotting needs parsed excited-state energies and oscillator strengths. NTO generation additionally needs:
+
+- the matching `.gbw`;
+- a validated Multiwfn executable; and
+- ORCA output produced with the module's NTO defaults.
+
+Use `Refresh files` after copying associated files beside the output. A status marked disabled is intentional when the required files or a release-verified workflow are unavailable.
 
 ### AI progress prompt opens the wrong service or appears truncated
 
@@ -2092,7 +2529,7 @@ tools/
 # TD-DFT Builder usage
 
 1. In ORCA Input Builder, select **TD-DFT / UV-Vis**.
-2. Configure TD-DFT/TDA, roots, and manifold in the TD-DFT window.
+2. Configure TD-DFT/TDA, roots, and manifold on the TD-DFT page.
 3. Select **Show ORCA Block**.
 
 The module validates and generates only the `%tddft` fragment. The connected
@@ -2121,10 +2558,10 @@ excited-state optimization and vertical-emission sequence. The Builder runs
 these as monitored ORCA jobs and preserves the source electronic-structure and
 solvent settings.
 
-Uncheck **TD-DFT / UV-Vis** in the Builder to exclude the synchronized block.
-Closing the module does not remove the last synchronized block. When the module
-is launched independently, **Show ORCA Block** displays and copies the fragment
-without requiring a Builder connection.
+Uncheck **TD-DFT / UV-Vis** in Input to exclude the synchronized block. Moving
+to another workspace page does not remove the last synchronized block; return
+to TD-DFT through the top navigation whenever it needs to be reviewed or
+changed.
 
 
 ## Source: tools/TD_DFT/TD_DFT_WORKFLOW_EXAMPLES.md

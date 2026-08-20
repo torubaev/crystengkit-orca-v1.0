@@ -9,9 +9,12 @@ Builder stores that fragment once, regenerates the complete ORCA input, opens
 its existing input preview, and returns focus to the Builder. Change settings
 freely; the Builder changes only after **Show ORCA Block** is selected again.
 
-Every generated fragment enables ORCA natural transition orbitals for all
-calculated roots with `DoNTO true` and `NTOThresh 1e-4`. The matching `.gbw`
-and `.out` files can then be loaded in TD-DFT post-processing to generate and
+Vertical absorption and emission fragments enable ORCA natural transition
+orbitals for all calculated roots with `DoNTO true` and `NTOThresh 1e-4`.
+Excited-state optimization omits repeated NTO generation and uses a compact
+five-root window by default, expanded automatically when necessary to keep two
+roots above the selected target. The matching `.gbw` and `.out` files from a
+vertical calculation can be loaded in TD-DFT post-processing to generate and
 display the dominant NTO hole/electron cube pair for a selected state.
 
 TD-DFT calculation names follow

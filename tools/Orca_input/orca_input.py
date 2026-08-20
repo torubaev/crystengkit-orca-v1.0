@@ -107,9 +107,12 @@ AI_WEB_MODELS = {
 DEFAULT_AI_WEB_MODEL = "ChatGPT"
 AI_WEB_MODEL_SETTINGS_VERSION = 2
 ORCA_PROMPT_END_MARKER = "CRYSTENGKIT_ORCA_OUTPUT_COMPLETE_9F4C2A"
-# Emergency browser-paste ceiling. The semantic selector, rather than this
-# ceiling, should normally determine payload size.
-ORCA_AGENT_OUTPUT_MAX_CHARS = 32000
+# Keep the browser paste inline. Larger clipboard text is converted by ChatGPT
+# into a Pasted text.txt attachment that fresh custom-GPT chats may not inspect
+# on their first turn.
+# Keep enough headroom for the payload wrapper and for ChatGPT clients that
+# convert moderately long clipboard pastes into a document attachment.
+ORCA_AGENT_OUTPUT_MAX_CHARS = 12000
 MONITOR_ACTION_BUTTONS = (
     ("stop", "Stop job", "stop_orca"),
     ("link", "Reconnect", "reconnect_saved_job"),
@@ -128,6 +131,42 @@ def monitor_action_grid_position(index: int) -> tuple[int, int, int]:
     if index < 4:
         return 0, index * 3, 3
     return 1, (index - 4) * 4, 4
+
+
+def associated_output_path(input_path: str) -> str:
+    """Return only the existing same-basename output owned by an ORCA input."""
+    text = str(input_path or "").strip().strip('"')
+    if not text or Path(text).suffix.lower() != ".inp":
+        return ""
+    candidate = Path(text).with_suffix(".out")
+    return str(candidate) if candidate.is_file() else ""
+
+
+def output_belongs_to_input(output_path: str, input_path: str) -> bool:
+    """Return whether output_path is the exact same-job partner of input_path."""
+    output = str(output_path or "").strip().strip('"')
+    current = str(input_path or "").strip().strip('"')
+    if not output or not current or Path(current).suffix.lower() != ".inp":
+        return False
+    try:
+        return os.path.normcase(str(Path(output).resolve())) == os.path.normcase(
+            str(Path(current).with_suffix(".out").resolve())
+        )
+    except (OSError, ValueError):
+        return False
+
+
+def tool_state_for_current_input(tool_state: Dict, input_path: str) -> Dict:
+    """Discard a persisted tool output when it belongs to another input job."""
+    clean = dict(tool_state or {})
+    current = str(input_path or "").strip().strip('"')
+    saved_output = str(clean.get("output_path", "") or "").strip().strip('"')
+    if not current or Path(current).suffix.lower() != ".inp" or not saved_output:
+        return clean
+    if not output_belongs_to_input(saved_output, current):
+        clean["output_path"] = ""
+        clean["ui_mode"] = "input"
+    return clean
 
 
 README_LINK_TEXT = "README section: ORCA Input Builder"
@@ -204,19 +243,38 @@ def build_orca_progress_prompt(output_text: str) -> str:
 
 
 def build_orca_agent_payload(output_text: str) -> str:
-    """Build the data-only payload for the configured ORCA monitor GPT."""
+    """Build a first-turn-safe inline payload from redacted ORCA output."""
     output_text = sanitize_orca_output_for_ai(output_text)
     if not output_text:
         raise ValueError("No ORCA output is available for AI analysis.")
+    source_chars = len(output_text)
     output_text = compact_orca_output_for_progress(output_text)
+    payload_status = (
+        "COMPLETE PRIVACY-REDACTED ORCA OUTPUT"
+        if len(output_text) == source_chars
+        else "COMPLETE PROGRESS-FOCUSED EXTRACT FROM FULL ORCA OUTPUT"
+    )
     return (
         "ORCA Job progress report.\n\n"
-        "CRYSTENGKIT PAYLOAD STATUS: COMPLETE BOUNDED LIVE EXTRACT\n"
+        f"CRYSTENGKIT PAYLOAD STATUS: {payload_status}\n"
         f"CRYSTENGKIT PAYLOAD MARKER: {ORCA_PROMPT_END_MARKER}\n\n"
         f"--- BEGIN ORCA OUTPUT ---\n{output_text}\n--- END ORCA OUTPUT ---\n"
         "===== CRYSTENGKIT COMPLETE PAYLOAD: FINAL MARKER FOLLOWS =====\n"
         f"{ORCA_PROMPT_END_MARKER}"
     )
+
+
+def copy_ai_prompt_to_clipboard(widget, prompt: str) -> None:
+    """Copy a complete AI prompt and verify it before any browser is opened."""
+    if not prompt or not prompt.rstrip().endswith(ORCA_PROMPT_END_MARKER):
+        raise ValueError("The AI progress prompt was not generated completely.")
+    widget.clipboard_clear()
+    widget.clipboard_append(prompt)
+    widget.update_idletasks()
+    copied = widget.clipboard_get()
+    normalize = lambda value: str(value).replace("\r\n", "\n").rstrip()
+    if normalize(copied) != normalize(prompt):
+        raise RuntimeError("The AI progress prompt could not be verified on the clipboard.")
 
 
 def compact_orca_output_for_progress(
@@ -4700,7 +4758,7 @@ class App(tk.Tk):
                 tool_state = tools_state.get(key, {}) if isinstance(tools_state, dict) else {}
                 set_state = getattr(controller, "set_state", None)
                 if callable(set_state) and isinstance(tool_state, dict):
-                    set_state(tool_state)
+                    set_state(tool_state_for_current_input(tool_state, self.current_input_path or ""))
             self._workspace_state_loaded_from = resolved
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return
@@ -4743,8 +4801,8 @@ class App(tk.Tk):
             "output_path": output_path,
             "absorption_gbw": absorption_gbw,
             "absorption_state_count": absorption_state_count,
-            "maxcore_mb": "",
-            "nprocs": 1,
+            "maxcore_mb": 2000,
+            "nprocs": 4,
             "basis_functions": basis_functions,
             "orca_path": self.orca_path_var.get().strip().strip('"'),
             "structure_source_path": self.structure_source_path,
@@ -4756,8 +4814,22 @@ class App(tk.Tk):
             # Live providers keep the embedded TD-DFT workspace synchronized
             # without making TD-DFT import or reach into the Builder class.
             "input_provider": self.refresh_full_orca_input,
+            "current_input_provider": self.get_preview_text,
             "input_path_provider": lambda: self.current_input_path or self.suggest_input_save_path(),
             "orca_path_provider": lambda: self.orca_path_var.get().strip().strip('"'),
+            "active_job_provider": self.get_active_orca_job_status,
+        }
+
+    def get_active_orca_job_status(self) -> Dict[str, object]:
+        """Publish monitor state without exposing Builder widgets to TD-DFT."""
+        process = self.run_process
+        running = bool(process is not None and process.poll() is None)
+        return {
+            "running": running,
+            "input_path": str(self.current_input_path or ""),
+            "output_path": str(self.last_output_path or ""),
+            "started_at": float(self.monitor_started_at or 0.0),
+            "stage": str(self.monitor_status_text or ("Running ORCA" if running else "Idle")),
         }
 
     def _refresh_open_tddft_absorption_source(self, out_path: str) -> None:
@@ -5451,7 +5523,10 @@ class App(tk.Tk):
             self.structure = result.structure
             self.structure_source_path = str(Path(p).resolve())
             self.current_input_path = p if self._is_existing_orca_input_path(p) else None
-            self.last_output_path = p if result.source_format == "ORCA output" else self.last_output_path
+            self.last_output_path = (
+                p if result.source_format == "ORCA output"
+                else associated_output_path(self.current_input_path or "") or None
+            )
             self.preview_text.delete("1.0", "end")
             if self.current_input_path:
                 self.preview_text.insert("1.0", Path(p).read_text(encoding="utf-8", errors="replace"))
@@ -5478,7 +5553,10 @@ class App(tk.Tk):
             self.structure = result.structure
             self.structure_source_path = str(Path(path).resolve())
             self.current_input_path = path if self._is_existing_orca_input_path(path) else None
-            self.last_output_path = path if result.source_format == "ORCA output" else self.last_output_path
+            self.last_output_path = (
+                path if result.source_format == "ORCA output"
+                else associated_output_path(self.current_input_path or "") or None
+            )
             if self.current_input_path:
                 self._load_existing_orca_input_if_selected()
             else:
@@ -5522,6 +5600,7 @@ class App(tk.Tk):
         self.preview_text.insert("1.0", text)
         self._show_output_mode("preview")
         self.current_input_path = path
+        self.last_output_path = associated_output_path(path) or None
         self.status.configure(text=f"Loaded existing ORCA input: {path}")
         return True
 
@@ -6070,12 +6149,15 @@ class App(tk.Tk):
 
     def _recent_output_path(self) -> str:
         candidates: List[Tuple[int, Path]] = []
-        if self.last_output_path and os.path.isfile(self.last_output_path):
-            candidates.append((0, Path(self.last_output_path)))
         if self.current_input_path:
-            candidates.extend(self._output_candidates_for_source(Path(self.current_input_path)))
-        if self.path_var.get().strip():
-            candidates.extend(self._output_candidates_for_source(Path(self.path_var.get().strip())))
+            owned = associated_output_path(self.current_input_path)
+            if owned:
+                candidates.append((0, Path(owned)))
+        else:
+            if self.last_output_path and os.path.isfile(self.last_output_path):
+                candidates.append((0, Path(self.last_output_path)))
+            if self.path_var.get().strip():
+                candidates.extend(self._output_candidates_for_source(Path(self.path_var.get().strip())))
         newest = Path(self._best_output_path(candidates))
         ok, reason = validate_orca_output_file(str(newest))
         if not ok:
@@ -6087,13 +6169,16 @@ class App(tk.Tk):
 
     def _available_output_path(self) -> str:
         candidates: List[Tuple[int, Path]] = []
-        if self.last_output_path and os.path.isfile(self.last_output_path):
-            candidates.append((0, Path(self.last_output_path)))
         if self.current_input_path:
-            candidates.extend(self._output_candidates_for_source(Path(self.current_input_path)))
-        selected_text = self.path_var.get().strip()
-        if selected_text:
-            candidates.extend(self._output_candidates_for_source(Path(selected_text)))
+            owned = associated_output_path(self.current_input_path)
+            if owned:
+                candidates.append((0, Path(owned)))
+        else:
+            if self.last_output_path and os.path.isfile(self.last_output_path):
+                candidates.append((0, Path(self.last_output_path)))
+            selected_text = self.path_var.get().strip()
+            if selected_text:
+                candidates.extend(self._output_candidates_for_source(Path(selected_text)))
         try:
             return self._best_output_path(candidates)
         except ValueError:
@@ -8701,9 +8786,7 @@ class App(tk.Tk):
             url = AI_WEB_MODELS.get(model, AI_WEB_MODELS[DEFAULT_AI_WEB_MODEL])
             output = self._orca_output_for_ai()
             prompt = build_orca_agent_payload(output) if model == "ChatGPT" else build_orca_progress_prompt(output)
-            self.clipboard_clear()
-            self.clipboard_append(prompt)
-            self.update_idletasks()
+            copy_ai_prompt_to_clipboard(self, prompt)
             if not webbrowser.open(url, new=2):
                 raise RuntimeError(f"The browser could not open {url}")
             self.append_monitor(

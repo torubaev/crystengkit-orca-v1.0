@@ -30,6 +30,7 @@ class MethodConfig:
     grid: str = "DefGrid2"
     scf_convergence: str = "TightSCF"
     geometry_convergence: str = "TightOpt"
+    excited_state_geometry_convergence: str = ""
     relativistic: str = ""
     ecp: str = ""
     extra_keywords: List[str] = field(default_factory=list)
@@ -39,6 +40,7 @@ class MethodConfig:
 class ExcitedStatesConfig:
     use_tda: bool = True
     nroots: int = 10
+    optimization_nroots: int = 5
     target_root: int = 1
     target_multiplicity: str = "singlet"
     maxdim: int = 10
@@ -65,8 +67,8 @@ class FrequencyConfig:
 
 @dataclass
 class ResourcesConfig:
-    nprocs: int = 1
-    maxcore_mb: int = 4000
+    nprocs: int = 4
+    maxcore_mb: int = 2000
 
 
 @dataclass
@@ -120,6 +122,8 @@ class WorkflowConfig:
             raise ValueError("method.functional and method.basis are required.")
         if self.excited_states.nroots < 1:
             raise ValueError("excited_states.nroots must be positive.")
+        if self.excited_states.optimization_nroots < 1:
+            raise ValueError("excited_states.optimization_nroots must be positive.")
         if not 1 <= self.excited_states.target_root <= self.excited_states.nroots:
             raise ValueError("target_root must be between 1 and nroots.")
         if self.excited_states.maxdim < 1 or self.excited_states.maxiter < 1:
@@ -244,9 +248,11 @@ method:
   grid: DefGrid2
   scf_convergence: TightSCF
   geometry_convergence: TightOpt
+  excited_state_geometry_convergence: ""
 excited_states:
   use_tda: true
   nroots: 10
+  optimization_nroots: 5
   target_root: 1
   target_multiplicity: singlet
   maxdim: 10
@@ -263,8 +269,8 @@ frequency:
   reject_large_imaginary_modes: true
   imaginary_frequency_threshold_cm1: -30
 resources:
-  nprocs: 16
-  maxcore_mb: 4000
+  nprocs: 4
+  maxcore_mb: 2000
 execution:
   mode: local
   scheduler: slurm
@@ -274,8 +280,8 @@ scheduler:
   partition: compute
   account: null
   nodes: 1
-  ntasks: 16
-  memory: 64G
+  ntasks: 4
+  memory: 8G
   walltime:
     s0_opt: "24:00:00"
     s0_freq: "24:00:00"

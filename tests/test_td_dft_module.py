@@ -66,10 +66,10 @@ class TDDFTModuleTests(unittest.TestCase):
         self.assertNotIn("NTOStates", block)
         self.assertNotIn("MaxCore", block)
 
-    def test_nto_generation_cannot_be_disabled_by_legacy_settings(self):
+    def test_nto_generation_can_be_disabled_explicitly(self):
         settings = validate_tddft_settings({"print_ntos": False})
-        self.assertTrue(settings["print_ntos"])
-        self.assertIn("DoNTO true", build_tddft_block(settings))
+        self.assertFalse(settings["print_ntos"])
+        self.assertNotIn("DoNTO true", build_tddft_block(settings))
 
     def test_maxdim_is_independent_of_nroots(self):
         settings = validate_tddft_settings({"nroots": 10, "maxdim": 5})
@@ -141,7 +141,23 @@ class TDDFTModuleTests(unittest.TestCase):
         self.assertIn("%tddft", block)
         self.assertIn("IRoot 2", block)
         self.assertIn("IRootMult triplet", block)
+        self.assertIn("NRoots 5", block)
+        self.assertNotIn("DoNTO", block)
         self.assertNotIn("FollowIRoot", block)
+
+    def test_excited_state_optimization_keeps_two_roots_above_high_target(self):
+        block = build_tddft_block({
+            "vertical_excitation": False,
+            "excited_state_optimization": True,
+            "root": 8,
+            "nroots": 10,
+        })
+        self.assertIn("NRoots 10", block)
+
+    def test_vertical_calculation_keeps_requested_roots_and_ntos(self):
+        block = build_tddft_block({"nroots": 20})
+        self.assertIn("NRoots 20", block)
+        self.assertIn("DoNTO true", block)
 
     def test_excited_state_optimization_does_not_require_standalone_vertical_mode(self):
         block = build_tddft_block({

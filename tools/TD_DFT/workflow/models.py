@@ -63,7 +63,7 @@ def method_signature(config, *, include_excited_state: bool = True) -> str:
         method.ecp or "none",
         method.grid,
         method.scf_convergence,
-        method.geometry_convergence,
+        f"S0:{method.geometry_convergence or 'Opt'},ES:{method.excited_state_geometry_convergence or 'Opt'}",
         ",".join(sorted(method.extra_keywords)) or "no-extra-keywords",
     ]
     if include_excited_state:

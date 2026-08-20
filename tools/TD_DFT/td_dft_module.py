@@ -86,6 +86,7 @@ DEFAULT_TDDFT_SETTINGS = {
     "excited_state_frequencies": False,
     "td_method": "TDDFT",
     "nroots": 10,
+    "optimization_nroots": 5,
     "root": 1,
     "maxdim": 10,
     "maxiter": 300,
@@ -282,15 +283,14 @@ def validate_tddft_settings(settings: Dict) -> Dict:
         data["excited_state_optimization"] = legacy_calculation == "Excited-state optimization"
         data["excited_state_frequencies"] = legacy_calculation == "Excited-state frequencies"
     data["nroots"] = int(data["nroots"])
+    data["optimization_nroots"] = int(data["optimization_nroots"])
     data["root"] = int(data["root"])
     data["maxdim"] = int(data["maxdim"])
     data["maxiter"] = int(data["maxiter"])
     data["broadening_ev"] = float(data["broadening_ev"])
     data["wavelength_min_nm"] = float(data["wavelength_min_nm"])
     data["wavelength_max_nm"] = float(data["wavelength_max_nm"])
-    # NTO preparation is a required part of every CrystEngKit TD-DFT job.
-    # Keep legacy profiles that stored print_ntos=False from disabling it.
-    data["print_ntos"] = True
+    data["print_ntos"] = bool(data["print_ntos"])
     if data["excited_state_frequencies"]:
         data["vertical_excitation"] = False
         data["excited_state_optimization"] = True
@@ -298,7 +298,7 @@ def validate_tddft_settings(settings: Dict) -> Dict:
         data["vertical_excitation"] = False
     elif not data["vertical_excitation"]:
         data["vertical_excitation"] = True
-    if data["nroots"] < 1 or data["root"] < 1:
+    if data["nroots"] < 1 or data["optimization_nroots"] < 1 or data["root"] < 1:
         raise ValueError("NROOTS and ROOT must be positive integers.")
     if data["maxdim"] < 1:
         raise ValueError("MaxDim must be a positive integer.")
@@ -365,14 +365,18 @@ def build_tddft_block(settings: Dict) -> str:
     only by the emission-sequence helper if required by a specific workflow.
     """
     data = validate_tddft_settings(settings)
-    lines = ["%tddft", f"  NRoots {data['nroots']}"]
+    is_optimization = bool(data["excited_state_optimization"] or data["excited_state_frequencies"])
+    nroots = data["nroots"]
+    if is_optimization:
+        nroots = max(data["optimization_nroots"], data["root"] + 2)
+    lines = ["%tddft", f"  NRoots {nroots}"]
     lines.extend([
         f"  TDA {'true' if data['td_method'] == 'TDA' else 'false'}",
         f"  MaxDim {data['maxdim']}",
         f"  MaxIter {data['maxiter']}",
-        "  DoNTO true",
-        "  NTOThresh 1e-4",
     ])
+    if data["print_ntos"] and not is_optimization:
+        lines.extend(["  DoNTO true", "  NTOThresh 1e-4"])
     if bool(data["excited_state_optimization"] or data["excited_state_frequencies"]):
         lines.extend([
             f"  IRoot {data['root']}",
@@ -686,8 +690,8 @@ class TDDFTPanel(ttk.Frame):
         self.workflow_summary_var = tk.StringVar()
         self.strict_s0_frequency_var = tk.BooleanVar(value=True)
         self.strict_imaginary_threshold_var = tk.StringVar(value="-30")
-        self.strict_nprocs_var = tk.StringVar(value=str((builder_context or {}).get("nprocs") or 1))
-        self.strict_maxcore_var = tk.StringVar(value=str((builder_context or {}).get("maxcore_mb") or 4000))
+        self.strict_nprocs_var = tk.StringVar(value=str((builder_context or {}).get("nprocs") or 4))
+        self.strict_maxcore_var = tk.StringVar(value=str((builder_context or {}).get("maxcore_mb") or 2000))
         self.strict_status_var = tk.StringVar(value="Uses the current Builder geometry/method and the TD-DFT settings above.")
         self.workflow_var.trace_add("write", lambda *_args: self._apply_workflow_selection())
         for key in ("nroots", "root", "td_method", "manifold", "maxdim"):
@@ -740,8 +744,10 @@ class TDDFTPanel(ttk.Frame):
 
         mode_bar = ttk.Frame(container, style="Panel.TFrame", padding=(10, 8, 10, 0))
         mode_bar.pack(fill="x")
-        self.input_mode_button = tk.Button(mode_bar, text="Input", command=lambda: self._set_ui_mode("input"), relief="solid", borderwidth=1, padx=18, pady=5, cursor="hand2", font=("Segoe UI", 9, "bold"))
+        self.input_mode_button = tk.Button(mode_bar, text="TD-DFT setup", command=lambda: self._set_ui_mode("input"), relief="solid", borderwidth=1, padx=18, pady=5, cursor="hand2", font=("Segoe UI", 9, "bold"))
         self.input_mode_button.pack(side="left")
+        self.calculation_mode_button = tk.Button(mode_bar, text="Input / Run / Monitor", command=lambda: self._set_ui_mode("calculation"), relief="solid", borderwidth=1, padx=18, pady=5, cursor="hand2", font=("Segoe UI", 9, "bold"))
+        self.calculation_mode_button.pack(side="left", padx=(4, 0))
         self.post_mode_button = tk.Button(mode_bar, text="Post-processing", command=lambda: self._set_ui_mode("post"), relief="solid", borderwidth=1, padx=18, pady=5, cursor="hand2", font=("Segoe UI", 9, "bold"))
         self.post_mode_button.pack(side="left", padx=(4, 0))
         if self.embedded:
@@ -805,21 +811,28 @@ class TDDFTPanel(ttk.Frame):
         ttk.Separator(setup, orient="horizontal").grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 6))
         ttk.Label(setup, textvariable=self.workflow_summary_var, style="Muted.TLabel", justify="left", wraplength=430).grid(row=2, column=0, sticky="w")
         apply_box = ttk.Frame(setup); apply_box.grid(row=2, column=1, sticky="e")
-        ttk.Label(apply_box, text="NTO generation: enabled for all calculated states", style="Muted.TLabel").pack(anchor="e", pady=(0, 3))
+        ttk.Label(apply_box, text="NTO generation: vertical absorption/emission stages", style="Muted.TLabel").pack(anchor="e", pady=(0, 3))
         ttk.Button(apply_box, text="Show ORCA Block", command=self._apply, style="Primary.TButton").pack(anchor="e")
 
-        strict = ttk.LabelFrame(setup, text="Complete sequential workflow", padding=8)
+        strict = ttk.LabelFrame(setup, text="Automated multi-job workflow", padding=8)
         strict.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(9, 0))
-        ttk.Checkbutton(strict, text="Validate optimized S0 with a separate frequency calculation", variable=self.strict_s0_frequency_var).grid(row=0, column=0, columnspan=7, sticky="w")
-        ttk.Label(strict, text="Imaginary threshold / cm⁻¹").grid(row=1, column=0, sticky="w", pady=(5, 0))
-        ttk.Entry(strict, textvariable=self.strict_imaginary_threshold_var, width=8).grid(row=1, column=1, sticky="w", padx=(5, 12), pady=(5, 0))
-        ttk.Label(strict, text="Processes").grid(row=1, column=2, sticky="w", pady=(5, 0))
-        ttk.Entry(strict, textvariable=self.strict_nprocs_var, width=7).grid(row=1, column=3, sticky="w", padx=(5, 12), pady=(5, 0))
-        ttk.Label(strict, text="MaxCore / MB per process").grid(row=1, column=4, sticky="w", pady=(5, 0))
-        ttk.Entry(strict, textvariable=self.strict_maxcore_var, width=8).grid(row=1, column=5, sticky="w", padx=(5, 12), pady=(5, 0))
-        ttk.Button(strict, text="Run complete workflow...", command=self._run_strict_workflow, style="Primary.TButton").grid(row=1, column=6, sticky="e", pady=(5, 0))
+        ttk.Label(
+            strict,
+            text="Generates and runs the dependent S0, absorption, excited-state and emission jobs as one managed sequence.",
+            style="Muted.TLabel",
+            wraplength=720,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=7, sticky="w", pady=(0, 4))
+        ttk.Checkbutton(strict, text="Validate optimized S0 with a separate frequency calculation", variable=self.strict_s0_frequency_var).grid(row=1, column=0, columnspan=7, sticky="w")
+        ttk.Label(strict, text="Imaginary threshold / cm⁻¹").grid(row=2, column=0, sticky="w", pady=(5, 0))
+        ttk.Entry(strict, textvariable=self.strict_imaginary_threshold_var, width=8).grid(row=2, column=1, sticky="w", padx=(5, 12), pady=(5, 0))
+        ttk.Label(strict, text="Processes").grid(row=2, column=2, sticky="w", pady=(5, 0))
+        ttk.Entry(strict, textvariable=self.strict_nprocs_var, width=7).grid(row=2, column=3, sticky="w", padx=(5, 12), pady=(5, 0))
+        ttk.Label(strict, text="MaxCore / MB per process").grid(row=2, column=4, sticky="w", pady=(5, 0))
+        ttk.Entry(strict, textvariable=self.strict_maxcore_var, width=8).grid(row=2, column=5, sticky="w", padx=(5, 12), pady=(5, 0))
+        ttk.Button(strict, text="Start automated sequence...", command=self._run_strict_workflow, style="Primary.TButton").grid(row=2, column=6, sticky="e", pady=(5, 0))
         strict.columnconfigure(6, weight=1)
-        ttk.Label(strict, textvariable=self.strict_status_var, style="Muted.TLabel", wraplength=650, justify="left").grid(row=2, column=0, columnspan=7, sticky="w", pady=(6, 0))
+        ttk.Label(strict, textvariable=self.strict_status_var, style="Muted.TLabel", wraplength=650, justify="left").grid(row=3, column=0, columnspan=7, sticky="w", pady=(6, 0))
 
         spectrum = ttk.LabelFrame(root, text="Spectrum options", padding=10); spectrum.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         spectrum.columnconfigure(0, weight=1); spectrum.columnconfigure(1, weight=1); spectrum.columnconfigure(2, weight=1); spectrum.columnconfigure(3, weight=1)
@@ -913,6 +926,7 @@ class TDDFTPanel(ttk.Frame):
             input_provider=self._prepare_workspace_input,
             orca_path_provider=self._workspace_orca_path,
             initial_path_provider=self._workspace_input_path,
+            active_job_provider=self._workspace_active_job,
             completed_callback=self._workspace_run_completed,
         )
         self.calculation_workspace.grid(row=7, column=0, sticky="nsew", pady=(8, 0))
@@ -920,9 +934,25 @@ class TDDFTPanel(ttk.Frame):
         footer = ttk.Frame(self, style="Panel.TFrame", padding=(12, 6))
         footer.pack(fill="x")
         ttk.Label(footer, text=COPYRIGHT_NOTE, style="Muted.TLabel").pack(anchor="w")
-        self.input_sections = (connection_box, setup, self.calculation_workspace)
+        self.input_sections = (connection_box, setup)
+        self.calculation_sections = (self.calculation_workspace,)
         self.post_sections = (spectrum, progress_frame, tablebox, emission, viz)
+        self._sync_existing_builder_input()
         self._set_ui_mode("input")
+
+    def _sync_existing_builder_input(self) -> bool:
+        """Adopt Builder's current editor contents without rebuilding them."""
+        if not hasattr(self, "calculation_workspace"):
+            return False
+        provider = self.builder_context.get("current_input_provider")
+        if not callable(provider):
+            return False
+        try:
+            text = str(provider() or "")
+            path = self._workspace_input_path()
+        except Exception:
+            return False
+        return self.calculation_workspace.set_input(text, path, status="Synchronized from Input Builder")
 
     def _prepare_workspace_input(self) -> str:
         """Prepare a complete input without coupling this panel to Builder internals."""
@@ -974,6 +1004,10 @@ class TDDFTPanel(ttk.Frame):
         source = str(self.builder_context.get("structure_source_path", "") or "")
         return str(Path(source).with_suffix(".inp")) if source else "tddft.inp"
 
+    def _workspace_active_job(self) -> Dict[str, object]:
+        provider = self.builder_context.get("active_job_provider")
+        return dict(provider() or {}) if callable(provider) else {}
+
     def _workspace_run_completed(self, output_path: str) -> None:
         try:
             self._set_loaded_output(output_path)
@@ -982,15 +1016,17 @@ class TDDFTPanel(ttk.Frame):
             self.update_progress(0, f"ORCA finished; output could not be loaded automatically: {exc}", "red")
 
     def _set_ui_mode(self, mode: str) -> None:
-        if mode not in {"input", "post"}:
+        if mode not in {"input", "calculation", "post"}:
             return
         self.ui_mode = mode
         for section in getattr(self, "input_sections", ()):
             section.grid() if mode == "input" else section.grid_remove()
+        for section in getattr(self, "calculation_sections", ()):
+            section.grid() if mode == "calculation" else section.grid_remove()
         for section in getattr(self, "post_sections", ()):
             section.grid() if mode == "post" else section.grid_remove()
         colors = {"active_bg": "#1d4ed8", "active_fg": "#ffffff", "inactive_bg": "#f8fafc", "inactive_fg": "#1d4ed8"}
-        for name, button in (("input", self.input_mode_button), ("post", self.post_mode_button)):
+        for name, button in (("input", self.input_mode_button), ("calculation", self.calculation_mode_button), ("post", self.post_mode_button)):
             active = name == mode
             button.configure(
                 bg=colors["active_bg"] if active else colors["inactive_bg"],
@@ -1130,7 +1166,14 @@ class TDDFTPanel(ttk.Frame):
             steps.append(f"Vertical {self.vars['nroots'].get()} roots, {self.vars['td_method'].get()}")
         if self.excited_state_opt_var.get():
             prefix = "S" if self.vars["target_manifold"].get() == "Singlet" else "T"
-            steps.append(f"Opt {prefix}{self.vars['root'].get()}")
+            try:
+                opt_roots = max(
+                    int(DEFAULT_TDDFT_SETTINGS["optimization_nroots"]),
+                    int(self.vars["root"].get()) + 2,
+                )
+                steps.append(f"Opt {prefix}{self.vars['root'].get()} ({opt_roots} roots, no NTOs)")
+            except Exception:
+                steps.append(f"Opt {prefix}{self.vars['root'].get()}")
         if self.excited_state_freq_var.get():
             prefix = "S" if self.vars["target_manifold"].get() == "Singlet" else "T"
             steps.append(f"Freq {prefix}{self.vars['root'].get()}")
@@ -1189,6 +1232,8 @@ class TDDFTPanel(ttk.Frame):
 
         if hasattr(self, "output_label"):
             self._auto_load_builder_output()
+        if hasattr(self, "calculation_workspace") and not self.calculation_workspace.input_buffer.strip():
+            self._sync_existing_builder_input()
 
     def _auto_load_builder_output(self) -> None:
         path_text = str(getattr(self, "_pending_builder_output_path", "") or "").strip()

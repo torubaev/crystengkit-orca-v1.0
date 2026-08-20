@@ -8,10 +8,11 @@
 
 ## NTO preparation and analysis
 
-- Every Builder and standalone TD-DFT/TDA block includes `DoNTO true` and
+- Vertical absorption and emission blocks include `DoNTO true` and
   `NTOThresh 1e-4`; omitting `NTOStates` requests every calculated state.
-- Legacy saved `print_ntos: false` values are migrated to the required enabled
-  behavior.
+- Excited-state optimization omits repeated NTO generation and uses a compact
+  root window while retaining a two-root buffer above the target state.
+- Explicit saved `print_ntos: false` values are respected for vertical jobs.
 - The validated Multiwfn workflow generates the dominant selected-state NTO
   hole/electron cube pair from the matching `.gbw` and reuses valid cached
   cubes unless regeneration is requested.

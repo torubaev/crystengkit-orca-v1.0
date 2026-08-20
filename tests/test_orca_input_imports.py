@@ -20,6 +20,57 @@ spec.loader.exec_module(orca_input)
 
 
 class ImportHelperTests(unittest.TestCase):
+    def test_input_association_uses_only_same_basename_output(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder = Path(tmpdir)
+            current_input = folder / "torsion.inp"
+            current_output = folder / "torsion.out"
+            previous_output = folder / "emission.out"
+            current_input.write_text("! B3LYP\n", encoding="utf-8")
+            previous_output.write_text("old", encoding="utf-8")
+            self.assertEqual(orca_input.associated_output_path(str(current_input)), "")
+            current_output.write_text("current", encoding="utf-8")
+            self.assertEqual(
+                Path(orca_input.associated_output_path(str(current_input))).resolve(),
+                current_output.resolve(),
+            )
+
+    def test_workspace_rejects_output_owned_by_previous_job(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder = Path(tmpdir)
+            current_input = folder / "torsion.inp"
+            previous_output = folder / "emission.out"
+            stale = {"ui_mode": "post", "output_path": str(previous_output), "scroll": 0.25}
+            cleaned = orca_input.tool_state_for_current_input(stale, str(current_input))
+            self.assertEqual(cleaned["output_path"], "")
+            self.assertEqual(cleaned["ui_mode"], "input")
+            self.assertEqual(stale["output_path"], str(previous_output))
+
+    def test_workspace_keeps_same_job_output(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            current_input = Path(tmpdir) / "torsion.inp"
+            current_output = current_input.with_suffix(".out")
+            state = {"output_path": str(current_output)}
+            self.assertEqual(
+                orca_input.tool_state_for_current_input(state, str(current_input))["output_path"],
+                str(current_output),
+            )
+
+    def test_loaded_input_does_not_fall_back_to_unrelated_folder_output(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder = Path(tmpdir)
+            current_input = folder / "torsion.inp"
+            unrelated_output = folder / "emission.out"
+            current_input.write_text("! B3LYP\n", encoding="utf-8")
+            unrelated_output.write_text("ORCA TERMINATED NORMALLY\n", encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            app.current_input_path = str(current_input)
+            app.last_output_path = str(unrelated_output)
+            app.path_var = SimpleNamespace(get=lambda: str(current_input))
+            with self.assertRaisesRegex(ValueError, "No output file"):
+                app._available_output_path()
+
+
     def test_tddft_builder_context_exposes_existing_method_and_geometry_controls(self):
         app = object.__new__(orca_input.App)
         value = lambda item: SimpleNamespace(get=lambda: item)
@@ -442,11 +493,44 @@ $$$$
         self.assertEqual(orca_input.AI_WEB_MODELS["ChatGPT"], orca_input.CHATGPT_ORCA_MONITOR_URL)
         self.assertIn("g-6a5f33b7e3b881918fa604bb19250b23", orca_input.CHATGPT_ORCA_MONITOR_URL)
 
+    def test_ai_browser_opens_only_after_verified_clipboard_copy(self):
+        app = object.__new__(orca_input.App)
+        app.ai_web_model_var = SimpleNamespace(get=lambda: "ChatGPT")
+        app._orca_output_for_ai = lambda: "SCF ITERATION 9"
+        app.clipboard_clear = mock.Mock()
+        app.clipboard_append = mock.Mock()
+        app.update_idletasks = mock.Mock()
+        app.clipboard_get = mock.Mock(return_value="wrong clipboard contents")
+
+        with mock.patch.object(orca_input.webbrowser, "open") as open_browser, \
+             mock.patch.object(orca_input.messagebox, "showerror") as show_error:
+            app.open_ai_progress_prompt()
+
+        open_browser.assert_not_called()
+        show_error.assert_called_once()
+
+    def test_ai_browser_opens_after_verified_clipboard_copy(self):
+        app = object.__new__(orca_input.App)
+        app.ai_web_model_var = SimpleNamespace(get=lambda: "ChatGPT")
+        app._orca_output_for_ai = lambda: "SCF ITERATION 9"
+        copied = {"value": ""}
+        app.clipboard_clear = lambda: copied.update(value="")
+        app.clipboard_append = lambda value: copied.update(value=value)
+        app.update_idletasks = lambda: None
+        app.clipboard_get = lambda: copied["value"]
+        app.append_monitor = mock.Mock()
+
+        with mock.patch.object(orca_input.webbrowser, "open", return_value=True) as open_browser:
+            app.open_ai_progress_prompt()
+
+        open_browser.assert_called_once_with(orca_input.CHATGPT_ORCA_MONITOR_URL, new=2)
+        self.assertTrue(copied["value"].endswith(orca_input.ORCA_PROMPT_END_MARKER))
+
     def test_orca_monitor_agent_payload_contains_data_but_no_analysis_instructions(self):
         payload = orca_input.build_orca_agent_payload("SCF ITERATION 9\nC 0.0 1.0 2.0")
         self.assertTrue(payload.startswith("ORCA Job progress report."))
         self.assertTrue(payload.endswith(orca_input.ORCA_PROMPT_END_MARKER))
-        self.assertIn("PAYLOAD STATUS: COMPLETE BOUNDED LIVE EXTRACT", payload)
+        self.assertIn("PAYLOAD STATUS: COMPLETE PRIVACY-REDACTED ORCA OUTPUT", payload)
         self.assertGreaterEqual(payload.count(orca_input.ORCA_PROMPT_END_MARKER), 2)
         self.assertIn("SCF ITERATION 9", payload)
         self.assertNotIn("C 0.0 1.0 2.0", payload)
@@ -454,7 +538,7 @@ $$$$
         self.assertNotIn("Act as an expert", payload)
         self.assertIn("COMPLETE PAYLOAD: FINAL MARKER FOLLOWS", payload)
 
-    def test_large_agent_payload_keeps_marker_header_evidence_and_tail(self):
+    def test_large_agent_payload_is_first_turn_safe_progress_extract(self):
         source = (
             "Program Version 6.1.0\n! CAM-B3LYP def2-SVP OPT TIGHTSCF\n"
             + "routine data\n" * 12000
@@ -462,14 +546,22 @@ $$$$
             + "GEOMETRY OPTIMIZATION CYCLE 12\nTOTAL RUN TIME: 1 hours 2 minutes\n"
         )
         payload = orca_input.build_orca_agent_payload(source)
-        self.assertLess(len(payload), orca_input.ORCA_AGENT_OUTPUT_MAX_CHARS + 500)
+        self.assertLess(len(payload), orca_input.ORCA_AGENT_OUTPUT_MAX_CHARS + 600)
         self.assertIn("Program Version 6.1.0", payload)
         self.assertIn("CAM-B3LYP def2-SVP OPT", payload)
         self.assertIn("SCF ITERATION 77 NOT CONVERGED", payload)
         self.assertIn("GEOMETRY OPTIMIZATION CYCLE 12", payload)
         self.assertIn("TOTAL RUN TIME", payload)
+        self.assertIn("COMPLETE PROGRESS-FOCUSED EXTRACT FROM FULL ORCA OUTPUT", payload)
         self.assertIn("CRYSTENGKIT SEMANTIC EXTRACT", payload)
         self.assertNotIn("routine data", payload)
+        self.assertTrue(payload.endswith(orca_input.ORCA_PROMPT_END_MARKER))
+
+    def test_large_agent_payload_stays_below_conservative_inline_paste_limit(self):
+        source = "GEOMETRY OPTIMIZATION CYCLE 1\n" + ("SCF ITERATION 12\n" * 5000)
+        payload = orca_input.build_orca_agent_payload(source)
+        self.assertLess(len(payload), 13000)
+        self.assertIn("GEOMETRY OPTIMIZATION CYCLE", payload)
         self.assertTrue(payload.endswith(orca_input.ORCA_PROMPT_END_MARKER))
 
     def test_monitor_actions_have_unique_standard_icons_and_handlers(self):

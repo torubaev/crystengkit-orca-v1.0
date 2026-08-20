@@ -120,6 +120,11 @@ class StrictTDDFTWorkflowTests(unittest.TestCase):
             self.assertIn(engine.stage_gbw("es_opt").name, emission)
             self.assertNotIn(" Opt", absorption)
             self.assertNotIn(" Opt", emission)
+            self.assertIn("NRoots 5", esopt)
+            self.assertNotIn("DoNTO", esopt)
+            self.assertIn("DoNTO true", absorption)
+            self.assertIn("DoNTO true", emission)
+            self.assertNotIn("TightOpt", esopt)
 
     def test_validation_requires_normal_termination_and_optimization(self):
         self.assertTrue(normal_termination(OPT_OUT))
