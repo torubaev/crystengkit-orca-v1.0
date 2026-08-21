@@ -100,6 +100,22 @@ class EmbeddedToolContractTests(unittest.TestCase):
             self.assertIn("get_state", methods)
             self.assertIn("set_state", methods)
 
+    def test_embedded_homo_lumo_does_not_consume_builder_process_arguments(self):
+        tree = parsed("tools/HOMO_LUMO/HOMO_LUMO_v2.py")
+        node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "App")
+        method = next(
+            item for item in node.body
+            if isinstance(item, ast.FunctionDef) and item.name == "_load_startup_file"
+        )
+        source = ast.unparse(method)
+        self.assertIn("not self.embedded and len(sys.argv) >= 2", source)
+
+    def test_builder_uses_one_responsive_layout_on_all_platforms(self):
+        source = (ROOT / "tools/Orca_input/orca_input.py").read_text(encoding="utf-8")
+        self.assertNotIn("is_linux_desktop", source)
+        self.assertIn("body.columnconfigure(0, weight=2, minsize=620)", source)
+        self.assertIn("body.columnconfigure(1, weight=1, minsize=320)", source)
+
     def test_qtaim_overlay_uses_the_matching_nci_output_folder(self):
         tree = parsed("tools/qtaim-cp/qtaim.py")
         node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "QTAIMGui")

@@ -17,7 +17,7 @@ Required external program:
     - Multiwfn
 
 How to run:
-    py -3.12 nci_plotter.py
+    python nci_plotter.py
 
 Main controls:
     - Select wavefunction file.
@@ -64,7 +64,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
-from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, keep_entry_end_visible, load_header_icon
+from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, executable_filetypes, keep_entry_end_visible, load_header_icon
 from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 from shared.molecule_style import add_mesh_safe, molecule_material_parameters
 from shared.multiwfn_locator import find_multiwfn, find_multiwfn_deep
@@ -1195,10 +1195,7 @@ class NCIPlotterApp:
     def prompt_for_multiwfn(self) -> Optional[str]:
         path = filedialog.askopenfilename(
             title="Select Multiwfn executable",
-            filetypes=[
-                ("Executable files", "*.exe *"),
-                ("All files", "*.*"),
-            ],
+            filetypes=executable_filetypes("Executable files"),
             parent=self.root,
         )
         if path:
@@ -1697,7 +1694,7 @@ class NCIPlotterApp:
             if not live:
                 messagebox.showerror(
                     "PyVista missing",
-                    "PyVista/VTK is not installed.\n\nInstall with:\npy -3.12 -m pip install pyvista",
+                    f"PyVista/VTK is not installed.\n\nInstall with:\n{sys.executable} -m pip install pyvista",
                 )
             self.log(f"ERROR: PyVista/VTK not installed: {exc}")
             self.plot_update_in_progress = False

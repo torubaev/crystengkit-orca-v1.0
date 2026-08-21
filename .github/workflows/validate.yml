@@ -21,6 +21,21 @@ jobs:
           git ls-files '*.py' -z |
             xargs -0 -n1 python -m py_compile
 
+  unit-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependency
+        run: python -m pip install numpy
+      - name: Run shared Python tests
+        run: python -m unittest discover -s tests
+
   installer-syntax:
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +44,10 @@ jobs:
         run: |
           sh -n install/run_checker.sh
           sh -n packaging/linux/install_crystengkit_orca.sh
+          test -x install/run_checker.sh
+          test -x install/run_checker.command
+          test -x packaging/linux/install_crystengkit_orca.sh
+          ! grep -Il $'\r' install/run_checker.sh install/run_checker.command packaging/linux/install_crystengkit_orca.sh
 
   powershell-syntax:
     runs-on: windows-latest

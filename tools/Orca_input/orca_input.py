@@ -737,6 +737,19 @@ def start_application_update(master: tk.Misc):
         )
         return
 
+    if os.name != "nt":
+        # The application code is shared, but installing/replacing files while
+        # they are running is platform-specific. Linux releases use the shell
+        # installer rather than the signed Windows .exe updater.
+        if messagebox.askyesno(
+            "Update",
+            "Linux updates use the release installer. Open the CrystEngKit-ORCA "
+            "releases page to download and run the latest Linux installer?",
+            parent=master,
+        ):
+            webbrowser.open(f"{GITHUB_URL}/releases/latest")
+        return
+
     dialog = tk.Toplevel(master)
     dialog.title("CrystEngKit-ORCA Update")
     dialog.transient(master)
@@ -3839,10 +3852,13 @@ class App(tk.Tk):
         self.title("ORCA input builder")
         screen_w = self.winfo_screenwidth()
         screen_h = self.winfo_screenheight()
-        win_w = max(760, int(screen_w * 0.70))
+        # Use one responsive layout on every desktop. Tk themes and font metrics
+        # vary by platform, so generous shared proportions are more reliable
+        # than maintaining separate Windows and Linux UI implementations.
+        win_w = max(760, int(screen_w * 0.88))
         win_h = max(1, int(screen_h * 0.80))
         self.geometry(f"{win_w}x{win_h}")
-        self.minsize(760, min(700, win_h))
+        self.minsize(min(screen_w, 1050), min(700, win_h))
         self._configure_styles()
 
         self.structure: Optional[Structure] = None
@@ -4190,11 +4206,13 @@ class App(tk.Tk):
         self.builder_workspace = body
         self.page_controller.register("builder", "ORCA Input Builder", body)
         self.page_controller.show("builder")
-        body.columnconfigure(0, weight=0, minsize=450)
-        body.columnconfigure(1, weight=1)
+        # Keep calculation setup approximately twice as wide as the monitor on
+        # both Windows and Linux, while allowing both panes to grow.
+        body.columnconfigure(0, weight=2, minsize=620)
+        body.columnconfigure(1, weight=1, minsize=320)
         body.rowconfigure(0, weight=1)
 
-        left_host = ttk.Frame(body, style="Panel.TFrame", width=450)
+        left_host = ttk.Frame(body, style="Panel.TFrame", width=620)
         left_host.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         left_host.columnconfigure(0, weight=1)
         left_host.rowconfigure(0, weight=1)
@@ -6470,12 +6488,13 @@ class App(tk.Tk):
         try:
             page = self._embedded_tool_page("homo_lumo")
             panel = self.embedded_tool_controllers.get("homo_lumo")
+            # HOMO-LUMO is also a standalone browser/plotter and must open
+            # without a Builder structure or completed ORCA output.
+            out_path = None
             try:
                 out_path = self._recent_output_path()
-            except ValueError as exc:
-                if "No ORCA .out file was found yet." not in str(exc):
-                    raise
-                out_path = None
+            except ValueError:
+                pass
             if panel is None or not panel.winfo_exists():
                 module = self._load_embedded_tool_module("homo_lumo", self.homo_lumo_script_var.get())
                 panel = module.App(page, embedded=True, initial_path=out_path)

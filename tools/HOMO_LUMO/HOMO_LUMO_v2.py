@@ -1616,7 +1616,7 @@ class App(ttk.Frame):
     def _load_startup_file(self) -> None:
         if self.initial_path:
             path = str(self.initial_path).strip().strip('"')
-        elif len(sys.argv) >= 2:
+        elif not self.embedded and len(sys.argv) >= 2:
             path = sys.argv[1].strip().strip('"')
         else:
             return

@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from shared.orca_parallel import add_mpi_to_path
+from shared.tk_helpers import executable_filetypes
 
 
 def subprocess_environment(executable: str) -> dict[str, str]:
@@ -238,7 +239,7 @@ class OrcaCalculationWorkspace(ttk.LabelFrame):
                 raise ValueError("An ORCA calculation is already running in TD-DFT.")
             executable = self.orca_path_provider().strip().strip('"')
             if not executable or not Path(executable).is_file():
-                selected = filedialog.askopenfilename(parent=self, title="Locate ORCA executable", filetypes=[("ORCA executable", "orca.exe"), ("All files", "*.*")])
+                selected = filedialog.askopenfilename(parent=self, title="Locate ORCA executable", filetypes=executable_filetypes("ORCA executable"))
                 executable = selected or ""
             if not executable:
                 return

@@ -1,0 +1,12 @@
+# Keep executable scripts native to their target platform regardless of the
+# developer machine's core.autocrlf setting.
+*.sh       text eol=lf
+*.command  text eol=lf
+*.desktop  text eol=lf
+
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.ps1      text eol=crlf
+
+# Release binaries are distribution outputs, not payload for another archive.
+install/releases export-ignore

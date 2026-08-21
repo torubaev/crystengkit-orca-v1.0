@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from tkinter import ttk
 from typing import Any, Optional
+
+
+def executable_filetypes(label: str = "Executable") -> list[tuple[str, str]]:
+    """Return a native executable filter without hiding Unix executables."""
+    if os.name == "nt":
+        return [(label, "*.exe"), ("All files", "*.*")]
+    return [(label, "*"), ("All files", "*")]
 
 
 def configure_builder_ui_style(widget: tk.Misc) -> None:

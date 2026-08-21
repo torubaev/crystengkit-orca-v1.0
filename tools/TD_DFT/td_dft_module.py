@@ -30,7 +30,7 @@ if str(TOOLS_ROOT) not in sys.path:
 import app_identity as _app_identity
 from shared.multiwfn_locator import auto_detect_multiwfn_path
 from shared.orca_parallel import default_orca_nprocs
-from shared.tk_helpers import install_edit_context_menu, load_header_icon
+from shared.tk_helpers import executable_filetypes, install_edit_context_menu, load_header_icon
 try:
     from .td_dft_naming import identified_output_stem
 except ImportError:
@@ -1410,7 +1410,7 @@ class TDDFTPanel(ttk.Frame):
         if not orca_path or not Path(orca_path).is_file():
             orca_path = filedialog.askopenfilename(
                 parent=self, title="Select the ORCA executable",
-                filetypes=[("ORCA executable", "orca.exe orca"), ("All files", "*.*")],
+                filetypes=executable_filetypes("ORCA executable"),
             )
         if not orca_path:
             return
@@ -1667,7 +1667,7 @@ class TDDFTPanel(ttk.Frame):
             self.associated_files["manual"] = str(Path(path).resolve()); self.associated_summary_var.set("\n".join(f"{key}: {value}" for key, value in self.associated_files.items()))
 
     def _browse_multiwfn(self):
-        path = filedialog.askopenfilename(parent=self, title="Select Multiwfn executable", filetypes=[("Executable", "*.exe"), ("All files", "*.*")])
+        path = filedialog.askopenfilename(parent=self, title="Select Multiwfn executable", filetypes=executable_filetypes())
         if path: self.multiwfn_var.set(path); self._save_module_settings()
 
     def _save_module_settings(self):
