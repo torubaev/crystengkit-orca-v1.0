@@ -44,7 +44,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import install_dev_reload_shortcut
-from shared.tk_helpers import keep_entry_end_visible
+from shared.tk_helpers import install_edit_context_menu, keep_entry_end_visible
 from shared.pyvista_window import bring_pyvista_window_to_front
 NCI_MODULE_PATH = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 QTAIM_GRAPHICS_SETTINGS_PATH = Path.home() / ".qtaim_graphics_settings.json"
@@ -1275,6 +1275,7 @@ def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
 class OverlayApp(tk.Tk):
     def __init__(self, initial_folder: Optional[Path] = None):
         super().__init__()
+        install_edit_context_menu(self)
         self.title("NCI + QTAIM Overlay Viewer")
         self.geometry(f"980x{max(1, int(self.winfo_screenheight() * 0.80))}")
         qtaim_graphics = load_qtaim_graphics_settings()

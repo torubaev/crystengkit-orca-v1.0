@@ -44,7 +44,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
-from shared.tk_helpers import bind_mousewheel_to_canvas, keep_entry_end_visible
+from shared.tk_helpers import bind_mousewheel_to_canvas, install_edit_context_menu, keep_entry_end_visible
 from shared.pyvista_window import bring_pyvista_window_to_front
 from shared.molecule_style import add_mesh_safe, cylinder_between, molecule_material_parameters
 from shared.multiwfn_locator import auto_detect_multiwfn_path
@@ -3834,6 +3834,7 @@ class App(tk.Tk):
     def __init__(self):
         set_windows_app_id("Builder")
         super().__init__()
+        install_edit_context_menu(self)
         self.withdraw()
         self.title("ORCA input builder")
         screen_w = self.winfo_screenwidth()
@@ -4452,7 +4453,9 @@ class App(tk.Tk):
 
         self.output_text = tk.Text(output_box, wrap="none", font=("Consolas", 10), relief="solid", bd=1)
         self.output_text.grid(row=1, column=0, sticky="nsew")
-        self.output_text.tag_configure("tddft_block", foreground="#7f1d1d", background="#fee2e2")
+        self.output_text.tag_configure("tddft_block", foreground="#334155", background="#e8f1fb")
+        self.output_text.tag_configure("sel", foreground="#ffffff", background="#2563eb")
+        self.output_text.tag_raise("sel")
         ys = ttk.Scrollbar(output_box, orient="vertical", command=self.output_text.yview)
         xs = ttk.Scrollbar(output_box, orient="horizontal", command=self.output_text.xview)
         self.output_text.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)

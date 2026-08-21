@@ -87,26 +87,58 @@ def ensure_molden_file(calc_dir: Path, base_name: str, gbw_path: Optional[Path] 
     raise MultiwfnRunnerError("orca_2mkl did not produce a Molden file as expected")
 
 
+def _orca_output_requires_tddft_confirmation(orca_out: Path) -> bool:
+    """Return whether Multiwfn will ask to continue for full TD-DFT data.
+
+    Multiwfn adds this prompt after the selected state for ORCA TD-DFT/RPA
+    output because ORCA prints contributions rather than full configuration
+    coefficients.  TDA output does not add the prompt.  An unanswered prompt
+    shifts every subsequent batch-menu answer by one position.
+    """
+    try:
+        text = Path(orca_out).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    tda_setting = list(re.finditer(r"(?im)^\s*(?:\|\s*\d+>\s*)?TDA\s+(true|false)\b", text))
+    if tda_setting:
+        return tda_setting[-1].group(1).lower() == "false"
+    return bool(re.search(r"(?i)RPA/TD-DFT", text)) and not bool(
+        re.search(r"(?i)TDA EXCITED STATES", text)
+    )
+
+
+def _with_optional_tddft_confirmation(orca_out: Path, state: int, remainder: List[str]) -> List[str]:
+    sequence = [str(state)]
+    if _orca_output_requires_tddft_confirmation(orca_out):
+        sequence.append("")  # Press ENTER at Multiwfn's full-TDDFT warning.
+    return sequence + remainder
+
+
 def _build_batch_input_lines(orca_out: Path, state: int) -> List[str]:
     # The canonical sequence requested by the user (as per instructions).
     seq = [
         "18",
         "1",
         str(orca_out),
-        str(state),
-        "1",
-        "3",
-        "-1",
-        "10",
-        "1",
-        "11",
-        "1",
-        "13",
-        "15",
-        "0",
-        "0",
-        "0",
-        "q",
+        *_with_optional_tddft_confirmation(
+            orca_out,
+            state,
+            [
+                "1",
+                "3",
+                "-1",
+                "10",
+                "1",
+                "11",
+                "1",
+                "13",
+                "15",
+                "0",
+                "0",
+                "0",
+                "q",
+            ],
+        ),
     ]
     return [line + "\n" for line in seq]
 
@@ -863,10 +895,18 @@ class MultiwfnTDDFTRunner:
         nto_molden = output_dir / f"NTO_state_{state_index:03d}.molden"
         nto_log = output_dir / f"multiwfn_nto_state_{state_index:03d}.log"
         try:
+            generation_answers = [18, 6, str(orca_output)]
+            generation_answers.extend(
+                _with_optional_tddft_confirmation(
+                    orca_output,
+                    state_index,
+                    ["1", str(nto_molden), "0", "q"],
+                )
+            )
             generation_log = self._run_batch(
                 wavefunction,
                 output_dir,
-                (18, 6, str(orca_output), state_index, 1, str(nto_molden), 0, "q"),
+                generation_answers,
                 timeout,
             )
         except Exception as exc:

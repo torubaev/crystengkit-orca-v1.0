@@ -265,6 +265,17 @@ The TD-DFT page supplies:
 - target state; and
 - solver settings.
 
+#### Choosing `NRoots` and `MaxDim`
+
+`NRoots` is the number of excited states requested (for example, `5` asks ORCA
+to calculate S1-S5 for a singlet calculation). `MaxDim` controls the maximum
+iterative solver space available for finding those states: a larger value can
+help difficult cases converge, but it also increases memory use and often the
+calculation time. CrystEngKit defaults to `NRoots = 5` and automatically sets
+`MaxDim = 4 × NRoots` (`20` for five roots). Changing `NRoots` recalculates
+`MaxDim`; the field remains editable for experienced users who need to tune the
+solver manually.
+
 The complete workflow runs one required calculation at a time:
 
 ```text

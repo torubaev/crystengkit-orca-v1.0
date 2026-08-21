@@ -57,7 +57,7 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 from shared.window_layout import compute_visualization_layout, place_visualization_windows
-from shared.tk_helpers import bind_mousewheel_to_canvas, keep_entry_end_visible, load_header_icon
+from shared.tk_helpers import bind_mousewheel_to_canvas, install_edit_context_menu, keep_entry_end_visible, load_header_icon
 from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 from shared.molecule_style import cylinder_between
 
@@ -2019,6 +2019,7 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
         root = tk.Frame(parent, bg="#f4f6f9")
         root.pack(fill="both", expand=True)
         embedded = True
+    install_edit_context_menu(root)
     APP_STATE["root"] = root
     if not embedded:
         root.title("VisMap GUI")

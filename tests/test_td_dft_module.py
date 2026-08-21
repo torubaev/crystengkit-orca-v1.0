@@ -24,7 +24,11 @@ from TD_DFT.td_dft_module import (  # noqa: E402
     detect_associated_files,
     inspect_tddft_absorption_source,
 )
-from TD_DFT.td_dft_multiwfn_runner import MultiwfnTDDFTRunner  # noqa: E402
+from TD_DFT.td_dft_multiwfn_runner import (  # noqa: E402
+    MultiwfnTDDFTRunner,
+    _build_batch_input_lines,
+    _orca_output_requires_tddft_confirmation,
+)
 from TD_DFT.td_dft_cube_viewer import read_cube  # noqa: E402
 import TD_DFT.td_dft_module as td_dft_module  # noqa: E402
 
@@ -338,6 +342,24 @@ ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS
             self.assertEqual(electron.name, "NTO_electron_00002.cub")
             self.assertTrue(hole.is_file() and electron.is_file() and log.is_file())
             self.assertEqual(runner.calls[1][1][2], "12,13")
+
+    def test_full_tddft_multiwfn_batch_acknowledges_optional_warning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "full_tddft.out"
+            output.write_text("| 22> TDA false\nSTATE 1: E=0.1 au\n", encoding="utf-8")
+            lines = [line.rstrip("\n") for line in _build_batch_input_lines(output, 1)]
+            requires_confirmation = _orca_output_requires_tddft_confirmation(output)
+        self.assertTrue(requires_confirmation)
+        self.assertEqual(lines[:6], ["18", "1", str(output), "1", "", "1"])
+
+    def test_tda_multiwfn_batch_does_not_insert_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "tda.out"
+            output.write_text("| 22> TDA true\nSTATE 1: E=0.1 au\n", encoding="utf-8")
+            lines = [line.rstrip("\n") for line in _build_batch_input_lines(output, 1)]
+            requires_confirmation = _orca_output_requires_tddft_confirmation(output)
+        self.assertFalse(requires_confirmation)
+        self.assertEqual(lines[:5], ["18", "1", str(output), "1", "1"])
 
     def test_generated_state_cube_detector_accepts_multiwfn_filenames(self):
         with tempfile.TemporaryDirectory() as directory:

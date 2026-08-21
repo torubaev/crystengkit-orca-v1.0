@@ -20,6 +20,7 @@ Install:
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 import traceback
@@ -34,6 +35,11 @@ try:
     from tkinter import filedialog, messagebox, ttk
 except Exception as exc:
     raise SystemExit(f"Tkinter could not be imported:\n{exc}")
+
+TOOLS_ROOT = Path(__file__).resolve().parents[1]
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from shared.tk_helpers import install_edit_context_menu
 
 
 ELEMENT_COLORS: Dict[str, str] = {
@@ -667,6 +673,7 @@ def save_png(path: str, png_path: str, settings: RenderSettings) -> Tuple[int, i
 class XYZViewerApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        install_edit_context_menu(self)
 
         self.title("XYZ PyVista Ball-and-Stick Viewer")
         window_height = max(1, int(self.winfo_screenheight() * 0.80))

@@ -458,6 +458,8 @@
 <li>target state; and</li>
 <li>solver settings.</li>
 </ul>
+<h4 id="choosing-nroots-and-maxdim">Choosing <code>NRoots</code> and <code>MaxDim</code></h4>
+<p><code>NRoots</code> is the number of excited states requested (for example, <code>5</code> asks ORCA to calculate S1-S5 for a singlet calculation). <code>MaxDim</code> controls the maximum iterative solver space available for finding those states: a larger value can help difficult cases converge, but it also increases memory use and often the calculation time. CrystEngKit defaults to <code>NRoots = 5</code> and automatically sets <code>MaxDim = 4 × NRoots</code> (<code>20</code> for five roots). Changing <code>NRoots</code> recalculates <code>MaxDim</code>; the field remains editable for experienced users who need to tune the solver manually.</p>
 <p>The complete workflow runs one required calculation at a time:</p>
 <div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>Starting molecular structure
     -&gt; S0 geometry optimization

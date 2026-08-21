@@ -30,7 +30,7 @@ if str(TOOLS_ROOT) not in sys.path:
 import app_identity as _app_identity
 from shared.multiwfn_locator import auto_detect_multiwfn_path
 from shared.orca_parallel import default_orca_nprocs
-from shared.tk_helpers import load_header_icon
+from shared.tk_helpers import install_edit_context_menu, load_header_icon
 try:
     from .td_dft_naming import identified_output_stem
 except ImportError:
@@ -211,6 +211,7 @@ def classify_orca_tddft_failure_text(text: str) -> Dict:
 
 def configure_builder_ui_style(widget: tk.Misc) -> None:
     """Apply the shared CrystEngKit tool palette and widget styling."""
+    install_edit_context_menu(widget)
     style = ttk.Style(widget)
     try:
         style.theme_use("clam")

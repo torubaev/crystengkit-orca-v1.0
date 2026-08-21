@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 def configure_builder_ui_style(widget: tk.Misc) -> None:
     """Apply the common CrystEngKit control-panel theme."""
+    install_edit_context_menu(widget)
     style = ttk.Style(widget)
     try:
         style.theme_use("clam")
@@ -62,6 +63,97 @@ def configure_builder_ui_style(widget: tk.Misc) -> None:
         bordercolor="#93c5fd",
         thickness=14,
     )
+
+
+def install_edit_context_menu(widget: tk.Misc) -> None:
+    """Install one standard Cut/Copy/Paste menu for editable Tk widgets.
+
+    The binding is attached once per Tk interpreter and therefore also covers
+    entries and text areas created later in child tool windows.
+    """
+    root = widget._root()
+    marker = "_crystengkit_edit_context_menu_installed"
+    if getattr(root, marker, False):
+        return
+    setattr(root, marker, True)
+
+    menu = tk.Menu(root, tearoff=False)
+    current: dict[str, Optional[tk.Misc]] = {"widget": None}
+
+    def target_widget() -> Optional[tk.Misc]:
+        return current["widget"]
+
+    def send(sequence: str) -> None:
+        target = target_widget()
+        if target is not None:
+            try:
+                target.event_generate(sequence)
+            except tk.TclError:
+                pass
+
+    def select_all() -> None:
+        target = target_widget()
+        if target is None:
+            return
+        try:
+            if isinstance(target, tk.Text):
+                target.tag_add("sel", "1.0", "end-1c")
+                target.mark_set("insert", "1.0")
+                target.see("insert")
+            else:
+                target.selection_range(0, "end")
+                target.icursor("end")
+        except (tk.TclError, AttributeError):
+            pass
+
+    menu.add_command(label="Cut", accelerator="Ctrl+X", command=lambda: send("<<Cut>>"))
+    menu.add_command(label="Copy", accelerator="Ctrl+C", command=lambda: send("<<Copy>>"))
+    menu.add_command(label="Paste", accelerator="Ctrl+V", command=lambda: send("<<Paste>>"))
+    menu.add_separator()
+    menu.add_command(label="Select All", accelerator="Ctrl+A", command=select_all)
+
+    def has_selection(target: tk.Misc) -> bool:
+        try:
+            if isinstance(target, tk.Text):
+                return bool(target.tag_ranges("sel"))
+            return bool(target.selection_present())
+        except (tk.TclError, AttributeError):
+            return False
+
+    def is_editable(target: tk.Misc) -> bool:
+        try:
+            return str(target.cget("state")) == "normal"
+        except tk.TclError:
+            return True
+
+    def show(event):
+        target = event.widget
+        supported = isinstance(target, (tk.Text, tk.Entry, tk.Spinbox, ttk.Entry, ttk.Combobox, ttk.Spinbox))
+        if not supported:
+            return None
+        current["widget"] = target
+        try:
+            target.focus_set()
+        except tk.TclError:
+            pass
+        selected = has_selection(target)
+        editable = is_editable(target)
+        try:
+            target.clipboard_get()
+            can_paste = editable
+        except tk.TclError:
+            can_paste = False
+        menu.entryconfigure("Cut", state="normal" if selected and editable else "disabled")
+        menu.entryconfigure("Copy", state="normal" if selected else "disabled")
+        menu.entryconfigure("Paste", state="normal" if can_paste else "disabled")
+        menu.entryconfigure("Select All", state="normal")
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    root.bind_all("<Button-3>", show, add="+")
 
 
 def load_header_icon(path: Any, max_size: int = 56) -> Optional[tk.PhotoImage]:

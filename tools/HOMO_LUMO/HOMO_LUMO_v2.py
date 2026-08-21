@@ -66,7 +66,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
-from shared.tk_helpers import bind_mousewheel_to_canvas, keep_entry_end_visible, load_header_icon
+from shared.tk_helpers import bind_mousewheel_to_canvas, install_edit_context_menu, keep_entry_end_visible, load_header_icon
 from shared.pyvista_window import bring_pyvista_window_to_front
 from shared.molecule_style import add_mesh_safe, cylinder_between
 
@@ -124,6 +124,7 @@ DEFAULT_MO_COLOR_SCHEME = "Classic blue/red"
 
 
 def configure_builder_ui_style(widget: tk.Misc) -> None:
+    install_edit_context_menu(widget)
     style = ttk.Style(widget)
     try:
         style.theme_use("clam")
