@@ -3953,6 +3953,7 @@ class App(tk.Tk):
         self.output_buffers = {"preview": "", "monitor": ""}
         self.output_wraps = {"preview": "none", "monitor": "none"}
         self.startup_splash: Optional[StartupSplash] = None
+        self.completion_dialog: Optional[tk.Toplevel] = None
 
         self.auto_open_output_var.set(True)
         self.startup_splash = self._create_startup_splash()
@@ -9147,11 +9148,41 @@ class App(tk.Tk):
 
     def _show_orca_completion_dialog(self, out_path: str, succeeded: bool) -> None:
         job_name, result = orca_completion_summary(out_path, succeeded)
+        existing = self.completion_dialog
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.destroy()
+            except tk.TclError:
+                pass
         win = tk.Toplevel(self)
+        self.completion_dialog = win
         win.title("ORCA finished" if succeeded else "ORCA failed")
         win.transient(self)
         win.resizable(False, False)
         configure_tk_window_identity(win, "Builder", BUILDER_ICON_ICO_PATH)
+
+        def close_dialog(_event=None):
+            if self.completion_dialog is win:
+                self.completion_dialog = None
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+            try:
+                if self.state() in {"iconic", "withdrawn"}:
+                    self.deiconify()
+                self.lift()
+                self.focus_force()
+            except tk.TclError:
+                pass
+
+        def release_topmost():
+            try:
+                if win.winfo_exists():
+                    win.attributes("-topmost", False)
+            except tk.TclError:
+                pass
 
         panel = tk.Frame(win, bg="#ffffff", padx=24, pady=22)
         panel.pack(fill="both", expand=True)
@@ -9187,25 +9218,25 @@ class App(tk.Tk):
         ok_button = tk.Button(
             button_bar,
             text="OK",
-            command=win.destroy,
+            command=close_dialog,
             font=("Segoe UI", 18),
             width=8,
             default="active",
         )
         ok_button.pack(side="right")
-        win.bind("<Return>", lambda _event: win.destroy())
-        win.bind("<Escape>", lambda _event: win.destroy())
-        win.protocol("WM_DELETE_WINDOW", win.destroy)
+        win.bind("<Return>", close_dialog)
+        win.bind("<Escape>", close_dialog)
+        win.protocol("WM_DELETE_WINDOW", close_dialog)
         win.update_idletasks()
         width = max(520, min(760, win.winfo_reqwidth()))
         height = win.winfo_reqheight()
         x = max(0, self.winfo_rootx() + (self.winfo_width() - width) // 2)
         y = max(0, self.winfo_rooty() + (self.winfo_height() - height) // 2)
         win.geometry(f"{width}x{height}+{x}+{y}")
-        win.lift(self)
+        win.attributes("-topmost", True)
+        win.lift()
         ok_button.focus_set()
-        win.grab_set()
-        self.wait_window(win)
+        win.after(800, release_topmost)
 
     def _run_finished(self, code: int, out_path: str):
         self._clear_active_job_state()

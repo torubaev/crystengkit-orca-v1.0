@@ -1,5 +1,6 @@
 from pathlib import Path
 import importlib.util
+import inspect
 import os
 import stat
 import sys
@@ -728,6 +729,13 @@ $$$$
             orca_input.orca_completion_summary("failed_job.out", False),
             ("failed_job", "Failed"),
         )
+
+    def test_completion_dialog_cannot_hide_with_a_modal_grab(self):
+        source = inspect.getsource(orca_input.App._show_orca_completion_dialog)
+        self.assertNotIn("grab_set", source)
+        self.assertNotIn("wait_window", source)
+        self.assertIn('attributes("-topmost", True)', source)
+        self.assertIn("self.deiconify()", source)
 
     def test_legacy_gemini_default_migrates_but_explicit_new_choice_remains(self):
         self.assertEqual(orca_input.resolve_saved_ai_web_model({"ai_web_model": "Gemini"}), "ChatGPT")
