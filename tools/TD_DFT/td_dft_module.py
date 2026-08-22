@@ -950,7 +950,7 @@ class TDDFTPanel(ttk.Frame):
             cell = ttk.Frame(value_row); cell.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 6, 0)); value_row.columnconfigure(column, weight=1)
             ttk.Label(cell, text=label).pack(anchor="w"); ttk.Entry(cell, textvariable=variable, width=8).pack(fill="x")
         visibility = ttk.Frame(display); visibility.grid(row=2, column=0, columnspan=5, sticky="w", pady=(7, 0))
-        ttk.Checkbutton(visibility, text="Molecule", variable=self.show_molecule_var).pack(side="left"); ttk.Checkbutton(visibility, text="Bonds", variable=self.show_bonds_var).pack(side="left", padx=(10, 0)); ttk.Checkbutton(visibility, text="Atom labels", variable=self.show_labels_var).pack(side="left", padx=(10, 0))
+        ttk.Checkbutton(visibility, text="Molecule", variable=self.show_molecule_var).pack(side="left"); ttk.Checkbutton(visibility, text="Bonds", variable=self.show_bonds_var).pack(side="left", padx=(10, 0)); ttk.Checkbutton(visibility, text="Atom numbers", variable=self.show_labels_var).pack(side="left", padx=(10, 0))
         display_actions = ttk.Frame(display); display_actions.grid(row=3, column=0, columnspan=5, sticky="ew", pady=(7, 0))
         for column, (text, command) in enumerate([("Display", self._display_mode), ("Reset camera", self._display_mode), ("Save screenshot", self._save_screenshot), ("Export cubes", self._export_cubes)]):
             ttk.Button(display_actions, text=text, command=command, style="Primary.TButton" if column == 0 else "TButton").grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 5, 0)); display_actions.columnconfigure(column, weight=1)
@@ -1813,12 +1813,18 @@ class TDDFTPanel(ttk.Frame):
         if min(positive, negative) <= 0 or not 0 < opacity <= 1: raise ValueError("Isovalues must be positive and opacity must be in (0, 1].")
         return positive, negative, opacity
 
+    def _visualization_annotation(self):
+        if not self.mode_var.get().startswith("NTO"):
+            return None
+        state = self._selected_state()
+        return f"{self.mode_var.get()} for S{int(state['state_index'])}"
+
     def _display_mode(self):
         def action():
             if self.mode_var.get() == "UV-Vis spectrum": self._plot(); return
             files, labels = self._mode_files(); missing = [path for path in files if not Path(path).is_file()]
             if missing: raise FileNotFoundError("Required generated cube file(s) are unavailable:\n" + "\n".join(missing))
-            iso, negative, opacity = self._viewer_options(); SignedCubeViewer().show(files, iso, negative, opacity, self.show_molecule_var.get(), self.show_bonds_var.get(), self.show_labels_var.get(), labels=labels)
+            iso, negative, opacity = self._viewer_options(); SignedCubeViewer().show(files, iso, negative, opacity, self.show_molecule_var.get(), self.show_bonds_var.get(), self.show_labels_var.get(), labels=labels, annotation=self._visualization_annotation())
         self._guard("TD-DFT visualization", action)
 
     def _save_screenshot(self):
@@ -1826,10 +1832,11 @@ class TDDFTPanel(ttk.Frame):
             if self.mode_var.get() == "UV-Vis spectrum": self._save_plot(".png"); return
             files, labels = self._mode_files();
             if not files or any(not Path(path).is_file() for path in files): raise FileNotFoundError("Generate or provide the required cube files first.")
-            suggested = suggested_tddft_export_path(self.output_path, self.mode_var.get(), ".png")
+            state = self._selected_state()
+            suggested = suggested_tddft_export_path(self.output_path, f"{self.mode_var.get()}-S{int(state['state_index'])}", ".png")
             path = filedialog.asksaveasfilename(parent=self, title="Save TD-DFT visualization", defaultextension=".png", initialdir=str(suggested.parent), initialfile=suggested.name, filetypes=[("PNG", "*.png")]);
             if path:
-                iso, negative, opacity = self._viewer_options(); SignedCubeViewer().show(files, iso, negative, opacity, self.show_molecule_var.get(), self.show_bonds_var.get(), self.show_labels_var.get(), screenshot=path, labels=labels)
+                iso, negative, opacity = self._viewer_options(); SignedCubeViewer().show(files, iso, negative, opacity, self.show_molecule_var.get(), self.show_bonds_var.get(), self.show_labels_var.get(), screenshot=path, labels=labels, annotation=self._visualization_annotation())
         self._guard("Save screenshot", action)
 
     def _export_cubes(self):

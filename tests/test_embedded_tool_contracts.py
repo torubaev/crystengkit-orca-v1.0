@@ -116,6 +116,17 @@ class EmbeddedToolContractTests(unittest.TestCase):
         self.assertIn("body.columnconfigure(0, weight=2, minsize=620)", source)
         self.assertIn("body.columnconfigure(1, weight=1, minsize=320)", source)
 
+    def test_tddft_nto_viewer_accepts_state_annotation(self):
+        tree = parsed("tools/TD_DFT/td_dft_cube_viewer.py")
+        viewer = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "SignedCubeViewer")
+        show = next(item for item in viewer.body if isinstance(item, ast.FunctionDef) and item.name == "show")
+        self.assertIn("annotation", [argument.arg for argument in show.args.args])
+        source = ast.unparse(show)
+        self.assertIn("plotter.add_text(annotation", source)
+        self.assertIn("color='black'", source)
+        self.assertIn("name='excited_state_annotation'", source)
+        self.assertIn("plotter.show(interactive_update=True, auto_close=False)", source)
+
     def test_qtaim_overlay_uses_the_matching_nci_output_folder(self):
         tree = parsed("tools/qtaim-cp/qtaim.py")
         node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "QTAIMGui")

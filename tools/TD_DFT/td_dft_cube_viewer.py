@@ -66,6 +66,11 @@ def _grid(cube: CubeData):
     return grid
 
 
+def atom_number_labels(atom_count: int) -> List[str]:
+    """Return conventional 1-based atom numbers in coordinate-file order."""
+    return [str(index) for index in range(1, atom_count + 1)]
+
+
 def _add_molecule(plotter, cube: CubeData, show_bonds: bool, show_labels: bool):
     import numpy as np
     import pyvista as pv
@@ -81,14 +86,31 @@ def _add_molecule(plotter, cube: CubeData, show_bonds: bool, show_labels: bool):
                 if .25 < float(np.linalg.norm(coords[i] - coords[j])) <= cutoff:
                     plotter.add_mesh(pv.Cylinder(center=tuple((coords[i] + coords[j]) / 2), direction=tuple(coords[j] - coords[i]), radius=.08, height=float(np.linalg.norm(coords[j] - coords[i]))), color="#aaaaaa")
     if show_labels:
-        plotter.add_point_labels(coords, [str(atom[0]) for atom in cube.atoms], font_size=12, point_size=0, shape=None)
+        plotter.add_point_labels(
+            coords,
+            atom_number_labels(len(cube.atoms)),
+            font_size=18,
+            text_color="#fff200",
+            bold=True,
+            shadow=True,
+            show_points=False,
+            shape="rounded_rect",
+            shape_color="#102a43",
+            shape_opacity=1.0,
+            margin=3,
+            always_visible=True,
+        )
 
 
 class SignedCubeViewer:
+    # Keep non-blocking renderers alive after ``show`` returns. This also
+    # permits several state/root windows to remain open simultaneously.
+    _active_plotters = []
+
     def show(self, cube_paths: Sequence[str], isovalue: float, negative_isovalue: float | None = None,
              opacity: float = 0.65, show_molecule: bool = True, show_bonds: bool = True,
              show_labels: bool = False, screenshot: str | None = None,
-             labels: Sequence[str] | None = None):
+             labels: Sequence[str] | None = None, annotation: str | None = None):
         import pyvista as pv
         if not cube_paths:
             raise ValueError("No cube file is selected for this visualization mode.")
@@ -107,6 +129,15 @@ class SignedCubeViewer:
                 plotter.add_mesh(grid.contour([-negative], scalars="values"), color=negative_color, opacity=opacity, label=(labels[index] if labels else cube.path.stem) + " (-)")
         if show_molecule:
             _add_molecule(plotter, cubes[0], show_bonds, show_labels)
+        if annotation:
+            plotter.add_text(
+                annotation,
+                position="upper_left",
+                font_size=16,
+                color="black",
+                shadow=False,
+                name="excited_state_annotation",
+            )
         plotter.add_legend()
         # TD-DFT figures intentionally omit the PyVista XYZ orientation triad.
         # This shared viewer covers NTO, transition/difference density, and
@@ -119,4 +150,9 @@ class SignedCubeViewer:
         if screenshot:
             plotter.show(screenshot=screenshot, auto_close=True)
         else:
-            plotter.show()
+            plotter.show(interactive_update=True, auto_close=False)
+            self._active_plotters[:] = [
+                active for active in self._active_plotters
+                if not bool(getattr(active, "_closed", False))
+            ]
+            self._active_plotters.append(plotter)

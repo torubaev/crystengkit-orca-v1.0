@@ -30,11 +30,14 @@ from TD_DFT.td_dft_multiwfn_runner import (  # noqa: E402
     _build_batch_input_lines,
     _orca_output_requires_tddft_confirmation,
 )
-from TD_DFT.td_dft_cube_viewer import read_cube  # noqa: E402
+from TD_DFT.td_dft_cube_viewer import atom_number_labels, read_cube  # noqa: E402
 import TD_DFT.td_dft_module as td_dft_module  # noqa: E402
 
 
 class TDDFTModuleTests(unittest.TestCase):
+    def test_nto_atom_labels_are_unique_one_based_numbers(self):
+        self.assertEqual(atom_number_labels(4), ["1", "2", "3", "4"])
+
     def test_postprocessing_root_selector_resolves_available_state(self):
         states = [{"state_index": 1}, {"state_index": 2}, {"state_index": 5}]
         self.assertEqual(state_for_analysis_root(states, "S2")["state_index"], 2)
