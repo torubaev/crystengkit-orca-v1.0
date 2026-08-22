@@ -18,6 +18,7 @@ from TD_DFT.td_dft_module import (  # noqa: E402
     tddft_memory_risk_warnings,
     validate_tddft_settings,
     parse_orca_tddft_output,
+    state_for_analysis_root,
     suggest_wavelength_range_for_states,
     suggested_tddft_export_path,
     auto_detect_multiwfn_path,
@@ -34,6 +35,13 @@ import TD_DFT.td_dft_module as td_dft_module  # noqa: E402
 
 
 class TDDFTModuleTests(unittest.TestCase):
+    def test_postprocessing_root_selector_resolves_available_state(self):
+        states = [{"state_index": 1}, {"state_index": 2}, {"state_index": 5}]
+        self.assertEqual(state_for_analysis_root(states, "S2")["state_index"], 2)
+        self.assertEqual(state_for_analysis_root(states, "5")["state_index"], 5)
+        with self.assertRaisesRegex(ValueError, "Available roots: S1, S2, S5"):
+            state_for_analysis_root(states, "S3")
+
     def test_embedded_module_tolerates_cached_legacy_app_identity(self):
         original = td_dft_module._app_identity
         try:

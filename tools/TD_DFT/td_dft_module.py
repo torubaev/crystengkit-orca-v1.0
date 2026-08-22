@@ -620,6 +620,19 @@ def suggested_tddft_export_path(output_path: str, artifact: str, suffix: str) ->
     return source.with_name(f"{identified_output_stem(str(source))}_{tag or 'export'}{extension.lower()}")
 
 
+def state_for_analysis_root(states: Sequence[Dict], root_value) -> Dict:
+    """Return the parsed excited state selected for post-processing."""
+    match = re.fullmatch(r"\s*[Ss]?(\d+)\s*", str(root_value or ""))
+    if not match or int(match.group(1)) < 1:
+        raise ValueError("Select a valid excited-state root (for example, S1 or S2).")
+    root = int(match.group(1))
+    for state in states:
+        if int(state.get("state_index", 0)) == root:
+            return state
+    available = ", ".join(f"S{int(state['state_index'])}" for state in states) or "none"
+    raise ValueError(f"Root S{root} is not present in the loaded ORCA output. Available roots: {available}.")
+
+
 def detect_associated_files(output_path: str) -> Dict[str, str]:
     output = Path(output_path).resolve(); result = {}
     for suffix in ASSOCIATED_SUFFIXES:
@@ -684,6 +697,7 @@ class TDDFTPanel(ttk.Frame):
         self.associated_summary_var = tk.StringVar(value="Load an ORCA .out file to detect associated files.")
         self.workdir_var = tk.StringVar(value="")
         self.mode_var = tk.StringVar(value="UV-Vis spectrum")
+        self.analysis_root_var = tk.StringVar(value="")
         self.orbital_iso_var = tk.StringVar(value="0.03"); self.density_iso_var = tk.StringVar(value="0.001")
         self.positive_iso_var = tk.StringVar(value="0.001"); self.negative_iso_var = tk.StringVar(value="0.001")
         self.opacity_var = tk.StringVar(value="0.65")
@@ -883,7 +897,7 @@ class TDDFTPanel(ttk.Frame):
         for key, label, width in zip(columns, ["State", "Energy / eV", "Wavelength / nm", "f", "Main transition", "Contribution / %"], [52, 82, 105, 68, 158, 105]): self.tree.heading(key, text=label); self.tree.column(key, width=width, minwidth=48, anchor="center")
         self.tree.grid(row=1, column=0, sticky="nsew")
         tree_scroll = ttk.Scrollbar(tablebox, orient="horizontal", command=self.tree.xview); tree_scroll.grid(row=2, column=0, sticky="ew"); self.tree.configure(xscrollcommand=tree_scroll.set)
-        self.tree.bind("<<TreeviewSelect>>", lambda _event: self._refresh_mode_availability())
+        self.tree.bind("<<TreeviewSelect>>", self._on_state_table_select)
 
         emission = ttk.LabelFrame(root, text="Fluorescence emission", padding=8); emission.grid(row=5, column=0, sticky="ew", pady=(8, 0)); emission.columnconfigure(1, weight=1)
         self.emission_status_var = tk.StringVar(value="Load a completed absorption TD-DFT output to prepare an emission calculation sequence.")
@@ -909,15 +923,21 @@ class TDDFTPanel(ttk.Frame):
         multiwfn_buttons = ttk.Frame(context); multiwfn_buttons.grid(row=6, column=1, sticky="w", pady=(5, 0))
         ttk.Button(multiwfn_buttons, text="Browse...", command=self._browse_multiwfn).pack(side="left", padx=(0, 6)); ttk.Button(multiwfn_buttons, text="Validate", command=lambda: self._guard("Multiwfn", self._validate_multiwfn)).pack(side="left")
 
-        analysis = ttk.LabelFrame(viz, text="Selected-state analysis", padding=8); analysis.grid(row=1, column=0, sticky="ew", pady=(8, 0)); analysis.columnconfigure(0, weight=1)
-        buttons = ttk.Frame(analysis); buttons.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        analysis = ttk.LabelFrame(viz, text="Selected-root result set", padding=8); analysis.grid(row=1, column=0, sticky="ew", pady=(8, 0)); analysis.columnconfigure(0, weight=1)
+        root_row = ttk.Frame(analysis); root_row.grid(row=0, column=0, sticky="ew", pady=(0, 7)); root_row.columnconfigure(2, weight=1)
+        ttk.Label(root_row, text="Root to process").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.analysis_root_combo = ttk.Combobox(root_row, textvariable=self.analysis_root_var, values=(), state="readonly", width=8)
+        self.analysis_root_combo.grid(row=0, column=1, sticky="w", padx=(0, 10))
+        self.analysis_root_combo.bind("<<ComboboxSelected>>", self._on_analysis_root_selected)
+        ttk.Label(root_row, text="Creates a separate TDDFT_analysis/S<n> result set.", style="Muted.TLabel").grid(row=0, column=2, sticky="w")
+        buttons = ttk.Frame(analysis); buttons.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         self.generate_button = ttk.Button(buttons, text="Generate all analyses", command=lambda: self._start_analysis(False), style="Primary.TButton"); self.generate_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         ttk.Button(buttons, text="Regenerate package", command=lambda: self._start_analysis(True)).grid(row=0, column=1, sticky="ew", padx=(0, 5))
         ttk.Button(buttons, text="Open directory", command=self._open_analysis_directory).grid(row=0, column=2, sticky="ew")
         for column in range(3): buttons.columnconfigure(column, weight=1)
         status_columns = ("analysis", "status"); self.status_tree = ttk.Treeview(analysis, columns=status_columns, show="headings", height=5)
         self.status_tree.heading("analysis", text="Analysis"); self.status_tree.heading("status", text="Status"); self.status_tree.column("analysis", width=190); self.status_tree.column("status", width=330)
-        self.status_tree.grid(row=1, column=0, sticky="ew")
+        self.status_tree.grid(row=2, column=0, sticky="ew")
         for name in ["UV-Vis spectrum", "NTO hole/electron", "Difference density", "Transition density", "Attachment/detachment", "Hole/electron density", "Hole-electron descriptors"]: self.status_tree.insert("", "end", iid=name, values=(name, "Not started"))
 
         display = ttk.LabelFrame(viz, text="Display settings", padding=8); display.grid(row=2, column=0, sticky="ew", pady=(8, 0))
@@ -1622,6 +1642,8 @@ class TDDFTPanel(ttk.Frame):
             self.states = []
             self.output_path = str(Path(path).resolve())
             self.tree.delete(*self.tree.get_children())
+            self.analysis_root_combo.configure(values=())
+            self.analysis_root_var.set("")
             self.output_label.configure(text=f"{self.output_path}\nCompleted ORCA output loaded for workflow continuation.")
             self.workdir_var.set(str(Path(self.output_path).parent))
             self._detect_files()
@@ -1643,6 +1665,9 @@ class TDDFTPanel(ttk.Frame):
         for state in self.states:
             trans = max(state["transitions"], key=lambda x: x["contribution_percent"], default=None)
             self.tree.insert("", "end", iid=str(state["state_index"]), values=(state["state"], f"{state['energy_ev']:.4f}", f"{state['wavelength_nm']:.2f}", f"{state['oscillator_strength']:.6g}", f"{trans['from']} -> {trans['to']}" if trans else "", f"{trans['contribution_percent']:.1f}" if trans else ""))
+        roots = tuple(f"S{int(state['state_index'])}" for state in self.states)
+        self.analysis_root_combo.configure(values=roots)
+        self.analysis_root_var.set(roots[0] if roots else "")
         self.update_progress(65, "Detecting associated files...")
         source_text = (
             f"{self.output_path}\n"
@@ -1679,9 +1704,23 @@ class TDDFTPanel(ttk.Frame):
         messagebox.showinfo("Multiwfn", f"Executable: {executable}\nVersion: {runner.version()}", parent=self)
 
     def _selected_state(self):
+        if not self.states:
+            raise ValueError("Load an ORCA TD-DFT output first.")
+        return state_for_analysis_root(self.states, self.analysis_root_var.get())
+
+    def _on_state_table_select(self, _event=None):
         selected = self.tree.selection()
-        if not selected: raise ValueError("Select an excited state in the state table.")
-        index = int(selected[0]); return next(state for state in self.states if int(state["state_index"]) == index)
+        if selected:
+            self.analysis_root_var.set(f"S{int(selected[0])}")
+        self._refresh_mode_availability()
+
+    def _on_analysis_root_selected(self, _event=None):
+        state = state_for_analysis_root(self.states, self.analysis_root_var.get())
+        iid = str(int(state["state_index"]))
+        if self.tree.exists(iid):
+            self.tree.selection_set(iid)
+            self.tree.see(iid)
+        self._refresh_mode_availability()
 
     def _analysis_directory(self, state_index=None):
         if not self.output_path: raise ValueError("Load an ORCA output first.")
@@ -1742,7 +1781,24 @@ class TDDFTPanel(ttk.Frame):
         self.update_progress(100, "Analysis complete.", "darkgreen")
 
     def _refresh_mode_availability(self):
-        pass  # The display action validates the exact files for the chosen mode.
+        if not self.states or not self.output_path:
+            return
+        try:
+            state = self._selected_state()
+        except ValueError:
+            return
+        state_index = int(state["state_index"])
+        runner = MultiwfnTDDFTRunner(self.multiwfn_var.get(), str(Path(self.output_path).parent))
+        expected = runner.expected_paths(
+            state_index,
+            self.output_path,
+            str(self._analysis_directory(state_index)),
+        )
+        self.status_tree.item("UV-Vis spectrum", values=("UV-Vis spectrum", "Ready"))
+        for name, paths in expected.items():
+            ready = bool(paths) and all(Path(path).is_file() for path in paths)
+            status = "Ready" if ready else f"Not generated for S{state_index}"
+            self.status_tree.item(name, values=(name, status))
 
     def _mode_files(self):
         state = self._selected_state(); runner = MultiwfnTDDFTRunner(self.multiwfn_var.get(), str(Path(self.output_path).parent)); paths = runner.expected_paths(state["state_index"], self.output_path, str(self._analysis_directory(state["state_index"])))
