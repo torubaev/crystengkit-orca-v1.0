@@ -1,18 +1,18 @@
 {
   "schema": 2,
-  "latest_version": "1.1.13",
-  "release_date": "2026-08-08",
+  "latest_version": "1.1.14",
+  "release_date": "2026-08-29",
   "title": "CrystEngKit-ORCA startup news",
   "content": {
     "type": "markdown",
-    "summary": "CrystEngKit-ORCA 1.1.13 improves NCI and QTAIM viewer reopening, tool switching, NCI+QTAIM overlays, Multiwfn discovery, ESP plotting, and installer reliability.",
+    "summary": "CrystEngKit-ORCA 1.1.14 expands TD-DFT workflows and improves calculation reliability, portability, and visualization.",
     "url": "https://github.com/torubaev/crystengkit-orca-v1.0/blob/main/app_metadata/NEWS.md",
     "action_label": "Read news"
   },
-  "message": "CrystEngKit-ORCA 1.1.13 improves NCI and QTAIM viewer reopening, tool switching, NCI+QTAIM overlays, Multiwfn discovery, ESP plotting, and installer reliability.",
-  "details_url": "https://github.com/torubaev/crystengkit-orca-v1.0/releases/tag/v1.1.13",
+  "message": "CrystEngKit-ORCA 1.1.14 expands TD-DFT workflows and improves calculation reliability, portability, and visualization.",
+  "details_url": "https://github.com/torubaev/crystengkit-orca-v1.0/releases/tag/v1.1.14",
   "severity": "info",
-  "message_id": "2026-08-08-v1.1.13-release",
-  "show_until": "2026-10-31",
+  "message_id": "2026-08-29-v1.1.14-release",
+  "show_until": "2026-11-30",
   "force_show": false
 }
