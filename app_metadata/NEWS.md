@@ -1,8 +1,8 @@
 # CrystEngKit-ORCA news
 
-## Version 1.1.14 — August 29, 2026
+## Version 1.1.18 — August 29, 2026
 
-CrystEngKit-ORCA 1.1.14 expands TD-DFT workflows and improves calculation reliability, portability, and visualization.
+CrystEngKit-ORCA 1.1.18 expands TD-DFT workflows and improves calculation reliability, portability, and visualization.
 
 ### What is new
 
@@ -15,7 +15,7 @@ CrystEngKit-ORCA 1.1.14 expands TD-DFT workflows and improves calculation reliab
 
 ### Installation
 
-Download either installer from the [v1.1.14 release page](https://github.com/torubaev/crystengkit-orca-v1.0/releases/tag/v1.1.14):
+Download either installer from the [v1.1.18 release page](https://github.com/torubaev/crystengkit-orca-v1.0/releases/tag/v1.1.18):
 
 - The full installer contains the application files.
 - The web installer downloads and verifies the matching full installer.
