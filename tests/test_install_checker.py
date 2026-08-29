@@ -62,6 +62,14 @@ class InstallationRootTests(unittest.TestCase):
         self.assertIn("tmp\\codex_work\\windows_installer_source", build)
         self.assertIn('"/DSourceRoot=$stageRoot"', build)
 
+    def test_windows_release_outputs_are_grouped_by_version(self):
+        build = INSTALLER_BUILD_PATH.read_text(encoding="utf-8")
+        setup = INNO_SETUP_PATH.read_text(encoding="utf-8")
+        web_build = (ROOT / "packaging" / "windows" / "build_web_installer.ps1").read_text(encoding="utf-8")
+        self.assertIn('"install\\releases\\v$appVersion"', build)
+        self.assertIn('"install\\releases\\v$appVersion"', web_build)
+        self.assertIn("OutputDir=..\\..\\install\\releases\\v{#MyAppVersion}", setup)
+
     def test_checker_configures_locally_found_multiwfn(self):
         source = INSTALLER_PATH.read_text(encoding="utf-8")
         self.assertIn('default_settings["multiwfn_path"] = executable', source)

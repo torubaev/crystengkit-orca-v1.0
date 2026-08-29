@@ -12,7 +12,8 @@ $appVersion = (Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json).ve
 if ($appVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "Invalid application version '$appVersion' in $versionPath. Expected MAJOR.MINOR.PATCH."
 }
-$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-$appVersion.exe"
+$releaseDir = Join-Path $repoRoot "install\releases\v$appVersion"
+$outputPath = Join-Path $releaseDir "CrystEngKit-ORCA-Setup-$appVersion.exe"
 $isccCandidates = @(
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")

@@ -19,7 +19,7 @@ Public releases should be Authenticode-signed by passing
 Output:
 
 ```text
-install\releases\CrystEngKit-ORCA-Setup-<version>.exe
+install\releases\v<version>\CrystEngKit-ORCA-Setup-<version>.exe
 ```
 
 The web installer is a small .NET bootstrapper. It downloads and verifies the
@@ -36,12 +36,15 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\build_web_installer.p
 Output:
 
 ```text
-install\releases\CrystEngKit-ORCA-Setup-<version>-web.exe
+install\releases\v<version>\CrystEngKit-ORCA-Setup-<version>-web.exe
 ```
 
 Both builders read `app_metadata\version.json`. Change the version there once
 before creating a release; the GUI and package filenames then use the same
 `MAJOR.MINOR.PATCH` value.
+
+Release artifacts are grouped under `install\releases\v<version>` so packages
+and checksums from different releases do not become mixed.
 
 Publish the full installer, web bootstrapper, and both generated `.sha256`
 files in the same GitHub release tagged `v<version>`. The bootstrapper embeds

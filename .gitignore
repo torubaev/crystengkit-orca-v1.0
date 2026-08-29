@@ -31,7 +31,7 @@ installation_report.html
 **/installation_report.html
 *-BFM-MachineSect.py
 *-BFM-MachineSect.json
-install/releases/*.exe
+install/releases/**/*.exe
 
 # Example datasets.
 # examples/ is intentionally empty and reserved for future examples.

@@ -15,8 +15,9 @@ if ($appVersion -notmatch '^\d+\.\d+\.\d+$') {
 }
 
 $fullInstallerName = "CrystEngKit-ORCA-Setup-$appVersion.exe"
+$releaseDir = Join-Path $repoRoot "install\releases\v$appVersion"
 if (-not $FullInstallerPath) {
-    $FullInstallerPath = Join-Path $repoRoot "install\releases\$fullInstallerName"
+    $FullInstallerPath = Join-Path $releaseDir $fullInstallerName
 }
 $FullInstallerPath = [IO.Path]::GetFullPath($FullInstallerPath)
 if (-not (Test-Path -LiteralPath $FullInstallerPath -PathType Leaf)) {
@@ -24,7 +25,7 @@ if (-not (Test-Path -LiteralPath $FullInstallerPath -PathType Leaf)) {
 }
 $fullInstallerHash = (Get-FileHash -LiteralPath $FullInstallerPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $packageUrl = "https://github.com/torubaev/crystengkit-orca-v1.0/releases/download/v$appVersion/$fullInstallerName"
-$outputPath = Join-Path $repoRoot "install\releases\CrystEngKit-ORCA-Setup-$appVersion-web.exe"
+$outputPath = Join-Path $releaseDir "CrystEngKit-ORCA-Setup-$appVersion-web.exe"
 $compiler = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 if (-not (Test-Path -LiteralPath $compiler)) {
     throw "The Windows .NET Framework C# compiler was not found."
