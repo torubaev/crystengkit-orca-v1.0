@@ -76,6 +76,10 @@ class InstallationRootTests(unittest.TestCase):
         self.assertIn("ensure_settings_file(base_dir, external_info)", source)
         self.assertIn("PATH is not required", source)
 
+    def test_orca_validation_does_not_require_a_fixed_filename(self):
+        source = INSTALLER_PATH.read_text(encoding="utf-8")
+        self.assertNotIn('candidate.name.lower() not in {"orca", "orca.exe"}', source)
+
 
 if __name__ == "__main__":
     unittest.main()

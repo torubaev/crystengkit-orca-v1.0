@@ -111,6 +111,19 @@ class ImportHelperTests(unittest.TestCase):
     def test_generic_inp_is_not_gaussian(self):
         self.assertEqual(orca_input.structure_input_format("job.inp"), "ORCA input")
 
+    def test_user_selected_orca_executable_accepts_custom_filename(self):
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            executable = Path(tmpdir) / "orca_6_custom_launcher.exe"
+            executable.write_bytes(b"test executable placeholder")
+            completed = SimpleNamespace(stdout="Program ORCA version 6.0", stderr="", returncode=0)
+            with mock.patch.object(orca_input.subprocess, "run", return_value=completed) as run:
+                ok, reason = orca_input.validate_orca_qm_executable(str(executable))
+            self.assertTrue(ok, reason)
+            self.assertTrue(run.called)
+            self.assertEqual(run.call_args_list[0].args[0][0], str(executable))
+
     def test_orca_xyzfile_is_resolved_relative_to_input(self):
         work_root = ROOT / "tmp" / "codex_work"
         work_root.mkdir(parents=True, exist_ok=True)

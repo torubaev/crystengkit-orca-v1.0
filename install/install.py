@@ -438,8 +438,6 @@ def validate_orca_qm_executable(path: str, timeout: float = 5.0) -> Dict[str, ob
     candidate = Path(str(path).strip().strip('"')).expanduser()
     if not candidate.is_file():
         return {"ok": False, "reason": "file does not exist"}
-    if candidate.name.lower() not in {"orca", "orca.exe"}:
-        return {"ok": False, "reason": "executable name is not orca/orca.exe"}
     identity_text = f"{candidate}\n{candidate.resolve()}"
     if _looks_like_gnome_orca(identity_text):
         return {"ok": False, "reason": "this appears to be Ubuntu GNOME Orca screen reader, not ORCA quantum chemistry"}

@@ -867,7 +867,7 @@ When using S22 or other BEGDB-derived benchmark data, cite both the original pap
 Check:
 
 - `Settings` -> ORCA executable path
-- whether `orca` / `orca.exe` exists and is accessible
+- whether the selected executable exists and is accessible; custom ORCA executable filenames are supported
 
 ### HOMO-LUMO button does not work
 

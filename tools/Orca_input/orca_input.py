@@ -1110,8 +1110,6 @@ def validate_orca_qm_executable(path: str, timeout: float = 5.0) -> Tuple[bool, 
     candidate = Path(str(path).strip().strip('"')).expanduser()
     if not candidate.is_file():
         return False, "file does not exist"
-    if candidate.name.lower() not in {"orca", "orca.exe"}:
-        return False, "executable name is not orca/orca.exe"
 
     identity_text = f"{candidate}\n{candidate.resolve()}"
     if _looks_like_gnome_orca(identity_text):
@@ -5646,9 +5644,7 @@ class App(tk.Tk):
         return True
 
     def browse_orca(self):
-        filetypes = [("ORCA executable", "orca.exe orca")] if os.name == "nt" else [("ORCA executable", "*")]
-        filetypes += executable_filetypes()
-        p = filedialog.askopenfilename(filetypes=filetypes)
+        p = filedialog.askopenfilename(filetypes=executable_filetypes("ORCA executable"))
         if p:
             ok, reason = validate_orca_qm_executable(p)
             if not ok:
@@ -5677,7 +5673,7 @@ class App(tk.Tk):
                     )
                 return
             if not silent:
-                messagebox.showwarning("ORCA not found", "No valid ORCA quantum-chemistry executable was found automatically.\nPlease browse to `orca` / `orca.exe` manually.")
+                messagebox.showwarning("ORCA not found", "No valid ORCA quantum-chemistry executable was found automatically.\nPlease select your ORCA executable manually; its filename may differ.")
 
     def auto_locate_qtaim(self, silent: bool = False):
         candidates = [
@@ -8311,14 +8307,14 @@ class App(tk.Tk):
             self.auto_locate_orca(silent=True)
             orca_path = self.orca_path_var.get().strip().strip('"')
         if not orca_path or not os.path.isfile(orca_path):
-            raise ValueError("ORCA executable was not found. Please locate `orca` / `orca.exe` manually.")
+            raise ValueError("ORCA executable was not found. Please select it manually; its filename may differ.")
         ok, reason = validate_orca_qm_executable(orca_path)
         if not ok:
             self.orca_path_var.set("")
             raise ValueError(
                 "The configured executable is not valid ORCA quantum chemistry:\n"
                 f"{orca_path}\n\n{reason}\n\n"
-                "Please select the real ORCA QM executable, for example /opt/orca*/orca or ~/programs/orca_*/orca."
+                "Please select the real ORCA QM executable. A custom executable filename is supported."
             )
         return orca_path
 
