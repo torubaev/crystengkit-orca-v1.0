@@ -3453,7 +3453,19 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
         lines += ["", tddft_fragment]
 
     if data["job_nmr"]:
-        lines += ["", "%eprnmr", "  NMR true", "end"]
+        if data["job_tddft"]:
+            # ORCA does not allow GIAO NMR together with TD-DFT excited-state
+            # gradients in a single job (main_input_check.cpp error, exit code 25).
+            # Suppress NMR here and surface a warning so the user is informed.
+            existing = data.get("_warnings", [])
+            data["_warnings"] = existing + [
+                "NMR (GIAO) was requested together with TD-DFT. "
+                "ORCA does not support this combination in a single job — "
+                "NMR has been removed from this input. "
+                "Run NMR as a separate single-point job after geometry optimisation."
+            ]
+        else:
+            lines += ["", "%eprnmr", "  NMR true", "end"]
 
     if solvent:
         lines += ["", "%cpcm", "  smd true", f'  SMDsolvent "{solvent["orca"]}"', "end"]
@@ -5157,6 +5169,11 @@ class App(tk.Tk):
                     self.job_tddft_var.set(False)
             elif source in {"opt", "freq", "nmr", "tddft"} and advanced_on and self.job_sp_var.get():
                 self.job_sp_var.set(False)
+            # NMR (GIAO) and TD-DFT are mutually exclusive in a single ORCA job.
+            if source == "nmr" and self.job_nmr_var.get() and self.job_tddft_var.get():
+                self.job_tddft_var.set(False)
+            elif source == "tddft" and self.job_tddft_var.get() and self.job_nmr_var.get():
+                self.job_nmr_var.set(False)
             if not any([
                 self.job_sp_var.get(),
                 self.job_opt_var.get(),
@@ -8602,6 +8619,39 @@ class App(tk.Tk):
         if not inp_path:
             self.status.configure(text="Recalculation cancelled; completed ORCA output was preserved.")
             return False
+        # --- Pre-flight: catch NMR + TD-DFT coexistence in saved text ---
+        # Last-resort guard in case stale text survived the input builder.
+        # ORCA exits with code 25 if both appear in the same job.
+        if not context.get("queue_job"):
+            try:
+                with open(inp_path, encoding="utf-8", errors="replace") as _f:
+                    _inp_text = _f.read().lower()
+                _simple_line = _inp_text.splitlines()[0] if _inp_text.strip() else ""
+                _has_nmr = " nmr" in _simple_line or _simple_line.startswith("! nmr") or _simple_line.endswith(" nmr")
+                _has_tddft = "%tddft" in _inp_text
+                if _has_nmr and _has_tddft:
+                    raise ValueError(
+                        "The input file contains both NMR (GIAO) and %tddft blocks, "
+                        "which ORCA does not allow in a single job (error code 25).\n\n"
+                        "Please uncheck either NMR or TD-DFT in the job settings, "
+                        "then click Run ORCA again."
+                    )
+            except OSError:
+                pass  # If the file can't be read here, ORCA will handle the error itself
+        # --- Sanitize the input path ---
+        # ORCA spawns helpers via a raw POSIX shell string, so parentheses and
+        # other metacharacters in the filename cause an immediate shell syntax error.
+        safe_inp = sanitize_orca_run_path(Path(inp_path))
+        if safe_inp != Path(inp_path):
+            self.append_monitor(
+                f"[CrystEngKit] Input filename contained shell-unsafe characters.\n"
+                f"  Original : {inp_path}\n"
+                f"  Safe copy: {safe_inp}\n"
+                f"  Running ORCA on the safe copy.\n"
+            )
+            inp_path = str(safe_inp)
+            context = dict(context)
+            context["input_path"] = inp_path
         out_path = str(Path(inp_path).with_suffix(".out"))
         if inp_path != original_inp_path:
             context = dict(context)
