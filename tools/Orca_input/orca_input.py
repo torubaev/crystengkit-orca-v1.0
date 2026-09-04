@@ -1620,8 +1620,8 @@ GAUSSIAN_FUNCTIONALS = sorted({
 })
 
 ORCA_BASIS = sorted({
-    "STO-3G","3-21G","6-31G","6-31G(d)","6-31G(d,p)","6-31+G(d,p)","6-311G","6-311G(d,p)",
-    "6-311+G(d,p)","SVP","TZVP","TZVPP","QZVP","QZVPP",
+    "STO-3G","3-21G","6-31G","6-31G(d)","6-31G(d,p)","6-31+G(d,p)","6-31++G(d,p)","6-311G","6-311G(d,p)",
+    "6-311+G(d,p)","6-311++G(d,p)","6-311G(2df,2pd)","6-311+G(2df,2pd)","6-311++G(2df,2pd)","6-311+G(3df,2p)","SVP","TZVP","TZVPP","QZVP","QZVPP",
     "def2-SVP","def2-SV(P)","def2-TZVP","def2-TZVP(-f)","def2-TZVPP","def2-QZVP","def2-QZVPP",
     "ma-def2-SVP","ma-def2-TZVP","ma-def2-TZVPP","def2-SVPD","def2-TZVPD","def2-TZVPPD",
     "cc-pVDZ","cc-pVTZ","cc-pVQZ","aug-cc-pVDZ","aug-cc-pVTZ","aug-cc-pVQZ",
