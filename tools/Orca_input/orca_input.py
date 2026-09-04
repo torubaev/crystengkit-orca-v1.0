@@ -1931,10 +1931,31 @@ for canonical, data in SOLVENT_LIBRARY.items():
     KNOWN_SOLVENT_ALIAS_MAP[normalize_text(str(data.get("label", "")))] = canonical
     KNOWN_SOLVENT_ALIAS_MAP[normalize_text(str(data.get("formula", "")))] = canonical
 
+# Explicit "no solvation" selections. ORCA has no separate vacuum keyword — the absence
+# of a %cpcm block *is* the vacuum/gas-phase limit — so these all resolve to None and the
+# Builder simply writes no solvation model.
+GAS_PHASE_SOLVENT_LABEL = "Gas phase (vacuum)"
+GAS_PHASE_SOLVENT_KEYS = frozenset(
+    normalize_text(label)
+    for label in (
+        GAS_PHASE_SOLVENT_LABEL,
+        "gas phase",
+        "gas-phase",
+        "gasphase",
+        "vacuum",
+        "none",
+        "no solvent",
+        "nosolvent",
+        "isolated molecule",
+    )
+)
+
 
 def resolve_solvent(user_text: str) -> Optional[Dict[str, str]]:
     key = normalize_text(user_text)
     if not key:
+        return None
+    if key in GAS_PHASE_SOLVENT_KEYS:
         return None
     canonical = KNOWN_SOLVENT_ALIAS_MAP.get(key)
     if canonical is not None:
@@ -3313,7 +3334,7 @@ def validate_engine_choices(program: str, functional: str, basis: str, solvent_t
         errors.append("Basis-set field is empty.")
 
     solvent = resolve_solvent(solvent_text) if solvent_text.strip() else None
-    if solvent_text.strip() and solvent is None:
+    if solvent_text.strip() and solvent is None and normalize_text(solvent_text) not in GAS_PHASE_SOLVENT_KEYS:
         warnings.append("Solvent was not found in the official ORCA SMD solvent list; ORCA/Gaussian may still accept it if the name matches their solvent keywords.")
 
     if program == "ORCA":
@@ -4265,7 +4286,9 @@ class App(tk.Tk):
         prog.bind("<<ComboboxSelected>>", lambda e: self._refresh_engine_lists())
 
         ttk.Label(setup, text="Solvent").grid(row=0, column=2, sticky="w", padx=(14, 8), pady=(0, 4))
-        solvent_display = sorted(solvent_display_name(canonical, data) for canonical, data in SOLVENT_LIBRARY.items()) + ["Other solvent..."]
+        solvent_display = [GAS_PHASE_SOLVENT_LABEL] + sorted(
+            solvent_display_name(canonical, data) for canonical, data in SOLVENT_LIBRARY.items()
+        ) + ["Other solvent..."]
         self.solvent_combo = FilteredCombo(setup, values=solvent_display, textvariable=self.solvent_var, width=12)
         self.solvent_combo.grid(row=0, column=3, sticky="w", pady=(0, 4))
         self.solvent_combo.bind("<<ComboboxSelected>>", self._on_solvent_selected)
@@ -4963,7 +4986,7 @@ class App(tk.Tk):
         write_xyz(initial, self.structure.atoms, self.structure.title)
         solvent_text = self.solvent_var.get().strip()
         resolved_solvent = resolve_solvent(solvent_text) if solvent_text else None
-        if solvent_text and not resolved_solvent:
+        if solvent_text and not resolved_solvent and normalize_text(solvent_text) not in GAS_PHASE_SOLVENT_KEYS:
             raise ValueError(f"The Builder solvent is not supported by ORCA SMD: {solvent_text}")
         source = Path(self.structure_source_path) if self.structure_source_path else Path(self.structure.title)
         system_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", source.stem).strip("._") or "molecule"
@@ -5214,6 +5237,11 @@ class App(tk.Tk):
 
     def _on_solvent_selected(self, _event=None):
         value = self.solvent_var.get().strip()
+        if normalize_text(value) in GAS_PHASE_SOLVENT_KEYS:
+            # Keep the explicit label in the field so the choice is visible/reproducible;
+            # resolve_solvent() maps it to None, i.e. no %cpcm block (vacuum).
+            self.solvent_var.set(GAS_PHASE_SOLVENT_LABEL)
+            return
         if value != "Other solvent...":
             return
         custom = simpledialog.askstring(
@@ -7186,7 +7214,10 @@ class App(tk.Tk):
         basis = settings.get("basis", "")
         dispersion = settings.get("dispersion", "")
         grid = settings.get("grid", "")
-        solvent = settings.get("solvent_resolved") or settings.get("solvent_input") or ""
+        solvent = settings.get("solvent_resolved") or ""
+        solvent_input = settings.get("solvent_input") or ""
+        if not solvent and solvent_input and normalize_text(solvent_input) not in GAS_PHASE_SOLVENT_KEYS:
+            solvent = solvent_input
 
         refs = self._summary_reference_library()
         used_refs: List[str] = []
