@@ -857,5 +857,37 @@ $$$$
             self.assertTrue(any("return code: 0" in line for line in logs))
 
 
+
+
+
+
+class SanitizeOrcaRunPathTests(unittest.TestCase):
+    """Shell-safe ORCA input paths (sanitize_orca_run_path)."""
+
+    def test_sanitize_orca_run_path(self):
+        """Shell-unsafe characters in filenames are removed before ORCA is invoked."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+
+            safe = d / "molecule_B3LYP_sp.inp"
+            safe.write_text("! B3LYP\n", encoding="utf-8")
+            self.assertEqual(orca_input.sanitize_orca_run_path(safe), safe)
+
+            unsafe = d / "7061906_B3LYP-G_6-311G_Acetone((CH3)2CO)_sp.inp"
+            unsafe.write_text("! B3LYP/G\n", encoding="utf-8")
+            result2 = orca_input.sanitize_orca_run_path(unsafe)
+            self.assertNotEqual(result2, unsafe)
+            self.assertNotIn("(", result2.name)
+            self.assertNotIn(")", result2.name)
+            self.assertTrue(result2.is_file(), "sanitised copy must exist on disk")
+            self.assertEqual(result2.read_text(encoding="utf-8"), "! B3LYP/G\n")
+
+            gbw_src = unsafe.with_suffix(".gbw")
+            gbw_src.write_bytes(b"\x00\x01")
+            result3 = orca_input.sanitize_orca_run_path(unsafe)
+            gbw_dst = result3.with_suffix(".gbw")
+            self.assertTrue(gbw_dst.is_file(), "GBW copy must be created alongside sanitised inp")
+
+
 if __name__ == "__main__":
     unittest.main()

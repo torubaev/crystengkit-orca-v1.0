@@ -1100,9 +1100,69 @@ def subprocess_env_with_executable_dir(executable_path: str) -> Dict[str, str]:
     exe_dir = str(Path(executable_path).expanduser().resolve().parent)
     current_path = env.get("PATH", "")
     path_parts = current_path.split(os.pathsep) if current_path else []
+    # macOS: make Homebrew tooling discoverable even when the GUI was launched
+    # from Finder with a minimal PATH.
+    for extra_dir in ["/opt/homebrew/bin", "/usr/local/bin"]:
+        if os.path.isdir(extra_dir) and extra_dir not in path_parts:
+            current_path = extra_dir + (os.pathsep + current_path if current_path else "")
+            path_parts.insert(0, extra_dir)
     if exe_dir and exe_dir not in path_parts:
-        env["PATH"] = exe_dir + (os.pathsep + current_path if current_path else "")
+        current_path = exe_dir + (os.pathsep + current_path if current_path else "")
+    env["PATH"] = current_path
+    # macOS: ORCA 6.1.1 binaries link against Homebrew OpenMPI, so the dylib
+    # search path must include Homebrew's lib directory.
+    current_dyld = env.get("DYLD_LIBRARY_PATH", "")
+    dyld_parts = current_dyld.split(os.pathsep) if current_dyld else []
+    for extra_lib in ["/opt/homebrew/lib", "/usr/local/lib"]:
+        if os.path.isdir(extra_lib) and extra_lib not in dyld_parts:
+            current_dyld = extra_lib + (os.pathsep + current_dyld if current_dyld else "")
+            dyld_parts.insert(0, extra_lib)
+    if exe_dir and exe_dir not in dyld_parts:
+        current_dyld = exe_dir + (os.pathsep + current_dyld if current_dyld else "")
+    env["DYLD_LIBRARY_PATH"] = current_dyld
     return add_mpi_to_path(env)
+
+
+_SHELL_UNSAFE_CHARS = set('()[]{}\' ;&$`"<>|!#\\*?')
+
+
+def sanitize_orca_run_path(inp_path: Path) -> Path:
+    """Return a shell-safe copy of an ORCA input file.
+
+    ORCA internally calls helper binaries (orca_startup, orca_scf, ...) via a
+    POSIX shell command string using the bare input file stem as an argument.
+    If the stem contains shell metacharacters such as ``()`` (which appear in
+    names like ``7061906(1).cif``), the shell aborts with a syntax error before
+    any calculation starts.
+
+    When the given path is already safe, the original path is returned
+    unchanged.  Otherwise the file (and any pre-existing .gbw checkpoint) is
+    copied to a sanitised name in the same directory and the new path is
+    returned so ORCA operates on the clean copy.
+    """
+    stem = inp_path.stem
+    if not any(c in _SHELL_UNSAFE_CHARS for c in stem):
+        return inp_path
+
+    safe_stem = stem
+    for c in _SHELL_UNSAFE_CHARS:
+        safe_stem = safe_stem.replace(c, '-')
+    while '--' in safe_stem:
+        safe_stem = safe_stem.replace('--', '-')
+    safe_stem = safe_stem.strip('-')
+
+    safe_path = inp_path.with_name(safe_stem + inp_path.suffix)
+    if safe_path == inp_path:
+        return inp_path
+
+    import shutil as _shutil
+    _shutil.copy2(inp_path, safe_path)
+    # Copy checkpoint so ORCA can use AutoStart on the clean name.
+    gbw_src = inp_path.with_suffix('.gbw')
+    gbw_dst = safe_path.with_suffix('.gbw')
+    if gbw_src.is_file() and not gbw_dst.is_file():
+        _shutil.copy2(gbw_src, gbw_dst)
+    return safe_path
 
 
 def validate_orca_qm_executable(path: str, timeout: float = 5.0) -> Tuple[bool, str]:
@@ -7871,30 +7931,37 @@ class App(tk.Tk):
         src_path = Path(src) if src else Path.cwd() / "job.xyz"
         base = src_path.stem if src else "job"
 
+        def safe_name(val: str) -> str:
+            for char in ['/', '\\', ':', '*', '?', '"', '<', '>', '|', '(', ')', '[', ']', '{', '}', ' ', ';', '&', '$', '`', '\'', ',']:
+                val = val.replace(char, '-')
+            while '--' in val:
+                val = val.replace('--', '-')
+            return val.strip('-')
+
         data = self.collect()
         functional = data.get("functional", "").strip().replace(" ", "")
         basis = data.get("basis", "").strip().replace(" ", "")
         solvent_text = data.get("solvent_text", "").strip()
 
-        parts = [base]
+        parts = [safe_name(base)]
         if functional:
-            parts.append(functional)
+            parts.append(safe_name(functional))
         if basis:
-            parts.append(basis)
+            parts.append(safe_name(basis))
 
-        if solvent_text:
+        if solvent_text and normalize_text(solvent_text) not in GAS_PHASE_SOLVENT_KEYS:
             resolved = resolve_solvent(solvent_text)
             if resolved:
                 solvent_cmd = resolved["orca"] if self.program_var.get() == "ORCA" else resolved["gaussian"]
             else:
                 solvent_cmd = solvent_text.replace(" ", "")
             if solvent_cmd:
-                parts.append(solvent_cmd)
+                parts.append(safe_name(solvent_cmd))
 
         is_tddft = self.program_var.get() == "ORCA" and self.job_tddft_var.get() and self.current_tddft_block.strip()
         if is_tddft:
             settings = self.__dict__.get("current_tddft_settings") or {}
-            parts.extend([tddft_filename_method(settings, self.current_tddft_block), tddft_filename_analysis(settings)])
+            parts.extend([safe_name(tddft_filename_method(settings, self.current_tddft_block)), safe_name(tddft_filename_analysis(settings))])
         elif self.freeze_all_var.get() or self.freeze_heavy_var.get():
             parts.append("constr")
         elif self.job_opt_var.get():
