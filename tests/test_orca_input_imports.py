@@ -735,7 +735,7 @@ $$$$
 
     def test_orca_completion_summary_is_minimal(self):
         self.assertEqual(
-            orca_input.orca_completion_summary(r"C:\jobs\water_B3LYP_opt.out", True),
+            orca_input.orca_completion_summary(os.path.join("jobs", "water_B3LYP_opt.out"), True),
             ("water_B3LYP_opt", "Finished successfully"),
         )
         self.assertEqual(
@@ -801,7 +801,7 @@ $$$$
 
     def test_tddft_input_save_suggestion_adds_td_dft_tag_when_block_present(self):
         app = object.__new__(orca_input.App)
-        app.path_var = self._Var(r"C:\calc\water.xyz")
+        app.path_var = self._Var(os.path.join("calc", "water.xyz"))
         app.program_var = self._Var("ORCA")
         app.freeze_all_var = self._Var(False)
         app.freeze_heavy_var = self._Var(False)
@@ -820,7 +820,7 @@ $$$$
 
     def test_tddft_input_save_suggestion_skips_td_dft_tag_without_block(self):
         app = object.__new__(orca_input.App)
-        app.path_var = self._Var(r"C:\calc\water.xyz")
+        app.path_var = self._Var(os.path.join("calc", "water.xyz"))
         app.program_var = self._Var("ORCA")
         app.freeze_all_var = self._Var(False)
         app.freeze_heavy_var = self._Var(False)
@@ -855,6 +855,7 @@ $$$$
             self.assertIn(str(source), args)
             self.assertIn("--gen3d", args)
             self.assertTrue(any("return code: 0" in line for line in logs))
+
 
 
 if __name__ == "__main__":

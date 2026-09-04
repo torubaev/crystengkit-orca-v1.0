@@ -34,6 +34,10 @@ class GPTKnowledgeTests(unittest.TestCase):
         self.assertIn("Named job queues", features)
         self.assertIn("AI progress assistance", features)
 
+    @unittest.skipIf(
+        not (ROOT / "tmp" / "crystengkit_documentation" / "docs").is_dir(),
+        "Editorial source tmp/crystengkit_documentation/docs is not shipped in this checkout",
+    )
     def test_builder_is_deterministic_and_uses_editorial_tmp_manual(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir)
