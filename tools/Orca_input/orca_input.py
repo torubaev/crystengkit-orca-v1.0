@@ -3432,6 +3432,9 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
         kw.append("SP")
 
     lines = ["! " + " ".join(kw)]
+    # --- Parallelization ---
+    if data.get("nprocs", 1) > 1:
+        lines += ["", "%pal", f"  nprocs {data['nprocs']}", "end"]
     # --- Constraints (auto-generated) ---
     if effective_opt:
         atoms = structure.atoms
@@ -3492,7 +3495,10 @@ def generate_gaussian(data: Dict, structure: Structure, solvent: Optional[Dict[s
         route.append(f"SCRF=(SMD,Solvent={solvent['gaussian']})")
     if data["extra"]:
         route.append(data["extra"].strip())
-    lines = [
+    lines = []
+    if data.get("nprocs", 1) > 1:
+        lines.append(f"%nprocshared={data['nprocs']}")
+    lines.extend([
         "#P " + " ".join(route),
         "",
         structure.title,
@@ -3500,7 +3506,7 @@ def generate_gaussian(data: Dict, structure: Structure, solvent: Optional[Dict[s
         f"{data['charge']} {data['multiplicity']}",
         structure.xyz_block(),
         "",
-    ]
+    ])
     return "\n".join(lines)
 
 
@@ -3897,6 +3903,9 @@ class App(tk.Tk):
         self.mult_var = tk.IntVar(value=1)
         self.grid_var = tk.StringVar(value="DefGrid2")
         self.nroots_var = tk.IntVar(value=10)
+        # CPU cores for ORCA/Gaussian %pal / %nprocshared. Defaults to 16 on
+        # this 18-core Mac; change in the Builder's setup panel as needed.
+        self.nprocs_var = tk.IntVar(value=16)
 
         self.job_sp_var = tk.BooleanVar(value=True)
         self.job_opt_var = tk.BooleanVar(value=False)
@@ -4290,6 +4299,8 @@ class App(tk.Tk):
 
         ttk.Label(setup, text="Gaussian TD roots").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=(0, 4))
         ttk.Entry(setup, textvariable=self.nroots_var, width=8).grid(row=4, column=1, sticky="w", pady=(0, 4))
+        ttk.Label(setup, text="CPU cores").grid(row=4, column=2, sticky="w", padx=(14, 8), pady=(0, 4))
+        ttk.Entry(setup, textvariable=self.nprocs_var, width=8).grid(row=4, column=3, sticky="w", pady=(0, 4))
 
         opts = ttk.Frame(setup)
         opts.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(4, 0))
@@ -6650,6 +6661,7 @@ class App(tk.Tk):
             "multiplicity": int(self.mult_var.get()),
             "grid": self.grid_var.get().strip(),
             "nroots": max(1, int(self.nroots_var.get())),
+            "nprocs": max(1, int(self.nprocs_var.get())),
             "ri_jcosx": bool(self.ri_jcosx_var.get()),
             "tight_scf": bool(self.tight_scf_var.get()),
             "print_mos": bool(self.print_mos_var.get()),
