@@ -3844,7 +3844,7 @@ class ModeTextProxy:
 class App(tk.Tk):
     def __init__(self):
         set_windows_app_id("Builder")
-        super().__init__()
+        super().__init__(className="CrystEngKit")
         install_edit_context_menu(self)
         self.withdraw()
         self.title("ORCA input builder")
