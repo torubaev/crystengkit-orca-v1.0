@@ -128,9 +128,13 @@ class BasisSetMapper:
         normalized = gaussian_basis.strip().lower()
         if normalized in cls.GAUSSIAN_TO_ORCA_BASIS:
             return cls.GAUSSIAN_TO_ORCA_BASIS[normalized], None
-        compact = normalized.replace("(", "").replace(")", "")
+        compact = re.sub(r"[()_\-]", "", normalized)
         if compact in cls.GAUSSIAN_TO_ORCA_BASIS:
             return cls.GAUSSIAN_TO_ORCA_BASIS[compact], None
+
+        for key, value in cls.GAUSSIAN_TO_ORCA_BASIS.items():
+            if re.sub(r"[()_\-]", "", key) == compact:
+                return value, None
 
         # Try partial match for less common variants
         for key, value in cls.GAUSSIAN_TO_ORCA_BASIS.items():
@@ -445,8 +449,18 @@ def _parse_route_line_complete(route_text: str) -> Dict[str, object]:
                     extracted["tddft"][target] = option_map[source]
         elif base == "nmr":
             add_unique("properties", "NMR")
-        elif base in {"pop", "density"}:
+        elif base == "density":
             add_unique("properties", "Density")
+        elif base == "pop":
+            pop_options = {str(item).split("=", 1)[0].lower() for item in options}
+            if pop_options & {"mk", "chelpg", "esp"}:
+                add_unique("properties", "ESP")
+            elif pop_options & {"full", "regular", "orbitals"}:
+                add_unique("properties", "PrintMOs")
+            else:
+                extracted["warnings"].append(
+                    f"Gaussian population analysis '{token}' needs manual ORCA review."
+                )
         elif base == "irc":
             add_unique("job_types", "IRC")
         elif base == "scrf":
@@ -475,9 +489,16 @@ def _parse_route_line_complete(route_text: str) -> Dict[str, object]:
                     extracted["warnings"].append(f"Unsupported Gaussian SCF option: {item}")
         elif base in {"integral", "int"}:
             grid = option_map.get("grid")
+            if grid is None and options:
+                direct_grid = str(options[0]).lower()
+                if direct_grid in {"coarsegrid", "finegrid", "ultrafine", "superfinegrid"}:
+                    grid = direct_grid
             if grid:
                 grid_key = str(grid).lower()
-                add_unique("orca_keywords", {"ultrafine": "DefGrid3", "superfinegrid": "DefGrid3", "finegrid": "DefGrid2"}.get(grid_key, "DefGrid3"))
+                add_unique("orca_keywords", {
+                    "coarsegrid": "DefGrid1", "finegrid": "DefGrid2",
+                    "ultrafine": "DefGrid3", "superfinegrid": "DefGrid3",
+                }.get(grid_key, "DefGrid3"))
         elif base in {"nosymm", "nosymmetry"}:
             add_unique("orca_keywords", "NoSym")
         elif base == "geom":
@@ -584,162 +605,6 @@ class GaussianRouteParser:
                            solvation, properties, extra_keywords
         """
         return _parse_route_line_complete(route_text)
-
-        # Kept below temporarily as reference for legacy route behavior.
-        extracted = {
-            "functional": None,
-            "basis": None,
-            "charged_method": None,
-            "job_types": [],
-            "solvation": None,
-            "solvation_model": None,
-            "properties": [],
-            "dispersion": None,
-            "extra_keywords": [],
-            "constraints": [],
-            "iops": [],
-            "raw_tokens": [],
-            "warnings": [],
-        }
-
-        if not route_text:
-            return extracted
-
-        # Remove leading #P or #
-        route_clean = re.sub(r"^#+[pn]?\s*", "", route_text.strip(), flags=re.IGNORECASE)
-
-        # Split by slashes to find basis set
-        parts = route_clean.split("/")
-
-        # Extract basis (after first slash)
-        if len(parts) > 1:
-            basis_part = parts[1].split()[0]  # Take first token after /
-            extracted["basis"] = basis_part
-            # Remaining parts can contain additional modifiers
-            if len(parts) > 2:
-                extracted["extra_keywords"].extend(parts[2:])
-
-        # Extract functional (before first slash or if parentheses present)
-        method_part = parts[0].strip()
-
-        # Check for method/functional with basis in parentheses: B3LYP(6-31G*)
-        paren_match = re.match(r"^([\w\-]+)\s*\(\s*([\w\-*+()]+)\s*\)", method_part)
-        if paren_match:
-            extracted["functional"] = paren_match.group(1)
-            extracted["basis"] = paren_match.group(2)
-            remaining = method_part[paren_match.end():].strip()
-            if remaining:
-                method_part = remaining
-        else:
-            # Extract functional from method_part (first non-keyword token)
-            tokens = method_part.split()
-            if tokens:
-                first_token = tokens[0].lower()
-                if first_token not in {"opt", "freq", "sp", "td", "nmr", "pop", "density", "int"}:
-                    extracted["functional"] = tokens[0]
-
-        # Tokenize on whitespace while keeping parenthesized keyword options
-        # together (for example SCRF=(SMD,Solvent=Water)).  The previous
-        # capturing-group regex returned only the text inside parentheses and
-        # consequently lost ordinary tokens such as Opt and Freq.
-        tokens = re.findall(r'[^\s()]+(?:\([^)]*\))?', route_clean)
-
-        for token in tokens:
-            if not token or not token.strip():
-                continue
-
-            # Clean token
-            tok = token.strip().lower()
-            extracted["raw_tokens"].append(tok)
-
-            # Parse special cases
-            if tok.startswith("scrf"):
-                # Parse SCRF settings: SCRF=(SMD,Solvent=Water)
-                scrf_content = re.search(r"scrf\s*=?\s*\(([^)]+)\)", tok)
-                if scrf_content:
-                    scrf_settings = scrf_content.group(1)
-                    model_match = re.search(r"(pcm|cpcm|ipcm|smd)", scrf_settings.lower())
-                    if model_match:
-                        extracted["solvation_model"] = model_match.group(1)
-                    solvent_match = re.search(r"solvent\s*=\s*([^,)]+)", scrf_settings)
-                    if solvent_match:
-                        extracted["solvation"] = solvent_match.group(1).strip()
-                else:
-                    extracted["solvation_model"] = "PCM"
-            elif "=" in tok:
-                key, value = tok.split("=", 1)
-                key = key.strip().lower()
-                value = value.strip()
-
-                if key in {"solvent"}:
-                    extracted["solvation"] = value
-                elif key in {"basis"}:
-                    extracted["basis"] = value
-                elif key in {"functional"}:
-                    extracted["functional"] = value
-                elif key == "empiricaldispersion":
-                    extracted["dispersion"] = value
-                elif key in {"units"}:
-                    extracted["constraints"].append(f"Units {value}")
-                elif key in {"geom"} and value.lower() in {"check", "allcheck"}:
-                    extracted["warnings"].append("Geom=Check/AllCheck: geometry from checkpoint file, cannot convert")
-                else:
-                    extracted["extra_keywords"].append(tok)
-
-            # Job types
-            elif tok in {"opt", "optmax", "optmin", "optall"}:
-                if "Opt" not in extracted["job_types"]:
-                    extracted["job_types"].append("Opt")
-            elif tok in {"freq", "frequencies"}:
-                if "Freq" not in extracted["job_types"]:
-                    extracted["job_types"].append("Freq")
-            elif tok == "sp":
-                if "SP" not in extracted["job_types"]:
-                    extracted["job_types"].append("SP")
-            elif tok in {"ts", "saddle"}:
-                if "TS" not in extracted["job_types"]:
-                    extracted["job_types"].append("TS")
-            elif tok in {"irc"}:
-                if "IRC" not in extracted["job_types"]:
-                    extracted["job_types"].append("IRC")
-            elif tok == "scan":
-                if "Scan" not in extracted["job_types"]:
-                    extracted["job_types"].append("Scan")
-
-            # Properties
-            elif tok == "nmr":
-                if "NMR" not in extracted["properties"]:
-                    extracted["properties"].append("NMR")
-            elif tok in {"pop", "population", "density"}:
-                if "Density" not in extracted["properties"]:
-                    extracted["properties"].append("Density")
-
-            # Excited states
-            elif tok in {"td", "tda"} or tok.startswith(("td(", "tda(")):
-                if "TDDFT" not in extracted["job_types"]:
-                    extracted["job_types"].append("TDDFT")
-
-            # Dispersion
-            elif tok in {"d3", "d3bj", "d3(bj)", "d2", "gd3", "gd3bj"}:
-                extracted["dispersion"] = tok
-
-            # Control
-            elif tok in {"nosymm", "nosymmetry"}:
-                extracted["constraints"].append("NoSymmetry")
-
-            # Charge method
-            elif tok in {"rhf", "uhf", "rohf"}:
-                extracted["charged_method"] = tok.upper()
-
-            # IOP
-            elif tok.startswith("iop"):
-                extracted["iops"].append(tok)
-
-            # Unknown keywords
-            elif tok and not any(keyword in tok for keyword in {"0", "1", "2", "3", "4", "5", "6"}):
-                extracted["extra_keywords"].append(tok)
-
-        return extracted
 
 
 class GaussianOrcaConverter:
@@ -1054,7 +919,7 @@ class GaussianOrcaConverter:
         # Add properties
         if "NMR" in properties:
             kw.append("NMR")
-        if "Density" in properties:
+        if "Density" in properties or "ESP" in properties:
             kw.append("KeepDens")
 
         # Add dispersion
@@ -1159,6 +1024,13 @@ class GaussianOrcaConverter:
                 lines.append(f"  IRoot {tddft['iroot']}")
             if tddft.get("tda"):
                 lines.append("  TDA true")
+            lines.append("end")
+            lines.append("")
+
+        if "PrintMOs" in properties:
+            lines.append("%output")
+            lines.append("  Print[P_MOs] 1")
+            lines.append("  Print[P_OrbEn] 2")
             lines.append("end")
             lines.append("")
 

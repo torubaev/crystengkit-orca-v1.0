@@ -83,14 +83,14 @@ class OrcaBasisMapper:
         "augccpvtz": "aug-cc-pVTZ",
 
         # Def2 basis (Karlsruhe)
-        "def2-sv(p)": "def2-SV(P)",
-        "def2-svp": "def2-SVP",
-        "def2-svpd": "def2-SVPD",
-        "def2-tzvp": "def2-TZVP",
-        "def2-tzvpp": "def2-TZVPP",
-        "def2-tzvpd": "def2-TZVPD",
-        "def2-qzvp": "def2-QZVP",
-        "def2-qzvpp": "def2-QZVPP",
+        "def2-sv(p)": "Def2SVP",
+        "def2-svp": "Def2SVP",
+        "def2-svpd": "Def2SVPD",
+        "def2-tzvp": "Def2TZVP",
+        "def2-tzvpp": "Def2TZVPP",
+        "def2-tzvpd": "Def2TZVPD",
+        "def2-qzvp": "Def2QZVP",
+        "def2-qzvpp": "Def2QZVPP",
 
         # Double-zeta
         "lanl2dz": "LANL2DZ",
@@ -105,10 +105,15 @@ class OrcaBasisMapper:
         if not orca_basis:
             return "", "Empty basis set"
 
-        normalized = orca_basis.strip().lower().replace("(", "").replace(")", "")
+        normalized = orca_basis.strip().lower()
 
         if normalized in cls.ORCA_TO_GAUSSIAN_BASIS:
             return cls.ORCA_TO_GAUSSIAN_BASIS[normalized], None
+
+        collapsed = re.sub(r"[()_\-]", "", normalized)
+        for key, value in cls.ORCA_TO_GAUSSIAN_BASIS.items():
+            if re.sub(r"[()_\-]", "", key) == collapsed:
+                return value, None
 
         # Try partial match
         for key, value in cls.ORCA_TO_GAUSSIAN_BASIS.items():
@@ -173,10 +178,15 @@ class OrcaFunctionalMapper:
         if not orca_functional:
             return "", "Empty functional"
 
-        normalized = orca_functional.strip().lower().replace("-", "").replace("*", "")
+        normalized = orca_functional.strip().lower()
 
         if normalized in cls.ORCA_TO_GAUSSIAN_FUNCTIONAL:
             return cls.ORCA_TO_GAUSSIAN_FUNCTIONAL[normalized], None
+
+        collapsed = normalized.replace("-", "").replace("*", "")
+        for key, value in cls.ORCA_TO_GAUSSIAN_FUNCTIONAL.items():
+            if key.replace("-", "").replace("*", "") == collapsed:
+                return value, None
 
         # Partial match
         for key, value in cls.ORCA_TO_GAUSSIAN_FUNCTIONAL.items():
@@ -190,11 +200,10 @@ class OrcaDispersionMapper:
     """Maps ORCA dispersion corrections to Gaussian equivalents."""
 
     DISPERSION_MAP = {
-        "d3zero": "D3",
-        "d3bj": "D3BJ",
-        "d3": "D3",
-        "d4": "D4",
-        "d2": "D2",
+        "d3zero": "EmpiricalDispersion=GD3",
+        "d3bj": "EmpiricalDispersion=GD3BJ",
+        "d3": "EmpiricalDispersion=GD3",
+        "d2": "EmpiricalDispersion=GD2",
     }
 
     @classmethod
@@ -208,7 +217,7 @@ class OrcaDispersionMapper:
         if normalized in cls.DISPERSION_MAP:
             return cls.DISPERSION_MAP[normalized], None
 
-        return orca_disp, f"Unknown dispersion '{orca_disp}'; using as-is"
+        return "", f"ORCA dispersion '{orca_disp}' has no verified Gaussian mapping and was omitted"
 
 
 class OrcaSolvationMapper:
@@ -270,7 +279,16 @@ class OrcaKeywordExtractor:
             "solvation_model": None,
             "solvation_solvent": None,
             "nprocs": 1,
+            "maxcore": None,
+            "base": None,
+            "moinp": None,
             "extra_keywords": [],
+            "gaussian_keywords": [],
+            "warnings": [],
+            "scf": {},
+            "geom": {"constraints": []},
+            "tddft": {},
+            "output": {},
             "has_tddft": False,
             "has_nmr": False,
             "has_freq": False,
@@ -279,55 +297,134 @@ class OrcaKeywordExtractor:
 
         lines = text.split("\n")
 
-        # Extract keyword line (starts with !)
+        # ORCA permits multiple simple-input lines. Parse all of them.
         for line in lines:
             stripped = line.strip()
             if stripped.startswith("!"):
                 keyword_line = stripped[1:].strip()
                 extracted = OrcaKeywordExtractor._parse_keyword_line(keyword_line, extracted)
-                break
 
-        # Extract blocks
-        in_pal = False
-        in_cpcm = False
-        in_tddft = False
+        # Single-line percent directives.
+        for line in lines:
+            stripped = line.strip()
+            maxcore = re.match(r"^%maxcore\s+(\d+)", stripped, re.IGNORECASE)
+            if maxcore:
+                extracted["maxcore"] = int(maxcore.group(1))
+            base = re.match(r'^%base\s+"?([^"\s]+)"?', stripped, re.IGNORECASE)
+            if base:
+                extracted["base"] = base.group(1)
+            moinp = re.match(r'^%moinp\s+"?([^"\r\n]+)"?', stripped, re.IGNORECASE)
+            if moinp:
+                extracted["moinp"] = moinp.group(1).strip()
 
-        for i, line in enumerate(lines):
-            stripped = line.strip().lower()
-
-            # %pal block
-            if stripped.startswith("%pal"):
-                in_pal = True
+        # Structured ORCA blocks.
+        known_blocks = {"pal", "cpcm", "tddft", "cis", "scf", "geom", "output", "eprnmr"}
+        i = 0
+        while i < len(lines):
+            start = re.match(r"^\s*%([A-Za-z0-9_]+)\b", lines[i])
+            if not start:
+                i += 1
                 continue
-            elif in_pal and stripped.startswith("end"):
-                in_pal = False
-            elif in_pal and stripped.startswith("nprocs"):
-                try:
-                    extracted["nprocs"] = int(stripped.split()[-1])
-                except ValueError:
-                    pass
-
-            # %cpcm block
-            if stripped.startswith("%cpcm"):
-                in_cpcm = True
-                extracted["solvation_model"] = "CPCM"
+            name = start.group(1).lower()
+            if name not in known_blocks:
+                if name not in {"maxcore", "base", "moinp"}:
+                    extracted["warnings"].append(
+                        f"ORCA %{name} block/directive has no automatic Gaussian translation"
+                    )
+                i += 1
                 continue
-            elif in_cpcm and stripped.startswith("end"):
-                in_cpcm = False
-            elif in_cpcm and "smdsolvent" in stripped:
-                match = re.search(r'smdsolvent\s+"([^"]+)"', stripped, re.IGNORECASE)
-                if match:
-                    extracted["solvation_solvent"] = match.group(1)
-
-            # %tddft block
-            if stripped.startswith("%tddft"):
-                in_tddft = True
-                extracted["has_tddft"] = True
-                continue
-            elif in_tddft and stripped.startswith("end"):
-                in_tddft = False
+            block, next_index = OrcaKeywordExtractor._collect_block(lines, i)
+            OrcaKeywordExtractor._parse_block(name, block, extracted)
+            i = next_index
 
         return extracted
+
+    @staticmethod
+    def _collect_block(lines: List[str], start: int) -> Tuple[List[str], int]:
+        """Collect a percent block, accounting for nested Constraints/Scan sections."""
+        content: List[str] = []
+        nested = 0
+        i = start + 1
+        while i < len(lines):
+            stripped = lines[i].strip()
+            lower = stripped.lower()
+            if lower in {"constraints", "scan"}:
+                nested += 1
+                content.append(stripped)
+            elif lower == "end":
+                if nested:
+                    nested -= 1
+                    content.append(stripped)
+                else:
+                    return content, i + 1
+            else:
+                content.append(stripped)
+            i += 1
+        return content, i
+
+    @staticmethod
+    def _parse_block(name: str, block: List[str], extracted: Dict) -> None:
+        pairs: Dict[str, str] = {}
+        for line in block:
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                pairs[parts[0].lower()] = parts[1].strip().strip('"')
+
+        if name == "pal":
+            try:
+                extracted["nprocs"] = max(1, int(pairs.get("nprocs", "1")))
+            except ValueError:
+                extracted["warnings"].append("Could not parse ORCA %pal NProcs; using 1")
+        elif name == "cpcm":
+            extracted["solvation_model"] = "SMD" if pairs.get("smd", "").lower() == "true" else "CPCM"
+            extracted["solvation_solvent"] = pairs.get("smdsolvent") or pairs.get("solvent")
+        elif name in {"tddft", "cis"}:
+            extracted["has_tddft"] = True
+            if "TD" not in extracted["job_types"]:
+                extracted["job_types"].append("TD")
+            for source, target in (("nroots", "nstates"), ("iroot", "root")):
+                if source in pairs:
+                    extracted["tddft"][target] = pairs[source]
+            if pairs.get("tda", "").lower() == "true":
+                extracted["tddft"]["tda"] = True
+        elif name == "scf":
+            if "maxiter" in pairs:
+                extracted["scf"]["maxcycle"] = pairs["maxiter"]
+            if "hftyp" in pairs:
+                extracted["scf"]["hftyp"] = pairs["hftyp"]
+        elif name == "geom":
+            if "maxiter" in pairs:
+                extracted["geom"]["maxcycle"] = pairs["maxiter"]
+            if pairs.get("calc_hess", "").lower() == "true":
+                extracted["geom"]["calcfc"] = True
+            for line in block:
+                match = re.match(r"^\{\s*([BAD])\s+([0-9\s]+)\s+C\s*\}$", line, re.IGNORECASE)
+                if match:
+                    indices = [str(int(item) + 1) for item in match.group(2).split()]
+                    extracted["geom"]["constraints"].append(
+                        f"{match.group(1).upper()} {' '.join(indices)} F"
+                    )
+                elif line.startswith("{"):
+                    extracted["warnings"].append(
+                        f"ORCA geometry constraint '{line}' needs manual Gaussian translation"
+                    )
+        elif name == "eprnmr":
+            if pairs.get("nmr", "").lower() == "true":
+                extracted["has_nmr"] = True
+                if "NMR" not in extracted["properties"]:
+                    extracted["properties"].append("NMR")
+        elif name == "output":
+            p_mos = pairs.get("print[p_mos]")
+            p_orben = pairs.get("print[p_orben]")
+            if (p_mos and p_mos != "0") or (p_orben and p_orben != "0"):
+                extracted["output"]["pop_full"] = True
+            unknown = [line for line in block if line and not re.match(
+                r"^Print\[P_(?:MOs|OrbEn)\]\s+\d+\s*$", line, re.IGNORECASE
+            )]
+            if unknown:
+                extracted["warnings"].append(
+                    "Some ORCA %output controls have no automatic Gaussian translation: " + "; ".join(unknown)
+                )
 
     @staticmethod
     def _parse_keyword_line(kw_line: str, extracted: Dict) -> Dict:
@@ -337,46 +434,112 @@ class OrcaKeywordExtractor:
         for token in tokens:
             token_lower = token.lower()
 
-            # Functional (first token if looks like functional)
-            if not extracted["functional"] and token_lower not in {"sp", "opt", "freq", "tddft", "tda", "nmr"}:
-                extracted["functional"] = token
-                continue
-
-            # Basis (if contains numbers or known pattern)
-            if not extracted["basis"] and (any(c.isdigit() for c in token) or token.startswith("cc-") or token.startswith("def2-")):
-                extracted["basis"] = token
-                continue
-
-            # Job types
+            # Job types and properties
             if token_lower == "sp":
                 extracted["job_types"].append("SP")
-            elif token_lower == "opt":
+                continue
+            if token_lower == "opt":
                 extracted["job_types"].append("Opt")
-            elif token_lower == "optts":
+                extracted["has_opt"] = True
+                continue
+            if token_lower == "optts":
                 extracted["job_types"].append("TS")
-            elif token_lower == "freq":
+                extracted["has_opt"] = True
+                continue
+            if token_lower == "freq":
                 extracted["job_types"].append("Freq")
                 extracted["has_freq"] = True
-            elif token_lower == "irc":
+                continue
+            if token_lower == "irc":
                 extracted["job_types"].append("IRC")
-            elif token_lower in {"tddft", "tda"}:
+                continue
+            if token_lower in {"tddft", "tda"}:
                 extracted["job_types"].append("TD")
                 extracted["has_tddft"] = True
-
-            # Properties
+                continue
             if token_lower == "nmr":
                 extracted["properties"].append("NMR")
                 extracted["has_nmr"] = True
-            elif "keepdensity" in token_lower or "keepdensity" in token_lower:
+                continue
+            if token_lower in {"keepdens", "keepdensity"}:
                 extracted["properties"].append("Density")
+                continue
 
             # Dispersion
             if token_lower in {"d3", "d3bj", "d3zero", "d4", "d2"}:
                 extracted["dispersion"] = token_lower
+                continue
 
-            # Other keywords
-            elif token_lower not in {"sp", "opt", "freq", "keepdensity", "moread", "cpcm"}:
-                extracted["extra_keywords"].append(token)
+            # ORCA controls with direct Gaussian equivalents.
+            if token_lower in {"tightscf", "verytightscf", "loosescf"}:
+                extracted["scf"]["convergence"] = {
+                    "tightscf": "Tight", "verytightscf": "VeryTight", "loosescf": "Loose"
+                }[token_lower]
+                continue
+            if token_lower == "slowconv":
+                extracted["scf"]["xqc"] = True
+                continue
+            if token_lower in {"tightopt", "verytightopt"}:
+                extracted["geom"]["convergence"] = "Tight" if token_lower == "tightopt" else "VeryTight"
+                continue
+            if token_lower == "numfreq":
+                if "Freq" not in extracted["job_types"]:
+                    extracted["job_types"].append("Freq")
+                extracted["geom"]["numerical_freq"] = True
+                continue
+            gaussian_keyword_map = {
+                "defgrid1": "Integral=CoarseGrid",
+                "defgrid2": "Integral=FineGrid",
+                "defgrid3": "Integral=UltraFine",
+                "nosym": "NoSymm",
+                "nosymm": "NoSymm",
+            }
+            if token_lower in gaussian_keyword_map:
+                extracted["gaussian_keywords"].append(gaussian_keyword_map[token_lower])
+                continue
+
+            # RI/RIJCOSX and auxiliary bases are ORCA implementation details,
+            # not valid Gaussian route keywords.
+            if token_lower in {"ri", "rijcosx", "rijonk", "rijk", "rijdx", "nori"}:
+                extracted["warnings"].append(
+                    f"ORCA approximation keyword '{token}' was omitted (no direct Gaussian equivalent)"
+                )
+                continue
+            if re.search(r"/(?:j|jk|c)$", token_lower):
+                extracted["warnings"].append(
+                    f"ORCA auxiliary basis '{token}' was omitted (no direct Gaussian equivalent)"
+                )
+                continue
+
+            # Functional is conventionally the first remaining token.
+            if not extracted["functional"]:
+                extracted["functional"] = token
+                continue
+
+            # Orbital basis (after the functional).
+            if not extracted["basis"] and (
+                any(c.isdigit() for c in token)
+                or token_lower.startswith("cc-")
+                or token_lower.startswith("aug-cc-")
+                or token_lower.startswith("def2-")
+            ):
+                extracted["basis"] = token
+                continue
+
+            cpcm = re.match(r"cpcm\(([^)]+)\)", token, re.IGNORECASE)
+            if cpcm:
+                extracted["solvation_model"] = "CPCM"
+                extracted["solvation_solvent"] = cpcm.group(1)
+                continue
+            if token_lower == "cpcm":
+                extracted["solvation_model"] = "CPCM"
+                continue
+            if token_lower == "moread":
+                extracted["warnings"].append(
+                    "ORCA MOREAD orbital reuse cannot be transferred without a Gaussian checkpoint"
+                )
+                continue
+            extracted["extra_keywords"].append(token)
 
         return extracted
 
@@ -413,6 +576,7 @@ class OrcaGaussianConverter:
         # Extract keywords
         keywords = self.keyword_extractor.extract_keywords(orca_input_text)
         result.extracted_keywords = keywords
+        result.warnings.extend(keywords.get("warnings", []))
 
         # Save original keyword line
         for line in orca_input_text.split("\n"):
@@ -437,6 +601,17 @@ class OrcaGaussianConverter:
         else:
             disp_mapped = ""
 
+        if not atoms:
+            raise ValueError(
+                "ORCA input has no explicit Cartesian '* xyz' geometry. Resolve xyzfile/external geometry before conversion."
+            )
+
+        solvent = keywords.get("solvation_solvent")
+        if solvent:
+            solvent, solvent_warn = self.solvation_mapper.map_solvent(solvent)
+            if solvent_warn:
+                result.conversion_notes.append(f"Solvent: {solvent_warn}")
+
         # Build Gaussian input
         gaussian_lines = self._build_gaussian_input(
             functional=functional,
@@ -447,10 +622,20 @@ class OrcaGaussianConverter:
             properties=keywords.get("properties", []),
             dispersion=disp_mapped,
             solvation_model=keywords.get("solvation_model"),
-            solvation_solvent=keywords.get("solvation_solvent"),
+            solvation_solvent=solvent,
             atoms=atoms,
             title=title,
+            nprocs=keywords.get("nprocs", 1),
+            maxcore=keywords.get("maxcore"),
+            base=keywords.get("base"),
+            moinp=keywords.get("moinp"),
+            scf=keywords.get("scf", {}),
+            geom=keywords.get("geom", {}),
+            tddft=keywords.get("tddft", {}),
+            output=keywords.get("output", {}),
+            gaussian_keywords=keywords.get("gaussian_keywords", []),
             extra_keywords=keywords.get("extra_keywords", []),
+            warnings=result.warnings,
             conversion_notes=result.conversion_notes,
         )
 
@@ -475,10 +660,12 @@ class OrcaGaussianConverter:
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            # Detect title from first non-empty, non-keyword, non-block line
-            if not title.startswith("Converted") and stripped and not stripped.startswith("!") and not stripped.startswith("%"):
-                if not in_xyz and "xyz" not in stripped:
-                    title = stripped
+            # ORCA comments are the only safe title source. Arbitrary block
+            # contents must never become the Gaussian title.
+            if title == "Converted from ORCA" and stripped.startswith("#"):
+                candidate = stripped.lstrip("#").strip()
+                if candidate and not candidate.lower().startswith(("unmapped ", "untranslated ")):
+                    title = candidate
 
             # Start of geometry block
             if stripped.startswith("* xyz"):
@@ -526,7 +713,17 @@ class OrcaGaussianConverter:
         solvation_solvent: Optional[str],
         atoms: List[str],
         title: str,
+        nprocs: int,
+        maxcore: Optional[int],
+        base: Optional[str],
+        moinp: Optional[str],
+        scf: Dict[str, str],
+        geom: Dict[str, object],
+        tddft: Dict[str, object],
+        output: Dict[str, object],
+        gaussian_keywords: List[str],
         extra_keywords: List[str],
+        warnings: List[str],
         conversion_notes: List[str],
     ) -> List[str]:
         """Build Gaussian input lines."""
@@ -545,26 +742,68 @@ class OrcaGaussianConverter:
         else:
             route.append("B3LYP/6-31G(d,p)")
 
-        # Job types
-        if "Opt" in job_types:
-            route.append("Opt")
-        if "Freq" in job_types:
-            route.append("Freq")
+        # Job types and their block-level options.
         if "TS" in job_types:
-            route.append("TS")
+            opt_options = ["TS", "NoEigenTest"]
+            if geom.get("calcfc"):
+                opt_options.append("CalcFC")
+            if geom.get("convergence"):
+                opt_options.append(str(geom["convergence"]))
+            if geom.get("maxcycle"):
+                opt_options.append(f"MaxCycles={geom['maxcycle']}")
+            if geom.get("constraints"):
+                opt_options.append("ModRedundant")
+            route.append("Opt=(" + ",".join(opt_options) + ")")
+        elif "Opt" in job_types:
+            opt_options = []
+            if geom.get("calcfc"):
+                opt_options.append("CalcFC")
+            if geom.get("convergence"):
+                opt_options.append(str(geom["convergence"]))
+            if geom.get("maxcycle"):
+                opt_options.append(f"MaxCycles={geom['maxcycle']}")
+            if geom.get("constraints"):
+                opt_options.append("ModRedundant")
+            route.append("Opt=(" + ",".join(opt_options) + ")" if opt_options else "Opt")
+        if "Freq" in job_types:
+            route.append("Freq=Numer" if geom.get("numerical_freq") else "Freq")
         if "IRC" in job_types:
             route.append("IRC")
         if "TD" in job_types:
-            route.append("TD")
+            td_options = []
+            if tddft.get("nstates"):
+                td_options.append(f"NStates={tddft['nstates']}")
+            if tddft.get("root"):
+                td_options.append(f"Root={tddft['root']}")
+            td_name = "TDA" if tddft.get("tda") else "TD"
+            route.append(f"{td_name}=({','.join(td_options)})" if td_options else td_name)
         if "NMR" in properties:
             route.append("NMR")
-        if not job_types:  # Default to single point
-            if "SP" not in route:
-                route.append("SP")
+        if "SP" in job_types or not job_types:
+            route.append("SP")
 
         # Properties/output
         if "Density" in properties:
             route.append("Density=Current")
+        if output.get("pop_full"):
+            route.append("Pop=Full")
+
+        scf_options = []
+        if scf.get("convergence"):
+            scf_options.append(str(scf["convergence"]))
+        if scf.get("xqc"):
+            scf_options.append("XQC")
+        if scf.get("maxcycle"):
+            scf_options.append(f"MaxCycle={scf['maxcycle']}")
+        if scf_options:
+            route.append(
+                f"SCF={scf_options[0]}" if len(scf_options) == 1
+                else "SCF=(" + ",".join(scf_options) + ")"
+            )
+        if scf.get("hftyp"):
+            warnings.append(
+                f"ORCA %scf HFTyp {scf['hftyp']} was not forced; verify the Gaussian method/reference"
+            )
 
         # Dispersion
         if dispersion:
@@ -579,12 +818,29 @@ class OrcaGaussianConverter:
                 route.append(f"SCRF=(PCM,Solvent={solvent_name})")
 
         # Extra keywords
+        route.extend(gaussian_keywords)
+
         for extra in extra_keywords:
             if extra and len(extra) < 40:
-                conversion_notes.append(f"Unknown ORCA keyword '{extra}' added to route")
-                route.append(extra)
+                warnings.append(
+                    f"Unknown ORCA keyword '{extra}' was omitted; review it manually"
+                )
 
         # Build full route line
+        if nprocs and nprocs > 0:
+            lines.append(f"%NProcShared={nprocs}")
+        if maxcore and maxcore > 0:
+            total_mb = max(1, round(maxcore * max(1, nprocs) / 0.75))
+            lines.append(f"%Mem={total_mb}MB")
+        if base:
+            chk_path = str(Path(base).with_suffix(".chk"))
+            lines.append(f"%Chk={chk_path}")
+        if moinp:
+            oldchk = str(Path(moinp).with_suffix(".chk"))
+            lines.append(f"%OldChk={oldchk}")
+            warnings.append(
+                f"ORCA MO input '{moinp}' was mapped by filename to '{oldchk}'; a compatible Gaussian checkpoint must exist"
+            )
         lines.append("#P " + " ".join(route))
         lines.append("")
         lines.append(title)
@@ -592,6 +848,9 @@ class OrcaGaussianConverter:
         lines.append(f"{charge or 0} {multiplicity or 1}")
         lines.extend(atoms)
         lines.append("")
+        if geom.get("constraints"):
+            lines.extend(str(item) for item in geom["constraints"])
+            lines.append("")
 
         return lines
 

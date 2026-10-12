@@ -8312,15 +8312,15 @@ class App(tk.Tk):
             warnings: List[str] = []
             notes: List[str] = []
             target_program = self._input_program_for_path(out)
-            if source_program:
-                if target_program is None:
-                    raise ValueError("Save the converted input with .inp for ORCA or .gjf/.com for Gaussian.")
-                conversion_source = text
-                if source_program == "Gaussian" and target_program == "ORCA":
-                    gaussian_text = self.__dict__.get("selected_gaussian_section_text", "") or text
-                    conversion_source = gaussian_text
-                converted = convert_input_text(conversion_source, source_program, target_program)
-                text, warnings, notes = converted.text, converted.warnings, converted.conversion_notes
+            if target_program is None:
+                raise ValueError("Save the input with .inp for ORCA or .gjf/.com for Gaussian.")
+            conversion_source = text
+            conversion_program = source_program or self.program_var.get()
+            if source_program == "Gaussian" and target_program == "ORCA":
+                gaussian_text = self.__dict__.get("selected_gaussian_section_text", "") or text
+                conversion_source = gaussian_text
+            converted = convert_input_text(conversion_source, conversion_program, target_program)
+            text, warnings, notes = converted.text, converted.warnings, converted.conversion_notes
             with open(out, "w", encoding="utf-8") as f:
                 f.write(text)
             self.preview_text.delete("1.0", "end")
@@ -8331,7 +8331,7 @@ class App(tk.Tk):
             for item in warnings:
                 self.append_monitor(f"Conversion warning: {item}")
             self.current_input_path = out if target_program == "ORCA" else None
-            converted_label = f" ({source_program} to {target_program})" if source_program and source_program != target_program else ""
+            converted_label = f" ({conversion_program} to {target_program})" if conversion_program != target_program else ""
             warning_label = " Warnings were logged." if warnings else ""
             self.status.configure(text=f"Saved input{converted_label}: {out}.{warning_label}")
         except Exception as exc:

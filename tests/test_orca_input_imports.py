@@ -20,6 +20,7 @@ sys.modules["orca_input"] = orca_input
 spec.loader.exec_module(orca_input)
 
 from gaussian_orca_converter import GaussianOrcaConverter
+from orca_gaussian_converter import OrcaGaussianConverter
 from input_format_converter import convert_input_text, detect_input_program
 
 
@@ -226,8 +227,93 @@ class ImportHelperTests(unittest.TestCase):
             with mock.patch.object(orca_input.filedialog, "asksaveasfilename", return_value=str(target)):
                 app.save_input()
             self.assertEqual(source.read_text(encoding="utf-8"), original)
-            self.assertIn("#P PBE1PBE/def2-SVP Freq", target.read_text(encoding="utf-8"))
+            self.assertIn("#P PBE1PBE/Def2SVP Freq", target.read_text(encoding="utf-8"))
             self.assertIn("-1 2", target.read_text(encoding="utf-8"))
+
+    def test_save_as_gjf_converts_builder_orca_preview_from_xyz_source(self):
+        class Preview:
+            def __init__(self, content): self.content = content
+            def delete(self, *_args): self.content = ""
+            def insert(self, _index, text): self.content = text
+
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            source = Path(tmpdir) / "water.xyz"
+            target = Path(tmpdir) / "water.gjf"
+            source.write_text("2\nwater\nO 0 0 0\nH 0 0 1\n", encoding="utf-8")
+            orca_text = "! PBE0 def2-SVP SP\n\n* xyz 0 1\nO 0 0 0\nH 0 0 1\n*\n"
+            app = object.__new__(orca_input.App)
+            app.path_var = self._Var(str(source))
+            app.program_var = self._Var("ORCA")
+            app.preview_text = Preview(orca_text)
+            app.get_preview_text = lambda: app.preview_text.content
+            app.synchronize_input_preview = lambda: orca_text
+            app.suggest_input_save_path = lambda: str(Path(tmpdir) / "water.inp")
+            app._confirm_tddft_memory_risk = lambda: None
+            app._show_output_mode = lambda _mode: None
+            app.append_monitor = lambda _line: None
+            app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+            with mock.patch.object(orca_input.filedialog, "asksaveasfilename", return_value=str(target)):
+                app.save_input()
+            saved = target.read_text(encoding="utf-8")
+            self.assertIn("#P PBE1PBE/Def2SVP SP", saved)
+            self.assertNotIn("! PBE0", saved)
+
+    def test_orca_to_gaussian_maps_builder_controls_without_orca_keywords(self):
+        converted = OrcaGaussianConverter().convert_text(
+            "! B3LYP def2-SVP def2/J RIJCOSX TightSCF DefGrid2 SP\n"
+            "%pal\n  nprocs 1\nend\n"
+            "%output\n  Print[P_MOs] 1\nend\n"
+            "* xyz 0 1\nO 0 0 0\nH 0 0 1\n*\n"
+        )
+        gaussian = converted.gaussian_input
+        self.assertTrue(gaussian.startswith("%NProcShared=1\n"))
+        self.assertIn("B3LYP/Def2SVP", gaussian)
+        self.assertIn("SP", gaussian)
+        self.assertIn("SCF=Tight", gaussian)
+        self.assertIn("Integral=FineGrid", gaussian)
+        for orca_only in ("def2/J", "RIJCOSX", "TightSCF", "DefGrid2"):
+            self.assertNotIn(orca_only, gaussian)
+        self.assertTrue(any("auxiliary basis" in warning for warning in converted.warnings))
+        self.assertIn("Pop=Full", gaussian)
+
+    def test_orca_to_gaussian_converts_blocks_resources_and_round_trips(self):
+        orca = (
+            "! CAM-B3LYP def2-TZVP D3BJ TightSCF DefGrid3 Opt Freq KeepDens\n"
+            "# full semantic conversion\n"
+            "%maxcore 1200\n%pal\n  nprocs 8\nend\n"
+            "%base \"calculation\"\n"
+            "%scf\n  MaxIter 300\nend\n"
+            "%geom\n  MaxIter 75\n  Calc_Hess true\n  Constraints\n"
+            "    { B 0 1 C }\n  end\nend\n"
+            "%tddft\n  NRoots 12\n  IRoot 2\n  TDA true\nend\n"
+            "%eprnmr\n  NMR true\nend\n"
+            "%cpcm\n  smd true\n  SMDsolvent \"Acetonitrile\"\nend\n"
+            "%output\n  Print[P_MOs] 1\n  Print[P_OrbEn] 2\nend\n"
+            "* xyz -1 2\nO 0 0 0\nH 0 0 1\n*\n"
+        )
+        converted = OrcaGaussianConverter().convert_text(orca)
+        gaussian = converted.gaussian_input
+        for expected in (
+            "%NProcShared=8", "%Mem=12800MB", "%Chk=calculation.chk",
+            "CAM-B3LYP/Def2TZVP", "EmpiricalDispersion=GD3BJ",
+            "Opt=(CalcFC,MaxCycles=75,ModRedundant)", "Freq", "Density=Current",
+            "TDA=(NStates=12,Root=2)", "NMR", "SCRF=(SMD,Solvent=Acetonitrile)",
+            "Pop=Full", "SCF=(Tight,MaxCycle=300)", "Integral=UltraFine",
+            "B 1 2 F",
+        ):
+            self.assertIn(expected, gaussian)
+        self.assertEqual(converted.title, "full semantic conversion")
+
+        round_trip = GaussianOrcaConverter().convert_text(gaussian).orca_input
+        for expected in (
+            "CAM-B3LYP", "def2-TZVP", "D3BJ", "TightSCF", "DefGrid3",
+            "Opt", "Freq", "KeepDens", "%maxcore 1200", "nprocs 8",
+            "NRoots 12", "IRoot 2", "TDA true", 'SMDsolvent "Acetonitrile"',
+            "Print[P_MOs] 1", "Print[P_OrbEn] 2",
+        ):
+            self.assertIn(expected, round_trip)
 
     def test_gaussian_converter_keeps_multiline_route_keywords(self):
         converted = GaussianOrcaConverter().convert_text(
