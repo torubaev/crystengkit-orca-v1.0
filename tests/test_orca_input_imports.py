@@ -19,6 +19,9 @@ assert spec.loader is not None
 sys.modules["orca_input"] = orca_input
 spec.loader.exec_module(orca_input)
 
+from gaussian_orca_converter import GaussianOrcaConverter
+from input_format_converter import convert_input_text, detect_input_program
+
 
 class ImportHelperTests(unittest.TestCase):
     def test_input_association_uses_only_same_basename_output(self):
@@ -110,6 +113,185 @@ class ImportHelperTests(unittest.TestCase):
 
     def test_generic_inp_is_not_gaussian(self):
         self.assertEqual(orca_input.structure_input_format("job.inp"), "ORCA input")
+
+    def test_standalone_input_converter_detects_and_dispatches_formats(self):
+        self.assertEqual(detect_input_program("job.inp"), "ORCA")
+        self.assertEqual(detect_input_program("job.GJF"), "Gaussian")
+        gaussian = "#P B3LYP/6-31G(d) SP\n\nwater\n\n0 1\nO 0 0 0\nH 0 0 1\n\n"
+        copied = convert_input_text(gaussian, "Gaussian", "Gaussian")
+        self.assertFalse(copied.converted)
+        self.assertEqual(copied.text, gaussian)
+        converted = convert_input_text(gaussian, "Gaussian", "ORCA")
+        self.assertTrue(converted.converted)
+        self.assertIn("! B3LYP 6-31G(d) SP", converted.text)
+
+    def test_loaded_gaussian_input_remains_verbatim_in_orca_preview(self):
+        class Preview:
+            def __init__(self): self.content = ""
+            def delete(self, *_args): self.content = ""
+            def insert(self, _index, text): self.content = text
+
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            source = Path(tmpdir) / "water.gjf"
+            source.write_text(
+                "#P B3LYP/6-31G(d) Opt\n\nwater\n\n0 1\nO 0 0 0\nH 0 0 1\nH 0 1 0\n\n",
+                encoding="utf-8",
+            )
+            app = object.__new__(orca_input.App)
+            app.program_var = self._Var("ORCA")
+            app.preview_text = Preview()
+            app._show_output_mode = lambda _mode: None
+            app.append_monitor = lambda _line: None
+            app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+            self.assertTrue(app._show_loaded_engine_input(str(source)))
+            self.assertEqual(app.preview_text.content, source.read_text(encoding="utf-8"))
+            self.assertIn("#P B3LYP/6-31G(d) Opt", app.preview_text.content)
+            self.assertNotIn("* xyz 0 1", app.preview_text.content)
+
+    def test_loaded_orca_input_remains_verbatim_in_gaussian_preview(self):
+        class Preview:
+            def __init__(self): self.content = ""
+            def delete(self, *_args): self.content = ""
+            def insert(self, _index, text): self.content = text
+
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            source = Path(tmpdir) / "water.inp"
+            source.write_text(
+                "! PBE0 def2-SVP Freq\n\n* xyz -1 2\nO 0 0 0\nH 0 0 1\n*\n",
+                encoding="utf-8",
+            )
+            app = object.__new__(orca_input.App)
+            app.program_var = self._Var("Gaussian")
+            app.preview_text = Preview()
+            app._show_output_mode = lambda _mode: None
+            app.append_monitor = lambda _line: None
+            app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+            self.assertTrue(app._show_loaded_engine_input(str(source)))
+            self.assertEqual(app.preview_text.content, source.read_text(encoding="utf-8"))
+            self.assertIn("! PBE0 def2-SVP Freq", app.preview_text.content)
+            self.assertNotIn("#P", app.preview_text.content)
+
+    def test_save_as_inp_converts_loaded_gaussian_only_when_saving(self):
+        class Preview:
+            def __init__(self, content): self.content = content
+            def delete(self, *_args): self.content = ""
+            def insert(self, _index, text): self.content = text
+
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            source = Path(tmpdir) / "water.gjf"
+            target = Path(tmpdir) / "water.inp"
+            original = "#P B3LYP/6-31G(d) Opt\n\nwater\n\n0 1\nO 0 0 0\nH 0 0 1\n\n"
+            source.write_text(original, encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            app.path_var = self._Var(str(source))
+            app.program_var = self._Var("ORCA")
+            app.preview_text = Preview(original)
+            app.get_preview_text = lambda: app.preview_text.content
+            app._show_output_mode = lambda _mode: None
+            app.append_monitor = lambda _line: None
+            app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+            with mock.patch.object(orca_input.filedialog, "asksaveasfilename", return_value=str(target)):
+                app.save_input()
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+            self.assertIn("! B3LYP 6-31G(d) Opt", target.read_text(encoding="utf-8"))
+            self.assertIn("* xyz 0 1", target.read_text(encoding="utf-8"))
+
+    def test_save_as_gjf_converts_loaded_orca_only_when_saving(self):
+        class Preview:
+            def __init__(self, content): self.content = content
+            def delete(self, *_args): self.content = ""
+            def insert(self, _index, text): self.content = text
+
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            source = Path(tmpdir) / "water.inp"
+            target = Path(tmpdir) / "water.gjf"
+            original = "! PBE0 def2-SVP Freq\n\n* xyz -1 2\nO 0 0 0\nH 0 0 1\n*\n"
+            source.write_text(original, encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            app.path_var = self._Var(str(source))
+            app.program_var = self._Var("Gaussian")
+            app.preview_text = Preview(original)
+            app.get_preview_text = lambda: app.preview_text.content
+            app._show_output_mode = lambda _mode: None
+            app.append_monitor = lambda _line: None
+            app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+            with mock.patch.object(orca_input.filedialog, "asksaveasfilename", return_value=str(target)):
+                app.save_input()
+            self.assertEqual(source.read_text(encoding="utf-8"), original)
+            self.assertIn("#P PBE1PBE/def2-SVP Freq", target.read_text(encoding="utf-8"))
+            self.assertIn("-1 2", target.read_text(encoding="utf-8"))
+
+    def test_gaussian_converter_keeps_multiline_route_keywords(self):
+        converted = GaussianOrcaConverter().convert_text(
+            "#P CAM-B3LYP/def2-TZVP\n"
+            "Opt Freq EmpiricalDispersion=GD3BJ\n\n"
+            "multiline route\n\n0 1\nH 0 0 0\nH 0 0 1\n\n"
+        )
+        self.assertIn("CAM-B3LYP", converted.orca_input)
+        self.assertIn("Opt", converted.orca_input)
+        self.assertIn("Freq", converted.orca_input)
+        self.assertIn("D3BJ", converted.orca_input)
+
+    def test_gaussian_converter_maps_resources_and_compound_options(self):
+        converted = GaussianOrcaConverter().convert_text(
+            "%Mem=16GB\n%NProcShared=8\n%Chk=transition.chk\n"
+            "#P CAM-B3LYP/def2-TZVP Opt=(TS,CalcFC,MaxCycles=120) "
+            "SCF=(XQC,MaxCycle=300) TD=(NStates=12,Root=2) "
+            "SCRF=(SMD,Solvent=Water) NoSymm\n\ntransition\n\n"
+            "-1 2\nO 0 0 0\nH 0 0 1\n\n"
+        )
+        text = converted.orca_input
+        self.assertIn("! CAM-B3LYP def2-TZVP OptTS SlowConv NoSym", text)
+        self.assertNotIn(" Opt OptTS", text)
+        self.assertIn("%maxcore 1536", text)
+        self.assertIn("nprocs 8", text)
+        self.assertIn('%base "transition"', text)
+        self.assertIn("MaxIter 300", text)
+        self.assertIn("MaxIter 120", text)
+        self.assertIn("Calc_Hess true", text)
+        self.assertIn("NRoots 12", text)
+        self.assertIn("IRoot 2", text)
+        self.assertIn('SMDsolvent "Water"', text)
+
+    def test_gaussian_converter_comments_unknown_keywords_and_maps_frozen_coordinates(self):
+        converted = GaussianOrcaConverter().convert_text(
+            "#P B3LYP/6-31G(d) Opt=ModRedundant IOP(3/33=1) MadeUpKeyword\n\n"
+            "constraints\n\n0 1\nO 0 0 0\nH 0 0 1\nH 1 0 0\n\n"
+            "B 1 2 F\nA 2 1 3 F\n\n"
+        )
+        text = converted.orca_input
+        self.assertIn("{ B 0 1 C }", text)
+        self.assertIn("{ A 1 0 2 C }", text)
+        self.assertIn("# Unmapped Gaussian route token: IOP(3/33=1)", text)
+        self.assertIn("# Unmapped Gaussian route token: MadeUpKeyword", text)
+        keyword_line = text.splitlines()[0]
+        self.assertNotIn("IOP", keyword_line)
+        self.assertNotIn("MadeUpKeyword", keyword_line)
+
+    def test_gaussian_converter_reports_link1_instead_of_silently_dropping_it(self):
+        converted = GaussianOrcaConverter().convert_text(
+            "#P B3LYP/6-31G(d) Opt\n\nfirst\n\n0 1\nH 0 0 0\nH 0 0 1\n\n"
+            "--Link1--\n%OldChk=first.chk\n#P B3LYP/6-31G(d) Freq Geom=AllCheck\n\n"
+        )
+        self.assertTrue(any("Link1" in warning for warning in converted.warnings))
+
+    def test_gaussian_converter_preserves_genecp_data_without_activating_it(self):
+        converted = GaussianOrcaConverter().convert_text(
+            "#P B3LYP/GenECP SP\n\ngeneral basis\n\n0 1\nPd 0 0 0\nCl 0 0 2\n\n"
+            "Pd 0\nSDD\n****\nCl 0\n6-31G(d)\n****\n\nPd 0\nSDD\n\n"
+        )
+        self.assertNotIn("GenECP", converted.orca_input.splitlines()[0])
+        self.assertIn("#   Pd 0", converted.orca_input)
+        self.assertIn("#   SDD", converted.orca_input)
+        self.assertTrue(any("%basis" in warning for warning in converted.warnings))
 
     def test_user_selected_orca_executable_accepts_custom_filename(self):
         work_root = ROOT / "tmp" / "codex_work"

@@ -56,6 +56,7 @@ from app_updater import (
     version_tuple as updater_version_tuple,
 )
 from orca_job_queue import OrcaJobQueue, OrcaQueueJob
+from input_format_converter import convert_input_text, detect_input_program
 from workspace_navigation import StackedPageController
 
 
@@ -3861,6 +3862,7 @@ class App(tk.Tk):
 
         self.structure: Optional[Structure] = None
         self.structure_source_path: str = ""
+        self.selected_gaussian_section_text: str = ""
         self.current_input_path: Optional[str] = None
         self.last_output_path: Optional[str] = None
         self.run_thread: Optional[threading.Thread] = None
@@ -4262,7 +4264,7 @@ class App(tk.Tk):
         ttk.Label(setup, text="Program").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 4))
         prog = ttk.Combobox(setup, state="readonly", textvariable=self.program_var, values=["ORCA", "Gaussian"], width=10)
         prog.grid(row=0, column=1, sticky="w", pady=(0, 4))
-        prog.bind("<<ComboboxSelected>>", lambda e: self._refresh_engine_lists())
+        prog.bind("<<ComboboxSelected>>", self._on_program_selected)
 
         ttk.Label(setup, text="Solvent").grid(row=0, column=2, sticky="w", padx=(14, 8), pady=(0, 4))
         solvent_display = sorted(solvent_display_name(canonical, data) for canonical, data in SOLVENT_LIBRARY.items()) + ["Other solvent..."]
@@ -4448,7 +4450,7 @@ class App(tk.Tk):
         input_actions.grid(row=1, column=0, sticky="ew")
         for column in range(4):
             input_actions.columnconfigure(column, weight=1)
-        ttk.Button(input_actions, text="Save input file", command=self.save_input).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(input_actions, text="Save input as...", command=self.save_input).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ttk.Button(input_actions, text="Add to Queue", command=self.add_current_input_to_queue).grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(input_actions, text="Queue Jobs", command=self.open_job_queue).grid(row=0, column=2, sticky="ew", padx=4)
         ttk.Button(input_actions, text="Generate WFN/WFX", command=self.generate_wavefunction_files).grid(row=0, column=3, sticky="ew", padx=(4, 0))
@@ -5253,6 +5255,10 @@ class App(tk.Tk):
                 self.functional_var.set("B3LYP")
         self._sync_rijcosx_for_basis()
 
+    def _on_program_selected(self, _event=None) -> None:
+        """Refresh engine controls without converting the loaded input."""
+        self._refresh_engine_lists()
+
     def _parse_xyz_through_existing_loader(self, xyz_text: str, title: str) -> Structure:
         validate_xyz_text(xyz_text, title)
         with tempfile.TemporaryDirectory(prefix="crystengkit_import_") as tmpdir:
@@ -5434,6 +5440,7 @@ class App(tk.Tk):
             if selected is None:
                 raise ValueError("Gaussian section selection cancelled.")
             section = selected
+        self.selected_gaussian_section_text = section.text
 
         log_lines = [
             "Source format: Gaussian input",
@@ -5456,9 +5463,9 @@ class App(tk.Tk):
         if warnings:
             proceed = messagebox.askokcancel(
                 "Gaussian import warnings",
-                "Some Gaussian-specific information will not be transferred to the ORCA builder:\n\n"
+                "Some Gaussian features may not be represented exactly in the Builder or converted input:\n\n"
                 + "\n".join(sorted(set(warnings)))
-                + "\n\nOnly Cartesian coordinates, charge, and multiplicity are imported.",
+                + "\n\nReview the input preview and imported geometry before calculation.",
             )
             if not proceed:
                 raise ValueError("Gaussian import cancelled.")
@@ -5566,18 +5573,38 @@ class App(tk.Tk):
                 p if result.source_format == "ORCA output"
                 else associated_output_path(self.current_input_path or "") or None
             )
-            self.preview_text.delete("1.0", "end")
-            if self.current_input_path:
-                self.preview_text.insert("1.0", Path(p).read_text(encoding="utf-8", errors="replace"))
+            engine_input_shown = self._show_loaded_engine_input(p)
+            if not engine_input_shown:
+                self.preview_text.delete("1.0", "end")
             self._remember_input_file(p)
             for line in result.log_lines or []:
                 self.append_monitor(line)
-            self.status.configure(text=f"Imported {result.source_format}: {os.path.basename(p)} | atoms: {len(result.structure.atoms)}")
+            if not engine_input_shown:
+                self.status.configure(text=f"Imported {result.source_format}: {os.path.basename(p)} | atoms: {len(result.structure.atoms)}")
         except Exception as exc:
             messagebox.showerror("Import error", str(exc))
 
     def _is_existing_orca_input_path(self, path: str) -> bool:
         return bool(path) and path.lower().endswith(".inp") and os.path.isfile(path)
+
+    @staticmethod
+    def _input_program_for_path(path: str) -> Optional[str]:
+        """Return the calculation engine implied by a full input filename."""
+        return detect_input_program(path)
+
+    def _show_loaded_engine_input(self, path: str) -> bool:
+        """Show a loaded engine input verbatim; conversion happens only on Save As."""
+        source_program = self._input_program_for_path(path)
+        if source_program is None:
+            return False
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        if not text.strip():
+            raise ValueError(f"Loaded {source_program} input is empty.")
+        self.preview_text.delete("1.0", "end")
+        self.preview_text.insert("1.0", text)
+        self._show_output_mode("preview")
+        self.status.configure(text=f"Loaded {source_program} input: {os.path.basename(path)}")
+        return True
 
     def _on_input_path_entered(self, _event=None):
         path = self.path_var.get().strip().strip('"')
@@ -5596,14 +5623,14 @@ class App(tk.Tk):
                 path if result.source_format == "ORCA output"
                 else associated_output_path(self.current_input_path or "") or None
             )
-            if self.current_input_path:
-                self._load_existing_orca_input_if_selected()
-            else:
+            engine_input_shown = self._show_loaded_engine_input(path)
+            if not engine_input_shown:
                 self.preview_text.delete("1.0", "end")
             self._remember_input_file(path)
             for line in result.log_lines or []:
                 self.append_monitor(line)
-            self.status.configure(text=f"Imported {result.source_format}: {os.path.basename(path)} | atoms: {len(result.structure.atoms)}")
+            if not engine_input_shown:
+                self.status.configure(text=f"Imported {result.source_format}: {os.path.basename(path)} | atoms: {len(result.structure.atoms)}")
         except Exception as exc:
             messagebox.showerror("Import error", str(exc))
 
@@ -7859,6 +7886,8 @@ class App(tk.Tk):
             path = self.path_var.get().strip()
             if not path:
                 raise ValueError("Please choose a supported structure file.")
+            if self._show_loaded_engine_input(path.strip('"')):
+                return
             data = self.collect()
             self.status.configure(text="Generating input preview...")
             self.preview_thread = threading.Thread(target=self._build_input_worker, args=(path, data), daemon=True)
@@ -8256,27 +8285,55 @@ class App(tk.Tk):
 
     def save_input(self):
         try:
-            self._confirm_tddft_memory_risk()
-            text = self.get_preview_text()
-            if not text.strip():
-                text, warnings = self.build_input()
-                self.preview_text.delete("1.0", "end")
-                self.preview_text.insert("1.0", text)
-                if warnings:
-                    self.append_monitor("Validation warnings were detected before saving.")
-            suggested = self.suggest_input_save_path()
+            source_path = self.path_var.get().strip().strip('"')
+            source_program = self._input_program_for_path(source_path)
+            if source_program:
+                text = self.get_preview_text()
+                if not text.strip():
+                    text = Path(source_path).read_text(encoding="utf-8", errors="replace")
+                default_ext = ".inp" if self.program_var.get() == "ORCA" else ".gjf"
+                suggested = str(Path(source_path).with_suffix(default_ext))
+            else:
+                self._confirm_tddft_memory_risk()
+                text, _builder_warnings = self.build_input()
+                suggested = self.suggest_input_save_path()
             out = filedialog.asksaveasfilename(
                 defaultextension=".inp" if self.program_var.get() == "ORCA" else ".gjf",
                 initialfile=os.path.basename(suggested),
                 initialdir=os.path.dirname(suggested),
-                filetypes=[("Input files", "*.inp *.gjf *.com"), ("All files", "*.*")]
+                filetypes=[
+                    ("ORCA input", "*.inp"),
+                    ("Gaussian input", "*.gjf *.com *.gau *.gjc"),
+                    ("All files", "*.*"),
+                ],
             )
             if not out:
                 return
+            warnings: List[str] = []
+            notes: List[str] = []
+            target_program = self._input_program_for_path(out)
+            if source_program:
+                if target_program is None:
+                    raise ValueError("Save the converted input with .inp for ORCA or .gjf/.com for Gaussian.")
+                conversion_source = text
+                if source_program == "Gaussian" and target_program == "ORCA":
+                    gaussian_text = self.__dict__.get("selected_gaussian_section_text", "") or text
+                    conversion_source = gaussian_text
+                converted = convert_input_text(conversion_source, source_program, target_program)
+                text, warnings, notes = converted.text, converted.warnings, converted.conversion_notes
             with open(out, "w", encoding="utf-8") as f:
-                f.write(self.get_preview_text())
-            self.current_input_path = out
-            self.status.configure(text=f"Saved preview text: {out}")
+                f.write(text)
+            self.preview_text.delete("1.0", "end")
+            self.preview_text.insert("1.0", text)
+            self._show_output_mode("preview")
+            for item in notes:
+                self.append_monitor(f"Conversion note: {item}")
+            for item in warnings:
+                self.append_monitor(f"Conversion warning: {item}")
+            self.current_input_path = out if target_program == "ORCA" else None
+            converted_label = f" ({source_program} to {target_program})" if source_program and source_program != target_program else ""
+            warning_label = " Warnings were logged." if warnings else ""
+            self.status.configure(text=f"Saved input{converted_label}: {out}.{warning_label}")
         except Exception as exc:
             messagebox.showerror("Save error", str(exc))
 
