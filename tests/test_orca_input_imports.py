@@ -25,6 +25,17 @@ from input_format_converter import convert_input_text, detect_input_program
 
 
 class ImportHelperTests(unittest.TestCase):
+    def test_orca_charge_multiplicity_parser_handles_inline_and_xyzfile(self):
+        self.assertEqual(
+            orca_input.parse_orca_xyz_charge_multiplicity("! B3LYP\n* xyz -1 2\nH 0 0 0\n*\n"),
+            (-1, 2),
+        )
+        self.assertEqual(
+            orca_input.parse_orca_xyz_charge_multiplicity('* xyzfile 2 1 "geometry.xyz"\n'),
+            (2, 1),
+        )
+        self.assertIsNone(orca_input.parse_orca_xyz_charge_multiplicity("! B3LYP\n"))
+
     def test_input_association_uses_only_same_basename_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             folder = Path(tmpdir)
@@ -74,6 +85,118 @@ class ImportHelperTests(unittest.TestCase):
             app.path_var = SimpleNamespace(get=lambda: str(current_input))
             with self.assertRaisesRegex(ValueError, "No output file"):
                 app._available_output_path()
+
+    def test_synchronized_preview_is_saved_instead_of_running_stale_input(self):
+        class MutableVar:
+            def __init__(self, value): self.value = value
+            def get(self): return self.value
+            def set(self, value): self.value = value
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original = Path(tmpdir) / "job.inp"
+            synchronized = Path(tmpdir) / "job_synced.inp"
+            original.write_text("old input\n", encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            app.path_var = MutableVar(str(original))
+            app.current_input_path = str(original)
+            app.structure_source_path = str(original)
+            app.get_preview_text = lambda: "new synchronized input\n"
+            app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+            with mock.patch.object(orca_input.filedialog, "asksaveasfilename", return_value=str(synchronized)):
+                selected = app.ensure_input_saved()
+            self.assertEqual(selected, str(synchronized))
+            self.assertEqual(synchronized.read_text(encoding="utf-8"), "new synchronized input\n")
+            self.assertEqual(app.current_input_path, str(synchronized))
+
+    def test_show_input_rebuilds_instead_of_reloading_selected_file(self):
+        source = inspect.getsource(orca_input.App.activate_input_preview)
+        self.assertIn("synchronize_input_preview", source)
+        self.assertNotIn("_load_existing_orca_input_if_selected", source)
+        synchronize = inspect.getsource(orca_input.App.synchronize_input_preview)
+        self.assertIn("_synchronize_interaction_settings_for_preview", synchronize)
+        self.assertIn("show_full_orca_input", synchronize)
+
+    def test_builder_settings_are_wired_to_live_input_preview(self):
+        source = inspect.getsource(orca_input.App._install_live_input_preview)
+        for setting in ("functional_var", "basis_var", "job_opt_var", "job_freq_var", "tight_scf_var"):
+            self.assertIn(setting, source)
+        self.assertIn("trace_add", source)
+        scheduled = inspect.getsource(orca_input.App._refresh_live_input_preview)
+        self.assertIn("synchronize_input_preview", scheduled)
+
+    def test_tddft_controls_and_workspace_action_are_advanced_only(self):
+        source = inspect.getsource(orca_input.App._set_builder_ui_level)
+        self.assertIn("tddft_setup_row", source)
+        self.assertIn('workspace_action_widgets.get("TD-DFT")', source)
+        self.assertIn("grid_remove", source)
+
+    def test_run_current_input_does_not_implicitly_start_pending_queue(self):
+        source = inspect.getsource(orca_input.App.run_orca)
+        self.assertNotIn("_has_queued_jobs", source)
+        self.assertNotIn("_start_job_queue", source)
+        queue_source = inspect.getsource(orca_input.App.run_job_queue)
+        self.assertIn("_start_job_queue", queue_source)
+
+    def test_show_input_regenerates_loaded_input_after_builder_change(self):
+        app = object.__new__(orca_input.App)
+        app.path_var = self._Var("job.inp")
+        app.loaded_input_builder_signature = "old settings"
+        app.get_preview_text = lambda: "original disk input\n"
+        app._builder_settings_signature = lambda: "changed settings"
+        app._input_program_for_path = lambda _path: "ORCA"
+        app._synchronize_interaction_settings_for_preview = lambda: None
+        app.refresh_full_orca_input = lambda: "regenerated from controls\n"
+        shown = []
+        app.show_full_orca_input = shown.append
+
+        result = app.synchronize_input_preview()
+
+        self.assertEqual(result, "regenerated from controls\n")
+        self.assertEqual(shown, ["regenerated from controls\n"])
+
+    def test_show_input_preserves_manual_editor_change_when_controls_unchanged(self):
+        app = object.__new__(orca_input.App)
+        app.path_var = self._Var("job.inp")
+        app.loaded_input_builder_signature = "same settings"
+        app.get_preview_text = lambda: "manually corrected input\n"
+        app._builder_settings_signature = lambda: "same settings"
+        app._input_program_for_path = lambda _path: "ORCA"
+        app._show_output_mode = lambda mode: setattr(app, "shown_mode", mode)
+        app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+        app.refresh_full_orca_input = lambda: self.fail("manual text must not be overwritten")
+
+        result = app.synchronize_input_preview()
+
+        self.assertEqual(result, "manually corrected input\n")
+        self.assertEqual(app.shown_mode, "preview")
+
+    def test_analysis_tools_do_not_use_another_jobs_wavefunction(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder = Path(tmpdir)
+            current = folder / "current.inp"
+            old_wavefunction = folder / "first.wfn"
+            current.write_text("! B3LYP\n", encoding="utf-8")
+            old_wavefunction.write_text("old", encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            for matcher in (
+                app._matching_wavefunction_path,
+                app._matching_nci_input_for_path,
+                app._matching_qtaim_input_for_path,
+            ):
+                with self.subTest(matcher=matcher.__name__):
+                    with self.assertRaisesRegex(ValueError, "matching"):
+                        matcher(str(current))
+
+    def test_analysis_tools_accept_current_jobs_wavefunction(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder = Path(tmpdir)
+            current = folder / "current.inp"
+            matching = folder / "current.wfn"
+            current.write_text("! B3LYP\n", encoding="utf-8")
+            matching.write_text("current", encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            self.assertEqual(Path(app._matching_nci_input_for_path(str(current))).resolve(), matching.resolve())
+            self.assertEqual(Path(app._matching_qtaim_input_for_path(str(current))).resolve(), matching.resolve())
 
 
     def test_tddft_builder_context_exposes_existing_method_and_geometry_controls(self):
@@ -454,6 +577,34 @@ class ImportHelperTests(unittest.TestCase):
             path.write_text(cdxml, encoding="utf-8")
             self.assertIsNone(orca_input.parse_cdxml_stored_3d(str(path)))
 
+    def test_native_cdxml_2d_reader_expands_implicit_hydrogens(self):
+        cdxml = """<CDXML><page><fragment>
+<n id="1" Element="6" p="0 0"/><n id="2" Element="6" p="14.4 0"/>
+<b B="1" E="2" Order="2"/></fragment></page></CDXML>"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "ethene.cdxml"
+            path.write_text(cdxml, encoding="utf-8")
+            atoms, logs = orca_input.parse_cdxml_2d(str(path))
+        self.assertEqual([atom[0] for atom in atoms[:2]], ["C", "C"])
+        self.assertEqual(sum(1 for atom in atoms if atom[0] == "H"), 4)
+        self.assertTrue(any("native CDXML 2D reader" in line for line in logs))
+        self.assertTrue(any("Implicit hydrogens added: 4" in line for line in logs))
+
+    def test_cdxml_2d_import_does_not_request_openbabel(self):
+        cdxml = """<CDXML><page><fragment>
+<n id="1" Element="8" Charge="-1" NumHydrogens="0" p="0 0"/>
+</fragment></page></CDXML>"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "oxide.cdxm"
+            path.write_text(cdxml, encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            app.require_openbabel_path = mock.Mock(side_effect=AssertionError("Open Babel must not be requested"))
+            result = app._import_cdxml_structure(str(path), ".cdxm")
+        self.assertEqual(result.charge, -1)
+        self.assertEqual(result.multiplicity, 2)
+        self.assertEqual([atom[0] for atom in result.structure.atoms], ["O"])
+        app.require_openbabel_path.assert_not_called()
+
     def test_native_cdxml_rejects_partial_stored_3d(self):
         cdxml = """<CDXML><page><fragment>
 <n id="1" Element="6" xyz="0 0 0"/><n id="2" Element="6" p="1 0"/>
@@ -736,6 +887,7 @@ $$$$
         text = orca_input.generate_orca(data, structure, None)
         self.assertEqual(text.lower().count("%tddft"), 1)
         self.assertIn("NRoots 7", text)
+        self.assertIn("%pal\n  nprocs 1\nend", text)
 
         data["tddft_block"] = "%tddft\n  NRoots 11\n  TDA false\nend"
         updated = orca_input.generate_orca(data, structure, None)
@@ -757,6 +909,29 @@ $$$$
         self.assertEqual(reused_orbitals_job.upper().count("MOREAD"), 1)
         self.assertIn('%moinp "C:/calc/absorption.gbw"', reused_orbitals_job)
         self.assertEqual(reused_orbitals_job.lower().count("%tddft"), 1)
+
+    def test_orca_parallel_block_accepts_an_explicit_process_count(self):
+        structure = orca_input.Structure([("He", 0.0, 0.0, 0.0)])
+        data = {
+            "functional": "HF", "basis": "def2-SVP", "dispersion": "", "ri_jcosx": False,
+            "tight_scf": True, "grid": "DefGrid2", "job_opt": False, "job_freq": False,
+            "job_density": False, "job_esp": False, "job_sp": True, "job_tddft": False,
+            "job_nmr": False, "print_mos": False, "extra": "", "charge": 0, "multiplicity": 1,
+            "freeze_all": False, "freeze_heavy": False, "nprocs": 8,
+        }
+        text = orca_input.generate_orca(data, structure, None)
+        self.assertIn("%pal\n  nprocs 8\nend", text)
+        self.assertEqual(text.lower().count("%pal"), 1)
+
+    def test_input_and_monitor_search_is_case_insensitive(self):
+        text = "SCF iteration 1\nEnergy\nscf iteration 2\n"
+        self.assertEqual(
+            orca_input.text_search_match_ranges(text, "ScF ItErAtIoN"),
+            [(0, 13), (23, 36)],
+        )
+        source = Path(orca_input.__file__).read_text(encoding="utf-8")
+        self.assertIn('self.output_text.bind("<Control-f>", self.open_output_search)', source)
+        self.assertIn('self.output_text.bind("<F3>", self.find_next_output_match)', source)
 
     def test_tddft_rpa_convergence_failure_is_reported_specifically(self):
         with tempfile.TemporaryDirectory() as tmpdir:

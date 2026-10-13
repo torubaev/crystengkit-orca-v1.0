@@ -144,6 +144,18 @@ def associated_output_path(input_path: str) -> str:
     return str(candidate) if candidate.is_file() else ""
 
 
+def parse_orca_xyz_charge_multiplicity(text: str) -> Optional[Tuple[int, int]]:
+    """Read the authoritative charge/multiplicity from an ORCA xyz block."""
+    match = re.search(
+        r"^\s*\*\s+xyz(?:file)?\s+(-?\d+)\s+(\d+)\b",
+        str(text or ""),
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
 def output_belongs_to_input(output_path: str, input_path: str) -> bool:
     """Return whether output_path is the exact same-job partner of input_path."""
     output = str(output_path or "").strip().strip('"')
@@ -2353,6 +2365,181 @@ def parse_cdxml_stored_3d(
     return atoms, logs
 
 
+CDXML_DEFAULT_VALENCE = {
+    "H": 1, "B": 3, "C": 4, "N": 3, "O": 2,
+    "F": 1, "Si": 4, "P": 3, "S": 2, "Cl": 1, "Br": 1, "I": 1,
+}
+
+
+def _cdxml_bond_order(value: object) -> float:
+    text = str(value or "1").strip().lower()
+    aliases = {"single": 1.0, "double": 2.0, "triple": 3.0, "aromatic": 1.5, "dative": 1.0}
+    if text in aliases:
+        return aliases[text]
+    try:
+        return float(text)
+    except ValueError:
+        return 1.0
+
+
+def _cdxml_implicit_hydrogen_count(symbol: str, charge: int, bond_order_sum: float) -> int:
+    target = CDXML_DEFAULT_VALENCE.get(symbol)
+    if target is None:
+        return 0
+    if symbol in {"F", "Cl", "Br", "I"} and charge < 0:
+        target = 0
+    elif symbol == "N":
+        target = 4 if charge > 0 else (2 if charge < 0 else 3)
+    elif symbol == "O":
+        target = 3 if charge > 0 else (1 if charge < 0 else 2)
+    elif symbol == "C" and charge:
+        target = 3
+    return max(0, min(4, int(round(target - bond_order_sum))))
+
+
+def parse_cdxml_2d(path: str) -> Tuple[List[Tuple[str, float, float, float]], List[str]]:
+    """Read ordinary 2D CDXML/CDXM without requiring Open Babel.
+
+    Heavy-atom drawing coordinates are scaled from explicit bonds. Missing
+    hydrogens are expanded from ChemDraw's NumHydrogens value when available,
+    otherwise from conservative main-group valence rules.
+    """
+    source = Path(path)
+    try:
+        root = ET.parse(source).getroot()
+    except ET.ParseError as exc:
+        raise ValueError(f"CDXML is not well-formed XML: {exc}") from exc
+    except OSError as exc:
+        raise ValueError(f"CDXML could not be read: {exc}") from exc
+    if _xml_local_name(root.tag).lower() != "cdxml":
+        raise ValueError("The selected file is XML but its root element is not CDXML.")
+
+    nodes = [element for element in root.iter() if _xml_local_name(element.tag).lower() == "n"]
+    if not nodes:
+        raise ValueError("CDXML contains no chemical atom nodes.")
+
+    node_data: Dict[str, Dict[str, object]] = {}
+    ordered_ids: List[str] = []
+    formal_charge = 0
+    for index, element in enumerate(nodes, start=1):
+        node_type = str(element.attrib.get("NodeType", "Element")).strip().lower()
+        if node_type not in {"", "element", "1"}:
+            raise ValueError(
+                f"CDXML atom node {element.attrib.get('id', index)} uses unsupported "
+                f"NodeType={element.attrib.get('NodeType')!r}. Expand nicknames or groups in ChemDraw first."
+            )
+        position = str(element.attrib.get("p", "")).strip()
+        values = [part for part in re.split(r"[\s,]+", position) if part]
+        if len(values) != 2:
+            raise ValueError(
+                f"CDXML atom node {element.attrib.get('id', index)} has no valid 2D p coordinate."
+            )
+        try:
+            x, y = float(values[0]), float(values[1])
+            atomic_number = int(element.attrib.get("Element", "6"))
+            symbol = ELEMENT_BY_ATOMIC_NUMBER[atomic_number]
+            charge = int(element.attrib.get("Charge", "0"))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"CDXML atom node {element.attrib.get('id', index)} has invalid atom data.") from exc
+        if not all(math.isfinite(value) for value in (x, y)):
+            raise ValueError(f"CDXML atom node {element.attrib.get('id', index)} has non-finite 2D coordinates.")
+        atom_id = str(element.attrib.get("id", index)).strip()
+        if atom_id in node_data:
+            raise ValueError(f"CDXML contains duplicate atom id {atom_id!r}.")
+        explicit_h = element.attrib.get("NumHydrogens")
+        try:
+            hydrogen_count = int(explicit_h) if explicit_h is not None else None
+        except ValueError as exc:
+            raise ValueError(f"CDXML atom node {atom_id} has invalid NumHydrogens.") from exc
+        node_data[atom_id] = {
+            "symbol": symbol, "x": x, "y": y, "charge": charge,
+            "hydrogens": hydrogen_count, "bond_order": 0.0, "neighbors": [],
+        }
+        ordered_ids.append(atom_id)
+        formal_charge += charge
+
+    bonds: List[Tuple[str, str, float]] = []
+    scale_ratios: List[float] = []
+    for bond in (element for element in root.iter() if _xml_local_name(element.tag).lower() == "b"):
+        begin = str(bond.attrib.get("B", "")).strip()
+        end = str(bond.attrib.get("E", "")).strip()
+        if begin not in node_data or end not in node_data:
+            continue
+        order = _cdxml_bond_order(bond.attrib.get("Order", "1"))
+        bonds.append((begin, end, order))
+        node_data[begin]["bond_order"] = float(node_data[begin]["bond_order"]) + order
+        node_data[end]["bond_order"] = float(node_data[end]["bond_order"]) + order
+        node_data[begin]["neighbors"].append(end)
+        node_data[end]["neighbors"].append(begin)
+        dx = float(node_data[begin]["x"]) - float(node_data[end]["x"])
+        dy = float(node_data[begin]["y"]) - float(node_data[end]["y"])
+        distance = math.hypot(dx, dy)
+        if distance <= 1e-9:
+            raise ValueError(f"CDXML bond {begin}-{end} has coincident 2D atom positions.")
+        expected = COVALENT_RADII.get(str(node_data[begin]["symbol"]), 0.77) + COVALENT_RADII.get(str(node_data[end]["symbol"]), 0.77)
+        if order >= 2.9:
+            expected *= 0.84
+        elif order >= 1.9:
+            expected *= 0.90
+        elif order >= 1.4:
+            expected *= 0.92
+        scale_ratios.append(expected / distance)
+
+    scale = float(np.median(scale_ratios)) if scale_ratios and np is not None else (
+        sorted(scale_ratios)[len(scale_ratios) // 2] if scale_ratios else 1.0
+    )
+    centroid_x = sum(float(node_data[item]["x"]) for item in ordered_ids) / len(ordered_ids)
+    centroid_y = sum(float(node_data[item]["y"]) for item in ordered_ids) / len(ordered_ids)
+    atoms: List[Tuple[str, float, float, float]] = [
+        (
+            str(node_data[item]["symbol"]),
+            (float(node_data[item]["x"]) - centroid_x) * scale,
+            -(float(node_data[item]["y"]) - centroid_y) * scale,
+            0.0,
+        )
+        for item in ordered_ids
+    ]
+
+    added_hydrogens = 0
+    for item_index, item in enumerate(ordered_ids):
+        data = node_data[item]
+        symbol = str(data["symbol"])
+        requested = data["hydrogens"]
+        count = int(requested) if requested is not None else _cdxml_implicit_hydrogen_count(
+            symbol, int(data["charge"]), float(data["bond_order"])
+        )
+        if symbol == "H" or count <= 0:
+            continue
+        neighbor_angles: List[float] = []
+        x0, y0 = atoms[item_index][1], atoms[item_index][2]
+        for neighbor in data["neighbors"]:
+            neighbor_index = ordered_ids.index(str(neighbor))
+            dx = atoms[neighbor_index][1] - x0
+            dy = atoms[neighbor_index][2] - y0
+            neighbor_angles.append(math.atan2(dy, dx))
+        base_angle = (math.atan2(sum(math.sin(a) for a in neighbor_angles), sum(math.cos(a) for a in neighbor_angles)) + math.pi) if neighbor_angles else 0.0
+        h_distance = COVALENT_RADII.get(symbol, 0.77) + COVALENT_RADII["H"]
+        spread = math.radians(105.0)
+        for hydrogen_index in range(count):
+            offset = (hydrogen_index - (count - 1) / 2.0) * spread
+            angle = base_angle + offset
+            z = 0.18 * math.sin(offset) if count > 1 else 0.0
+            atoms.append(("H", x0 + h_distance * math.cos(angle), y0 + h_distance * math.sin(angle), z))
+            added_hydrogens += 1
+
+    fragment_count = sum(1 for element in root.iter() if _xml_local_name(element.tag).lower() == "fragment")
+    logs = [
+        "Direct parser: native CDXML 2D reader",
+        f"2D heavy/explicit atom nodes: {len(ordered_ids)}",
+        f"Implicit hydrogens added: {added_hydrogens}",
+        f"Stored bond count used for scaling: {len(bonds)}",
+        f"Uniform CDXML-to-Angstrom scale factor: {scale:.8g}",
+        f"CDXML fragment objects: {fragment_count}",
+        f"Sum of explicit atom formal charges: {formal_charge}",
+    ]
+    return atoms, logs
+
+
 def count_sdf_records(path: str) -> List[Dict[str, object]]:
     text = Path(path).read_text(encoding="utf-8", errors="replace")
     chunks = sdf_record_chunks(text)
@@ -3382,6 +3569,13 @@ def basis_supports_orca_rijcosx(basis: str) -> bool:
     return normalized.startswith("def2-") or normalized.startswith("def2") or normalized.startswith("ma-def2")
 
 
+def text_search_match_ranges(text: str, query: str) -> List[Tuple[int, int]]:
+    """Return non-overlapping, case-insensitive ranges for preview/monitor search."""
+    if not query:
+        return []
+    return [match.span() for match in re.finditer(re.escape(query), text, flags=re.IGNORECASE)]
+
+
 def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, str]]) -> str:
     grid_kw, grid_warnings = normalize_orca_grid_keyword(data.get("grid", ""))
     if grid_warnings:
@@ -3432,7 +3626,11 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
     if data["job_sp"] and not data["job_opt"] and not data["job_freq"] and not data["job_tddft"] and not data["job_nmr"]:
         kw.append("SP")
 
-    lines = ["! " + " ".join(kw)]
+    try:
+        nprocs = max(1, int(data.get("nprocs", 1)))
+    except (TypeError, ValueError):
+        nprocs = 1
+    lines = ["! " + " ".join(kw), "", "%pal", f"  nprocs {nprocs}", "end"]
     # --- Constraints (auto-generated) ---
     if effective_opt:
         atoms = structure.atoms
@@ -3958,6 +4156,8 @@ class App(tk.Tk):
         self.recent_input_files: List[str] = []
         self.header_images = []
         self.workspace_title_var = tk.StringVar(value="ORCA Input Builder")
+        self.builder_ui_level_var = tk.StringVar(value="BASIC")
+        self.builder_ui_level_buttons: Dict[str, tk.Button] = {}
         self.workspace_action_widgets: Dict[str, Dict[str, tk.Widget]] = {}
         self.page_controller: Optional[StackedPageController] = None
         self._workspace_state_loaded_from = ""
@@ -3969,6 +4169,11 @@ class App(tk.Tk):
         self.output_mode = "preview"
         self.output_buffers = {"preview": "", "monitor": ""}
         self.output_wraps = {"preview": "none", "monitor": "none"}
+        self.output_search_term = ""
+        self.output_search_mode = "preview"
+        self.output_search_match_index = -1
+        self.live_preview_after_id: Optional[str] = None
+        self.live_preview_enabled = False
         self.startup_splash: Optional[StartupSplash] = None
         self.completion_dialog: Optional[tk.Toplevel] = None
 
@@ -3976,6 +4181,7 @@ class App(tk.Tk):
         self.startup_splash = self._create_startup_splash()
         self._apply_app_icon()
         self._build()
+        self._install_live_input_preview()
         install_dev_reload_shortcut(
             self,
             Path(__file__),
@@ -4170,6 +4376,44 @@ class App(tk.Tk):
         self.active_workspace_key = key
         self.workspace_title_var.set(title)
 
+    def _set_builder_ui_level(self, level: str) -> None:
+        """Switch the Builder interface level; both levels currently share one layout."""
+        normalized = str(level or "BASIC").strip().upper()
+        if normalized not in {"BASIC", "ADVANCED"}:
+            normalized = "BASIC"
+        self.builder_ui_level_var.set(normalized)
+        for name, button in self.builder_ui_level_buttons.items():
+            active = name == normalized
+            button.configure(
+                bg="#0f6cbd" if active else "#e7edf5",
+                fg="#ffffff" if active else "#334155",
+                activebackground="#1683df" if active else "#d8e2ef",
+                activeforeground="#ffffff" if active else "#172033",
+                relief="sunken" if active else "flat",
+            )
+        if hasattr(self, "builder_ui_level_status"):
+            self.builder_ui_level_status.configure(
+                text=(
+                    "Basic interface · TD-DFT is available in Advanced"
+                    if normalized == "BASIC"
+                    else "Advanced interface · TD-DFT controls enabled"
+                )
+            )
+        tddft_row = self.__dict__.get("tddft_setup_row")
+        if tddft_row is not None:
+            if normalized == "ADVANCED":
+                tddft_row.grid()
+            else:
+                tddft_row.grid_remove()
+        tddft_action = self.workspace_action_widgets.get("TD-DFT")
+        if tddft_action is not None:
+            action_box = tddft_action.get("box")
+            if action_box is not None:
+                if normalized == "ADVANCED":
+                    action_box.grid()
+                else:
+                    action_box.grid_remove()
+
     def _build(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
@@ -4210,10 +4454,30 @@ class App(tk.Tk):
         # both Windows and Linux, while allowing both panes to grow.
         body.columnconfigure(0, weight=2, minsize=620)
         body.columnconfigure(1, weight=1, minsize=320)
-        body.rowconfigure(0, weight=1)
+        body.rowconfigure(1, weight=1)
+
+        level_bar = ttk.Frame(body, style="Panel.TFrame")
+        level_bar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        ttk.Label(level_bar, text="Interface level", style="Muted.TLabel").pack(side="left", padx=(0, 8))
+        for level in ("BASIC", "ADVANCED"):
+            button = tk.Button(
+                level_bar,
+                text=level,
+                command=lambda selected=level: self._set_builder_ui_level(selected),
+                borderwidth=1,
+                padx=14,
+                pady=4,
+                cursor="hand2",
+                font=("Segoe UI", 9, "bold"),
+            )
+            button.pack(side="left", padx=(0, 2))
+            self.builder_ui_level_buttons[level] = button
+        self.builder_ui_level_status = ttk.Label(level_bar, style="Muted.TLabel")
+        self.builder_ui_level_status.pack(side="left", padx=(10, 0))
+        self._set_builder_ui_level(self.builder_ui_level_var.get())
 
         left_host = ttk.Frame(body, style="Panel.TFrame", width=620)
-        left_host.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left_host.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         left_host.columnconfigure(0, weight=1)
         left_host.rowconfigure(0, weight=1)
 
@@ -4238,7 +4502,7 @@ class App(tk.Tk):
         bind_mousewheel_to_canvas(left_canvas, left)
 
         right = ttk.Frame(body, style="Panel.TFrame")
-        right.grid(row=0, column=1, sticky="nsew")
+        right.grid(row=1, column=1, sticky="nsew")
         right.columnconfigure(0, weight=1)
         right.rowconfigure(0, weight=1)
 
@@ -4323,10 +4587,11 @@ class App(tk.Tk):
         esp_info = InfoIcon(esp_row, "ESP / MEP package = density retention and automatic ESP/MEP cube generation after a successful ORCA run. WFN/WFX generation is attempted after every successful ORCA run.")
         esp_info.grid(row=0, column=1, padx=(5, 0))
         ttk.Checkbutton(cbox, text="NMR", variable=self.job_nmr_var).grid(row=2, column=0, sticky="w", pady=(0, 3))
-        tddft_row = ttk.Frame(cbox)
-        tddft_row.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(0, 3))
-        ttk.Checkbutton(tddft_row, text="TD-DFT / UV-Vis", variable=self.job_tddft_var).pack(anchor="w")
-        ttk.Label(tddft_row, textvariable=self.tddft_sync_status_var, style="Muted.TLabel").pack(anchor="w")
+        self.tddft_setup_row = ttk.Frame(cbox)
+        self.tddft_setup_row.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(0, 3))
+        ttk.Checkbutton(self.tddft_setup_row, text="TD-DFT / UV-Vis", variable=self.job_tddft_var).pack(anchor="w")
+        ttk.Label(self.tddft_setup_row, textvariable=self.tddft_sync_status_var, style="Muted.TLabel").pack(anchor="w")
+        self._set_builder_ui_level(self.builder_ui_level_var.get())
         ttk.Checkbutton(cbox, text="Constrain all atoms except hydrogens", variable=self.freeze_heavy_var).grid(row=3, column=0, sticky="w", pady=(3, 0))
         ttk.Checkbutton(cbox, text="Constrain all atoms", variable=self.freeze_all_var).grid(row=3, column=1, sticky="w", padx=(12, 0), pady=(3, 0))
         self.interaction_toggle_button = ttk.Button(cbox, text="Intermolecular interactions", command=self._toggle_interaction_target)
@@ -4424,6 +4689,9 @@ class App(tk.Tk):
             font=("Segoe UI", 9, "bold"),
         )
         self.monitor_mode_button.grid(row=0, column=1, sticky="w", padx=(3, 0))
+        ttk.Label(switch_box, text="Ctrl+F Find  ·  F3 Next", style="Muted.TLabel").grid(
+            row=0, column=2, sticky="e", padx=(10, 0)
+        )
         self.run_orca_toolbar_icon = self._load_header_icon(ORCA_ICON_PATH, max_size=20)
         self.run_orca_toolbar_button = tk.Button(
             switch_box,
@@ -4472,8 +4740,14 @@ class App(tk.Tk):
         self.output_text = tk.Text(output_box, wrap="none", font=("Consolas", 10), relief="solid", bd=1)
         self.output_text.grid(row=1, column=0, sticky="nsew")
         self.output_text.tag_configure("tddft_block", foreground="#334155", background="#e8f1fb")
+        self.output_text.tag_configure("search_match", foreground="#111827", background="#fde68a")
+        self.output_text.tag_configure("search_current", foreground="#111827", background="#fb923c")
         self.output_text.tag_configure("sel", foreground="#ffffff", background="#2563eb")
+        self.output_text.tag_raise("search_match")
+        self.output_text.tag_raise("search_current")
         self.output_text.tag_raise("sel")
+        self.output_text.bind("<Control-f>", self.open_output_search)
+        self.output_text.bind("<F3>", self.find_next_output_match)
         ys = ttk.Scrollbar(output_box, orient="vertical", command=self.output_text.yview)
         xs = ttk.Scrollbar(output_box, orient="horizontal", command=self.output_text.xview)
         self.output_text.configure(yscrollcommand=ys.set, xscrollcommand=xs.set)
@@ -4530,7 +4804,67 @@ class App(tk.Tk):
         else:
             self.highlight_input_preview()
             self.output_text.see("1.0")
+        if self.output_search_term:
+            self.output_search_mode = mode
+            self.output_search_match_index = -1
+            self.find_next_output_match()
         self._refresh_output_mode_buttons()
+
+    def open_output_search(self, _event=None):
+        query = simpledialog.askstring(
+            "Find in input / job monitor",
+            "Find text:",
+            initialvalue=self.output_search_term,
+            parent=self,
+        )
+        if query is None:
+            return "break"
+        query = query.strip()
+        if not query:
+            self.output_search_term = ""
+            self.output_search_match_index = -1
+            self.output_text.tag_remove("search_match", "1.0", "end")
+            self.output_text.tag_remove("search_current", "1.0", "end")
+            return "break"
+        if query.casefold() != self.output_search_term.casefold() or self.output_search_mode != self.output_mode:
+            self.output_search_match_index = -1
+        self.output_search_term = query
+        self.output_search_mode = self.output_mode
+        self.find_next_output_match()
+        return "break"
+
+    def find_next_output_match(self, _event=None):
+        term = self.output_search_term
+        if not term:
+            return self.open_output_search()
+        text = self.output_text.get("1.0", "end-1c")
+        matches = text_search_match_ranges(text, term)
+        self.output_text.tag_remove("search_match", "1.0", "end")
+        self.output_text.tag_remove("search_current", "1.0", "end")
+        if not matches:
+            self.output_search_match_index = -1
+            self.bell()
+            self.status.configure(text=f'No matches for "{term}" in {self.output_mode}.')
+            return "break"
+
+        for start_offset, end_offset in matches:
+            self.output_text.tag_add(
+                "search_match",
+                self._text_index_from_offset(text, start_offset),
+                self._text_index_from_offset(text, end_offset),
+            )
+        self.output_search_match_index = (self.output_search_match_index + 1) % len(matches)
+        start_offset, end_offset = matches[self.output_search_match_index]
+        start = self._text_index_from_offset(text, start_offset)
+        end = self._text_index_from_offset(text, end_offset)
+        self.output_text.tag_add("search_current", start, end)
+        self.output_text.mark_set("insert", end)
+        self.output_text.see(start)
+        self.output_text.focus_set()
+        self.status.configure(
+            text=f'Find "{term}": match {self.output_search_match_index + 1} of {len(matches)} in {self.output_mode}.'
+        )
+        return "break"
 
     def highlight_input_preview(self) -> None:
         if not hasattr(self, "output_text") or self.output_mode != "preview":
@@ -4614,9 +4948,81 @@ class App(tk.Tk):
         self._show_output_mode("preview")
         if self._show_running_job_input_preview():
             return
-        if self._load_existing_orca_input_if_selected():
+        try:
+            # "Show input" is a synchronization action: rebuild the visible
+            # input from the current Builder controls instead of reloading a
+            # stale on-disk .inp file.
+            self.synchronize_input_preview()
+        except Exception as exc:
+            self.status.configure(text="Input synchronization failed.")
+            messagebox.showerror("Show input", str(exc), parent=self)
+
+    def synchronize_input_preview(self) -> str:
+        """Synchronize the preview without restoring a stale disk copy.
+
+        A loaded engine input is displayed verbatim on import.  After that,
+        Builder-control changes regenerate it, while editor-only corrections
+        remain authoritative until a control is changed.
+        """
+        path = self.path_var.get().strip().strip('"')
+        current_signature = self._builder_settings_signature()
+        preview_text = self.get_preview_text()
+        if path and self._input_program_for_path(path) is not None:
+            loaded_signature = self.__dict__.get("loaded_input_builder_signature")
+            if loaded_signature == current_signature and preview_text.strip():
+                self._show_output_mode("preview")
+                self.status.configure(text="Showing current input, including manual text edits.")
+                return preview_text
+        self._synchronize_interaction_settings_for_preview()
+        text = self.refresh_full_orca_input()
+        self.show_full_orca_input(text)
+        self.loaded_input_builder_signature = self._builder_settings_signature()
+        return text
+
+    def _builder_settings_signature(self) -> str:
+        """Return a stable snapshot used to distinguish form and text edits."""
+        return json.dumps(self.collect(), sort_keys=True, default=str)
+
+    def _install_live_input_preview(self) -> None:
+        """Regenerate the input shortly after any Builder-owned setting changes."""
+        builder_vars = (
+            self.program_var, self.functional_var, self.basis_var,
+            self.dispersion_var, self.solvent_var, self.charge_var,
+            self.mult_var, self.grid_var, self.nroots_var,
+            self.job_sp_var, self.job_opt_var, self.job_freq_var,
+            self.job_esp_mep_var, self.job_nmr_var, self.job_tddft_var,
+            self.job_interaction_var, self.freeze_heavy_var,
+            self.freeze_all_var, self.interaction_relax_var,
+            self.interaction_thermo_var, self.tight_scf_var,
+            self.ri_jcosx_var, self.print_mos_var,
+        )
+        for variable in builder_vars:
+            variable.trace_add("write", self._schedule_live_input_preview)
+        self.live_preview_enabled = True
+
+    def _schedule_live_input_preview(self, *_args) -> None:
+        if not self.live_preview_enabled:
             return
-        self.preview()
+        if self.live_preview_after_id is not None:
+            try:
+                self.after_cancel(self.live_preview_after_id)
+            except Exception:
+                pass
+        self.live_preview_after_id = self.after(180, self._refresh_live_input_preview)
+
+    def _refresh_live_input_preview(self) -> None:
+        self.live_preview_after_id = None
+        path = self.path_var.get().strip().strip('"')
+        if not path or not os.path.isfile(path):
+            return
+        if self.run_process is not None and self.run_process.poll() is None:
+            return
+        try:
+            self.synchronize_input_preview()
+        except (TypeError, ValueError, OSError, tk.TclError):
+            # Entry fields can be temporarily incomplete while the user types.
+            # The next valid edit or explicit Show input action will retry.
+            return
 
     def _on_tddft_toggle(self):
         self._sync_job_target_flags("tddft")
@@ -4684,6 +5090,9 @@ class App(tk.Tk):
         self.embedded_tool_controllers["tddft"] = self.tddft_window
         self.tddft_window.set_builder_enabled(bool(self.job_tddft_var.get()), bool(self.current_tddft_block))
         self._restore_workspace_state()
+        # Workspace restoration may contain the file used by an earlier job.
+        # The live Builder context always wins after restoring UI preferences.
+        self.tddft_window.set_builder_context(self.get_tddft_global_context())
         self._show_embedded_workspace("tddft", "TD-DFT")
         return self.tddft_window
 
@@ -5068,7 +5477,7 @@ class App(tk.Tk):
         self.preview_text.delete("1.0", "end")
         self.preview_text.insert("1.0", text)
         self._show_output_mode("preview")
-        self.status.configure(text="Input preview generated with synchronized TD-DFT block.")
+        self.status.configure(text="Input preview synchronized with current Builder settings.")
 
     def focus_builder_window(self) -> None:
         self.deiconify(); self.lift(); self.focus_force()
@@ -5314,7 +5723,7 @@ class App(tk.Tk):
                 return section
         raise ValueError(f"Gaussian section {selected} is not available.")
 
-    def _apply_gaussian_charge_multiplicity(self, result: ImportResult) -> bool:
+    def _apply_import_charge_multiplicity(self, result: ImportResult) -> bool:
         if result.charge is None or result.multiplicity is None:
             return True
         current_charge = int(self.charge_var.get())
@@ -5325,12 +5734,13 @@ class App(tk.Tk):
             self.charge_var.set(result.charge)
             self.mult_var.set(result.multiplicity)
             return True
+        source_name = str(result.source_format or "Imported structure")
         choice = messagebox.askyesnocancel(
-            "Gaussian charge/multiplicity",
-            "The Gaussian file declares charge/multiplicity "
+            f"{source_name} charge/multiplicity",
+            f"The {source_name} file declares or implies charge/multiplicity "
             f"{result.charge}/{result.multiplicity}, while the builder currently has "
             f"{current_charge}/{current_mult}.\n\n"
-            "Yes: use Gaussian values\nNo: keep current values\nCancel: cancel import",
+            f"Yes: use {source_name} values\nNo: keep current values\nCancel: cancel import",
         )
         if choice is None:
             return False
@@ -5381,10 +5791,12 @@ class App(tk.Tk):
 
     def _import_cdxml_structure(self, path: str, ext: str) -> ImportResult:
         parsed = parse_cdxml_stored_3d(path)
+        native_2d = parsed is None
         if parsed is None:
-            return self._import_openbabel_structure(path, ext)
+            parsed = parse_cdxml_2d(path)
         atoms, parser_logs = parsed
-        title = Path(path).name + " (stored ChemDraw 3D geometry)"
+        title_suffix = "native ChemDraw 2D starting geometry" if native_2d else "stored ChemDraw 3D geometry"
+        title = Path(path).name + f" ({title_suffix})"
         xyz_text = xyz_text_from_atoms(atoms, title)
         structure = self._parse_xyz_through_existing_loader(xyz_text, title)
         fragment_count = next(
@@ -5395,17 +5807,45 @@ class App(tk.Tk):
             ),
             0,
         )
-        warnings = [
-            "ChemDraw stored xyz geometry was centered and uniformly scaled to approximate Angstrom bond lengths. "
-            "Inspect the structure before calculation; it is a starting geometry, not a quantum-chemical optimization."
-        ]
+        formal_charge = next(
+            (
+                int(line.rsplit(":", 1)[1].strip())
+                for line in parser_logs
+                if line.startswith("Sum of explicit atom formal charges:")
+            ),
+            0,
+        )
+        electron_count = sum(ATOMIC_NUMBERS[symbol] for symbol, *_coords in atoms) - formal_charge
+        default_multiplicity = 1 if electron_count % 2 == 0 else 2
+        if native_2d:
+            warnings = [
+                "ChemDraw 2D coordinates were imported natively and implicit hydrogens were expanded. "
+                "The geometry is only a starting model: inspect it and run an ORCA geometry optimization before using energies.",
+                f"Charge {formal_charge} was read from explicit ChemDraw atom charges; multiplicity {default_multiplicity} "
+                "is the lowest parity-compatible default. Verify both for radicals, ions, and metal complexes.",
+            ]
+        else:
+            warnings = [
+                "ChemDraw stored xyz geometry was centered and uniformly scaled to approximate Angstrom bond lengths. "
+                "Inspect the structure before calculation; it is a starting geometry, not a quantum-chemical optimization."
+            ]
         if fragment_count > 1:
             warnings.append(
                 f"The CDXML document contains {fragment_count} fragment objects. They were imported together; "
                 "check that counterions, solvents, and separate drawings belong in the intended calculation."
             )
         log_lines = [f"Source format: {ext[1:].upper()}"] + parser_logs + [f"Atom count: {len(atoms)}"]
-        return ImportResult(structure, xyz_text, path, ext[1:].upper(), title, warnings=warnings, log_lines=log_lines)
+        return ImportResult(
+            structure,
+            xyz_text,
+            path,
+            ext[1:].upper(),
+            title,
+            charge=formal_charge,
+            multiplicity=default_multiplicity,
+            warnings=warnings,
+            log_lines=log_lines,
+        )
 
     def _import_mol_sdf_structure(self, path: str, ext: str) -> ImportResult:
         source_format = ext[1:].upper()
@@ -5563,12 +6003,18 @@ class App(tk.Tk):
             if self._maybe_load_job_queue_file(p):
                 return
             result = self.import_structure_file(p)
-            if not self._apply_gaussian_charge_multiplicity(result):
+            if not self._apply_import_charge_multiplicity(result):
                 return
+            resolved_source = str(Path(p).resolve())
+            source_changed = os.path.normcase(self.structure_source_path) != os.path.normcase(resolved_source)
             self.path_var.set(p)
             self.structure = result.structure
-            self.structure_source_path = str(Path(p).resolve())
+            self.structure_source_path = resolved_source
             self.current_input_path = p if self._is_existing_orca_input_path(p) else None
+            if self.current_input_path:
+                self._sync_charge_multiplicity_from_orca_input(self.current_input_path)
+            if source_changed:
+                self._reset_interaction_fragments_for_new_structure()
             self.last_output_path = (
                 p if result.source_format == "ORCA output"
                 else associated_output_path(self.current_input_path or "") or None
@@ -5603,6 +6049,12 @@ class App(tk.Tk):
         self.preview_text.delete("1.0", "end")
         self.preview_text.insert("1.0", text)
         self._show_output_mode("preview")
+        try:
+            self.loaded_input_builder_signature = self._builder_settings_signature()
+        except (AttributeError, RuntimeError, tk.TclError):
+            # Some embedded/test callers intentionally provide only the text
+            # viewer.  Loading the source must not depend on a complete form.
+            self.loaded_input_builder_signature = None
         self.status.configure(text=f"Loaded {source_program} input: {os.path.basename(path)}")
         return True
 
@@ -5614,11 +6066,17 @@ class App(tk.Tk):
             if self._maybe_load_job_queue_file(path):
                 return
             result = self.import_structure_file(path)
-            if not self._apply_gaussian_charge_multiplicity(result):
+            if not self._apply_import_charge_multiplicity(result):
                 return
+            resolved_source = str(Path(path).resolve())
+            source_changed = os.path.normcase(self.structure_source_path) != os.path.normcase(resolved_source)
             self.structure = result.structure
-            self.structure_source_path = str(Path(path).resolve())
+            self.structure_source_path = resolved_source
             self.current_input_path = path if self._is_existing_orca_input_path(path) else None
+            if self.current_input_path:
+                self._sync_charge_multiplicity_from_orca_input(self.current_input_path)
+            if source_changed:
+                self._reset_interaction_fragments_for_new_structure()
             self.last_output_path = (
                 path if result.source_format == "ORCA output"
                 else associated_output_path(self.current_input_path or "") or None
@@ -5662,6 +6120,7 @@ class App(tk.Tk):
             return False
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             text = f.read()
+        self._apply_orca_charge_multiplicity(text)
         self.preview_text.delete("1.0", "end")
         self.preview_text.insert("1.0", text)
         self._show_output_mode("preview")
@@ -5669,6 +6128,28 @@ class App(tk.Tk):
         self.last_output_path = associated_output_path(path) or None
         self.status.configure(text=f"Loaded existing ORCA input: {path}")
         return True
+
+    def _apply_orca_charge_multiplicity(self, text: str) -> bool:
+        parsed = parse_orca_xyz_charge_multiplicity(text)
+        if parsed is None:
+            return False
+        charge, multiplicity = parsed
+        self.charge_var.set(charge)
+        self.mult_var.set(multiplicity)
+        return True
+
+    def _sync_charge_multiplicity_from_orca_input(self, path: str) -> bool:
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        synced = self._apply_orca_charge_multiplicity(text)
+        if synced:
+            self.append_monitor(
+                f"Builder charge/multiplicity synchronized from input: "
+                f"{self.charge_var.get()}/{self.mult_var.get()}"
+            )
+        return synced
 
     def browse_orca(self):
         p = filedialog.askopenfilename(filetypes=executable_filetypes("ORCA executable"))
@@ -5928,9 +6409,14 @@ class App(tk.Tk):
             candidates.append(saved)
         exe_name = "obabel.exe" if os.name == "nt" else "obabel"
         common_roots = [
-            Path(os.environ.get("ProgramFiles", "")) / "OpenBabel-3.1.1" / exe_name,
-            Path(os.environ.get("ProgramFiles", "")) / "Open Babel-3.1.1" / exe_name,
-            Path(os.environ.get("ProgramFiles(x86)", "")) / "OpenBabel-3.1.1" / exe_name,
+            candidate
+            for version in ("3.2.1", "3.2.0", "3.1.1")
+            for candidate in (
+                Path(os.environ.get("ProgramFiles", "")) / f"OpenBabel-{version}" / exe_name,
+                Path(os.environ.get("ProgramFiles", "")) / f"Open Babel-{version}" / exe_name,
+                Path(os.environ.get("ProgramFiles(x86)", "")) / f"OpenBabel-{version}" / exe_name,
+            )
+        ] + [
             Path("/usr/bin") / exe_name,
             Path("/usr/local/bin") / exe_name,
             Path.home() / ".local" / "bin" / exe_name,
@@ -6189,13 +6675,17 @@ class App(tk.Tk):
             except Exception:
                 pass
 
-        try:
-            candidates.extend(
-                (3, path) for path in bounded_find_files(source_dir, pattern_suffix=".out")
-                if path.is_file() and not self._is_interaction_job_path(path)
-            )
-        except Exception:
-            pass
+        # A directory selection means "find an output in this directory".  A
+        # file selection, however, belongs to one job and must never inherit a
+        # differently named output left by an older job in the same folder.
+        if source.is_dir():
+            try:
+                candidates.extend(
+                    (3, path) for path in bounded_find_files(source_dir, pattern_suffix=".out")
+                    if path.is_file() and not self._is_interaction_job_path(path)
+                )
+            except Exception:
+                pass
         return candidates
 
     def _best_output_path(self, candidates: List[Tuple[int, Path]]) -> str:
@@ -6288,11 +6778,7 @@ class App(tk.Tk):
         for candidate in same_stem:
             if candidate.is_file():
                 return str(candidate)
-        folder = out_file.parent
-        candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfn", "*.wfx", "*.fchk"))
-        if not candidates:
-            raise ValueError(f"No .wfn/.wfx/.fchk file was found in:\n{folder}")
-        return str(max(candidates, key=lambda p: p.stat().st_mtime))
+        raise ValueError(f"No matching .wfn/.wfx/.fchk file was found for:\n{out_file}")
 
     def _matching_nci_input_path(self, out_path: str) -> str:
         out_file = Path(out_path)
@@ -6300,11 +6786,7 @@ class App(tk.Tk):
         for candidate in same_stem:
             if candidate.is_file():
                 return str(candidate)
-        folder = out_file.parent
-        candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
-        if not candidates:
-            raise ValueError(f"No .wfx/.wfn file was found for NCI plotting in:\n{folder}")
-        return str(max(candidates, key=lambda p: p.stat().st_mtime))
+        raise ValueError(f"No matching .wfx/.wfn file was found for NCI plotting:\n{out_file}")
 
     def _matching_nci_input_for_path(self, path: str) -> str:
         source = Path(path)
@@ -6316,13 +6798,7 @@ class App(tk.Tk):
             if candidate.is_file():
                 return str(candidate)
 
-        folder = source.parent
-        if folder.is_dir():
-            candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
-            if candidates:
-                return str(max(candidates, key=lambda p: p.stat().st_mtime))
-
-        raise ValueError(f"No .wfx/.wfn file was found for NCI plotting in:\n{folder}")
+        raise ValueError(f"No matching .wfx/.wfn file was found for NCI plotting:\n{source}")
 
     def _matching_qtaim_input_path(self, out_path: str) -> str:
         out_file = Path(out_path)
@@ -6330,11 +6806,7 @@ class App(tk.Tk):
         for candidate in same_stem:
             if candidate.is_file():
                 return str(candidate)
-        folder = out_file.parent
-        candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
-        if not candidates:
-            raise ValueError(f"No .wfx/.wfn file was found for QTAIM CP analysis in:\n{folder}")
-        return str(max(candidates, key=lambda p: p.stat().st_mtime))
+        raise ValueError(f"No matching .wfx/.wfn file was found for QTAIM CP analysis:\n{out_file}")
 
     def _matching_qtaim_input_for_path(self, path: str) -> str:
         source = Path(path)
@@ -6346,13 +6818,7 @@ class App(tk.Tk):
             if candidate.is_file():
                 return str(candidate)
 
-        folder = source.parent
-        if folder.is_dir():
-            candidates = self._same_folder_wavefunction_candidates(folder, ("*.wfx", "*.wfn"))
-            if candidates:
-                return str(max(candidates, key=lambda p: p.stat().st_mtime))
-
-        raise ValueError(f"No .wfx/.wfn file was found for QTAIM CP analysis in:\n{folder}")
+        raise ValueError(f"No matching .wfx/.wfn file was found for QTAIM CP analysis:\n{source}")
 
     def _active_orca_output_path(self) -> Optional[str]:
         proc = self.run_process
@@ -6404,15 +6870,18 @@ class App(tk.Tk):
             self._require_valid_orca_output_if_present(task_out)
             return self._matching_nci_input_path(task_out)
 
-        for candidate in (
-            self.current_input_path,
-            self.path_var.get().strip().strip('"'),
-            self.last_output_path,
-        ):
+        current_candidates = (self.current_input_path, self.path_var.get().strip().strip('"'))
+        for candidate in current_candidates:
             if not candidate:
                 continue
             try:
                 return self._matching_nci_input_for_path(candidate)
+            except ValueError:
+                return None
+
+        if self.last_output_path:
+            try:
+                return self._matching_nci_input_for_path(self.last_output_path)
             except ValueError:
                 pass
 
@@ -6424,15 +6893,18 @@ class App(tk.Tk):
             self._require_valid_orca_output_if_present(task_out)
             return self._matching_qtaim_input_path(task_out)
 
-        for candidate in (
-            self.current_input_path,
-            self.path_var.get().strip().strip('"'),
-            self.last_output_path,
-        ):
+        current_candidates = (self.current_input_path, self.path_var.get().strip().strip('"'))
+        for candidate in current_candidates:
             if not candidate:
                 continue
             try:
                 return self._matching_qtaim_input_for_path(candidate)
+            except ValueError:
+                return None
+
+        if self.last_output_path:
+            try:
+                return self._matching_qtaim_input_for_path(self.last_output_path)
             except ValueError:
                 pass
 
@@ -6523,10 +6995,13 @@ class App(tk.Tk):
                 panel = module.App(page, embedded=True, initial_path=out_path)
                 self.embedded_tool_controllers["homo_lumo"] = panel
                 self._restore_workspace_state()
-            elif out_path and os.path.normcase(str(panel.file_path or "")) != os.path.normcase(out_path):
+            if out_path and os.path.normcase(str(panel.file_path or "")) != os.path.normcase(out_path):
                 panel.file_path_var.set(out_path)
                 panel._load_detected_file(out_path)
                 panel.after(100, panel.on_preview)
+            elif not out_path and self.path_var.get().strip() and panel.file_path:
+                panel._reset_file_data()
+                panel.file_path_var.set("")
             self._show_embedded_workspace("homo_lumo", "HOMO–LUMO Analysis")
         except Exception as exc:
             messagebox.showerror("HOMO-LUMO launcher", str(exc), parent=self)
@@ -6564,6 +7039,8 @@ class App(tk.Tk):
                 page.on_show = panel.on_show
                 page.on_hide = panel.on_hide
                 self._restore_workspace_state()
+            if self.path_var.get().strip() and hasattr(panel, "set_input_path"):
+                panel.set_input_path(wavefunction_path or "")
             self._show_embedded_workspace("esp", "Electrostatic Potential")
         except Exception as exc:
             messagebox.showerror("ESP launcher", str(exc), parent=self)
@@ -6580,13 +7057,24 @@ class App(tk.Tk):
             controller = self.embedded_tool_controllers.get("nci")
             if controller is None:
                 module = self._load_embedded_tool_module("nci", self.nci_script_var.get())
-                controller = module.NCIPlotterApp(page, wavefunction_path, embedded=True)
+                controller = module.NCIPlotterApp(
+                    page,
+                    wavefunction_path,
+                    initial_multiwfn=self.multiwfn_path_var.get().strip() or None,
+                    embedded=True,
+                )
                 self.embedded_tool_controllers["nci"] = controller
                 page.on_show = controller.on_show
                 page.on_hide = controller.on_hide
                 self._restore_workspace_state()
-            elif wavefunction_path and controller.wavefunction_path.get() != wavefunction_path:
+            if wavefunction_path and controller.wavefunction_path.get() != wavefunction_path:
                 controller.set_wavefunction_path(wavefunction_path)
+            elif not wavefunction_path and self.path_var.get().strip() and controller.wavefunction_path.get().strip():
+                controller.clear_wavefunction_path()
+            configured_multiwfn = auto_detect_multiwfn_path(self.multiwfn_path_var.get().strip())
+            if configured_multiwfn and controller.multiwfn_path.get() != configured_multiwfn:
+                controller.multiwfn_path.set(configured_multiwfn)
+                controller.save_config()
             self._show_embedded_workspace("nci", "Noncovalent Interactions")
         except Exception as exc:
             messagebox.showerror("NCI plotter launcher", str(exc), parent=self)
@@ -6603,13 +7091,23 @@ class App(tk.Tk):
             panel = self.embedded_tool_controllers.get("qtaim")
             if panel is None or not panel.winfo_exists():
                 module = self._load_embedded_tool_module("qtaim", self.qtaim_script_var.get())
-                panel = module.QTAIMGui(wavefunction_path, parent=page, embedded=True)
+                panel = module.QTAIMGui(
+                    wavefunction_path,
+                    parent=page,
+                    initial_multiwfn=self.multiwfn_path_var.get().strip() or None,
+                    embedded=True,
+                )
                 self.embedded_tool_controllers["qtaim"] = panel
                 page.on_show = panel.on_show
                 page.on_hide = panel.on_hide
                 self._restore_workspace_state()
-            elif wavefunction_path and panel.input_path.get() != wavefunction_path:
+            if wavefunction_path and panel.input_path.get() != wavefunction_path:
                 panel.set_input_path(wavefunction_path)
+            elif not wavefunction_path and self.path_var.get().strip() and panel.input_path.get().strip():
+                panel.clear_input_path()
+            configured_multiwfn = auto_detect_multiwfn_path(self.multiwfn_path_var.get().strip())
+            if configured_multiwfn and panel.multiwfn_path.get() != configured_multiwfn:
+                panel.multiwfn_path.set(configured_multiwfn)
             self._show_embedded_workspace("qtaim", "QTAIM Critical Points")
         except Exception as exc:
             messagebox.showerror("QTAIM CP launcher", str(exc), parent=self)
@@ -6713,6 +7211,84 @@ class App(tk.Tk):
         else:
             self.fragment_b_formula_var.set("")
 
+    def _reset_interaction_fragments_for_new_structure(self) -> None:
+        """Discard fragment state that belongs to the previously loaded molecule."""
+        self.fragment_a_indices = []
+        self.fragment_b_indices = []
+        self.current_connectivity_bonds = []
+        self.current_components = []
+        self.frag_a_charge_var.set("0")
+        self.frag_a_mult_var.set("1")
+        self.frag_b_charge_var.set("0")
+        self.frag_b_mult_var.set("1")
+        self._update_fragment_summary()
+        overall = int(self.charge_var.get())
+        if overall:
+            self.fragment_status_var.set(
+                f"New structure loaded. Assign fragment charges whose sum is the overall charge {overall}."
+            )
+        elif self.job_interaction_var.get():
+            self.fragment_status_var.set("New structure loaded. Run Auto-detect A/B and verify fragment charge/multiplicity.")
+
+    @staticmethod
+    def _lowest_valid_multiplicity(electrons: int) -> int:
+        return 1 if int(electrons) % 2 == 0 else 2
+
+    def _set_fragment_multiplicity_defaults(self, structure: Structure) -> None:
+        """Choose only the parity-safe low-spin defaults; charges remain user decisions."""
+        try:
+            a_charge = int(self.frag_a_charge_var.get())
+            b_charge = int(self.frag_b_charge_var.get())
+        except (TypeError, ValueError):
+            return
+        a_electrons = electron_count_for_indices(structure, self.fragment_a_indices, a_charge)
+        b_electrons = electron_count_for_indices(structure, self.fragment_b_indices, b_charge)
+        self.frag_a_mult_var.set(str(self._lowest_valid_multiplicity(a_electrons)))
+        self.frag_b_mult_var.set(str(self._lowest_valid_multiplicity(b_electrons)))
+
+    def _synchronize_interaction_settings_for_preview(self) -> None:
+        """Ensure the preview and interaction job settings describe one charge model."""
+        structure = self.parse_current_structure()
+        data = self.collect()
+        all_indices = list(range(len(structure.atoms)))
+        dimer_electrons = electron_count_for_indices(structure, all_indices, int(data["charge"]))
+        overall_errors = validate_charge_multiplicity_parity(
+            "Overall system", dimer_electrons, int(data["multiplicity"])
+        )
+        if overall_errors:
+            self.report_validation(overall_errors, [], resolve_solvent(data["solvent_text"]) if data["solvent_text"] else None)
+            raise ValueError("Overall charge/multiplicity is inconsistent:\n\n" + "\n".join(overall_errors))
+        if not self.job_interaction_var.get():
+            return
+        if not self.fragment_a_indices or not self.fragment_b_indices:
+            self._auto_detect_fragments_for_structure(structure)
+        try:
+            a_charge = int(self.frag_a_charge_var.get())
+            a_mult = int(self.frag_a_mult_var.get())
+            b_charge = int(self.frag_b_charge_var.get())
+            b_mult = int(self.frag_b_mult_var.get())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Fragment A/B charge and multiplicity must be integers.") from exc
+        errors, warnings = self._validate_interaction_science(
+            structure,
+            data,
+            a_charge,
+            a_mult,
+            b_charge,
+            b_mult,
+            bool(self.interaction_relax_var.get()),
+            bool(self.interaction_thermo_var.get()),
+        )
+        if errors or warnings:
+            self.report_validation(errors, warnings, resolve_solvent(data["solvent_text"]) if data["solvent_text"] else None)
+        if errors:
+            self.fragment_status_var.set(errors[0])
+            raise ValueError("Interaction charge/multiplicity is inconsistent:\n\n" + "\n".join(errors))
+        self.fragment_status_var.set(
+            f"Synchronized: dimer {data['charge']}/{data['multiplicity']}; "
+            f"A {a_charge}/{a_mult}; B {b_charge}/{b_mult}."
+        )
+
     def _validate_interaction_science(
         self,
         structure: Structure,
@@ -6773,6 +7349,7 @@ class App(tk.Tk):
                 self.current_components = comps
                 self.fragment_a_indices = sorted(comps[0])
                 self.fragment_b_indices = sorted(comps[1])
+                self._set_fragment_multiplicity_defaults(structure)
                 self._update_fragment_summary()
                 suffix = f" using {source_note}" if source_note else ""
                 self.fragment_status_var.set(f"Automatic detection succeeded at {scale:.2f} ? covalent radii{suffix}.")
@@ -7070,10 +7647,9 @@ class App(tk.Tk):
 
         try:
             text = Path(inp_path).read_text(encoding="utf-8", errors="replace")
-            xyz_match = re.search(r"^\s*\*\s+xyz\s+(-?\d+)\s+(\d+)", text, re.IGNORECASE | re.MULTILINE)
-            if xyz_match:
-                data["charge"] = int(xyz_match.group(1))
-                data["multiplicity"] = int(xyz_match.group(2))
+            charge_multiplicity = parse_orca_xyz_charge_multiplicity(text)
+            if charge_multiplicity:
+                data["charge"], data["multiplicity"] = charge_multiplicity
             if re.search(r"^\s*Print\s*\[\s*P_MOs\s*\]\s+[1-9]", text, re.IGNORECASE | re.MULTILINE):
                 data["print_mos"] = True
             solvent_match = re.search(r"^\s*SMD\s+true\s*$.*?^\s*SMDSolvent\s+\"?([^\"\r\n]+)\"?", text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
@@ -8124,6 +8700,7 @@ class App(tk.Tk):
                 raise ValueError("Only ORCA .inp files can be added to the ORCA job queue.")
             if not self._ensure_queue_for_addition():
                 return
+            self.synchronize_input_preview()
             inp_path = self.ensure_input_saved()
             if not inp_path:
                 return
@@ -8237,16 +8814,17 @@ class App(tk.Tk):
 
         buttons = ttk.Frame(win)
         buttons.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=8)
-        for idx in range(8):
+        for idx in range(9):
             buttons.columnconfigure(idx, weight=1)
         ttk.Button(buttons, text="Add .inp files", command=self._add_files_to_job_queue).grid(row=0, column=0, sticky="ew")
         ttk.Button(buttons, text="Remove selected", command=self._remove_selected_queue_jobs).grid(row=0, column=1, sticky="ew", padx=(6, 0))
         ttk.Button(buttons, text="Reset finished", command=self._reset_job_queue).grid(row=0, column=2, sticky="ew", padx=(6, 0))
         ttk.Button(buttons, text="Clear queue", command=self._clear_job_queue).grid(row=0, column=3, sticky="ew", padx=(6, 0))
-        ttk.Button(buttons, text="Save Queue", command=self.save_job_queue_as).grid(row=0, column=4, sticky="ew", padx=(6, 0))
-        ttk.Button(buttons, text="Load Queue", command=self.load_job_queue_as).grid(row=0, column=5, sticky="ew", padx=(6, 0))
-        ttk.Button(buttons, text="Autosave now", command=self._save_job_queue).grid(row=0, column=6, sticky="ew", padx=(6, 0))
-        ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=7, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Run Queue", command=self.run_job_queue, style="Primary.TButton").grid(row=0, column=4, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Save Queue", command=self.save_job_queue_as).grid(row=0, column=5, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Load Queue", command=self.load_job_queue_as).grid(row=0, column=6, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Autosave now", command=self._save_job_queue).grid(row=0, column=7, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=8, sticky="ew", padx=(6, 0))
 
         self._refresh_queue_selector()
         self._refresh_queue_tree()
@@ -8256,9 +8834,34 @@ class App(tk.Tk):
     def ensure_input_saved(self) -> Optional[str]:
         selected_path = self.path_var.get().strip().strip('"')
         if self._is_existing_orca_input_path(selected_path):
-            if self.current_input_path != selected_path or not self.get_preview_text().strip():
+            preview_text = self.get_preview_text()
+            try:
+                disk_text = Path(selected_path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                disk_text = ""
+            if not preview_text.strip():
                 self._load_existing_orca_input_if_selected()
-            return selected_path
+                return selected_path
+            if preview_text == disk_text:
+                return selected_path
+
+            # The synchronized preview differs from the selected input.  Never
+            # run the stale disk copy or overwrite it without an explicit save.
+            synced_path = filedialog.asksaveasfilename(
+                title="Save synchronized ORCA input before running",
+                defaultextension=".inp",
+                initialfile=f"{Path(selected_path).stem}_synced.inp",
+                initialdir=str(Path(selected_path).parent),
+                filetypes=[("ORCA input files", "*.inp"), ("All files", "*.*")],
+            )
+            if not synced_path:
+                return None
+            Path(synced_path).write_text(preview_text, encoding="utf-8")
+            self.current_input_path = synced_path
+            self.path_var.set(synced_path)
+            self.structure_source_path = str(Path(synced_path).resolve())
+            self.status.configure(text=f"Saved synchronized input: {synced_path}")
+            return synced_path
 
         text = self.get_preview_text()
         if not text.strip():
@@ -8295,7 +8898,7 @@ class App(tk.Tk):
                 suggested = str(Path(source_path).with_suffix(default_ext))
             else:
                 self._confirm_tddft_memory_risk()
-                text, _builder_warnings = self.build_input()
+                text = self.synchronize_input_preview()
                 suggested = self.suggest_input_save_path()
             out = filedialog.asksaveasfilename(
                 defaultextension=".inp" if self.program_var.get() == "ORCA" else ".gjf",
@@ -8338,6 +8941,7 @@ class App(tk.Tk):
             messagebox.showerror("Save error", str(exc))
 
     def run_orca(self):
+        """Run only the input currently selected in the Builder."""
         try:
             self.auto_open_output_var.set(True)
             if self.program_var.get() != "ORCA":
@@ -8346,9 +8950,7 @@ class App(tk.Tk):
                 raise ValueError("An ORCA run is already in progress.")
             orca_path = self._validated_orca_path()
             self._confirm_tddft_memory_risk()
-            if self._has_queued_jobs():
-                self._start_job_queue(orca_path)
-                return
+            self.synchronize_input_preview()
             inp_path = self.ensure_input_saved()
             if not inp_path:
                 return
@@ -8357,6 +8959,17 @@ class App(tk.Tk):
         except Exception as exc:
             self.active_run_context = None
             messagebox.showerror("Run error", str(exc))
+
+    def run_job_queue(self):
+        """Start pending jobs only when the user explicitly requests the queue."""
+        try:
+            if self.run_process and self.run_process.poll() is None:
+                raise ValueError("An ORCA run is already in progress.")
+            orca_path = self._validated_orca_path()
+            self._start_job_queue(orca_path)
+        except Exception as exc:
+            self.active_run_context = None
+            messagebox.showerror("Run Queue error", str(exc), parent=self.queue_window or self)
 
     def _validated_orca_path(self) -> str:
         orca_path = self.orca_path_var.get().strip().strip('"')
