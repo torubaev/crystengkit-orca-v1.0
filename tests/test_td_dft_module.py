@@ -294,6 +294,15 @@ ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS
             found = detect_associated_files(str(output))
         self.assertEqual(Path(found[".wfx"]).name, expected.name)
 
+    def test_associated_file_detection_rejects_another_jobs_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "current.out"
+            output.write_text("", encoding="utf-8")
+            (root / "first.wfx").write_text("old", encoding="utf-8")
+            found = detect_associated_files(str(output))
+        self.assertNotIn(".wfx", found)
+
     def test_completed_absorption_source_is_verified_with_matching_gbw(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

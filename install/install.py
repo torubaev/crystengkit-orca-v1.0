@@ -9,8 +9,8 @@ For common users:
       Install missing Python packages now? [Y/n]
   Press Enter = Yes.
 - Installs approved Python packages; on Linux, pip progress is shown in the terminal.
-- Checks whether ORCA, Multiwfn, and Gaussian are visible from the command line.
-- If ORCA or Multiwfn are not visible from PATH, searches likely local folders.
+- Checks whether ORCA, Multiwfn, Gaussian, and Open Babel are visible from the command line.
+- If ORCA, Multiwfn, or Open Babel are not visible from PATH, searches likely local folders.
 - Creates installation_report.html and opens it in the default web browser.
 - Also prints a concise report in the command prompt / terminal.
 
@@ -75,6 +75,10 @@ OFFICIAL_LINKS = {
         ("Multiwfn official page", "https://sobereva.com/multiwfn/"),
         ("Multiwfn official download page", "https://sobereva.com/multiwfn/download.html"),
     ],
+    "Open Babel": [
+        ("Open Babel official releases", "https://github.com/openbabel/openbabel/releases"),
+        ("Open Babel installation guide", "https://openbabel.org/docs/Installation/install.html"),
+    ],
 }
 
 MULTIWFN_SECURITY_NOTE = """
@@ -101,9 +105,14 @@ EXTERNAL_SOFTWARE = {
         "required": False,
         "message": "Gaussian was not detected. This matters only if you plan to use Gaussian-related features.",
     },
+    "Open Babel": {
+        "executables": ["obabel", "obabel.exe"],
+        "required": False,
+        "message": "Open Babel was not detected. It is needed for binary CDX, 2D ChemDraw, and additional molecular formats.",
+    },
 }
 
-LOCAL_SEARCH_PROGRAMS = {"ORCA", "Multiwfn"}
+LOCAL_SEARCH_PROGRAMS = {"ORCA", "Multiwfn", "Open Babel"}
 
 LOCAL_SEARCH_SKIP_DIRS = {
     "$Recycle.Bin",
@@ -521,6 +530,9 @@ def likely_local_search_roots(program_name: str, project_root: Optional[Path] = 
             elif program_name == "Multiwfn":
                 add_glob_matches(roots, env_path, "*Multiwfn*")
                 add_glob_matches(roots, env_path, "*multiwfn*")
+            elif program_name == "Open Babel":
+                add_glob_matches(roots, env_path, "*OpenBabel*")
+                add_glob_matches(roots, env_path, "*Open Babel*")
 
     if platform.system() == "Windows":
         c_drive = Path("C:/")
@@ -529,6 +541,8 @@ def likely_local_search_roots(program_name: str, project_root: Optional[Path] = 
             patterns = ["ORCA*", "orca*", "FACCT*", "facct*"]
         elif program_name == "Multiwfn":
             patterns = ["Multiwfn*", "multiwfn*"]
+        elif program_name == "Open Babel":
+            patterns = ["OpenBabel*", "Open Babel*"]
         else:
             patterns = []
 

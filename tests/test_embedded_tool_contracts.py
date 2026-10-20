@@ -38,6 +38,21 @@ class EmbeddedToolContractTests(unittest.TestCase):
         self.assertIn("embedded", parameters)
         self.assertIn("run_mainloop", parameters)
 
+        source = (ROOT / "tools/VisMap_5.0/VisMap5.6_pyvista.py").read_text(encoding="utf-8")
+        self.assertIn("root.set_input_path = set_input_path", source)
+
+    def test_analysis_panels_can_clear_previous_builder_input(self):
+        cases = (
+            ("tools/NCI_plot/nci_plotter.py", "NCIPlotterApp", "clear_wavefunction_path"),
+            ("tools/qtaim-cp/qtaim.py", "QTAIMGui", "clear_input_path"),
+        )
+        for relative, class_name, method_name in cases:
+            with self.subTest(tool=relative):
+                tree = parsed(relative)
+                node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == class_name)
+                methods = {item.name for item in node.body if isinstance(item, ast.FunctionDef)}
+                self.assertIn(method_name, methods)
+
     def test_nci_controller_accepts_embedded_mode(self):
         tree = parsed("tools/NCI_plot/nci_plotter.py")
         node = next(item for item in tree.body if isinstance(item, ast.ClassDef) and item.name == "NCIPlotterApp")

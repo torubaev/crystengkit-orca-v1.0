@@ -1,6 +1,9 @@
 import ast
 import unittest
+import json
+import tempfile
 from pathlib import Path
+from unittest import mock
 from unittest import mock
 
 
@@ -9,6 +12,7 @@ INSTALLER_PATH = ROOT / "install" / "install.py"
 CHECKER_LAUNCHER_PATH = ROOT / "packaging" / "windows" / "run_install_checker.cmd"
 INNO_SETUP_PATH = ROOT / "packaging" / "windows" / "CrystEngKit_ORCA.iss"
 INSTALLER_BUILD_PATH = ROOT / "packaging" / "windows" / "build_installer.ps1"
+OPENBABEL_INSTALL_PATH = ROOT / "packaging" / "windows" / "install_openbabel.ps1"
 
 
 def load_installer_functions(*names):
@@ -56,6 +60,19 @@ class InstallationRootTests(unittest.TestCase):
         self.assertIn("PrivilegesRequired=lowest", setup)
         self.assertNotIn("DefaultDirName={autopf}", setup)
 
+    def test_windows_openbabel_install_is_selected_but_optional(self):
+        setup = INNO_SETUP_PATH.read_text(encoding="utf-8")
+        launcher = CHECKER_LAUNCHER_PATH.read_text(encoding="utf-8")
+        helper = OPENBABEL_INSTALL_PATH.read_text(encoding="utf-8")
+        self.assertIn('Name: "installopenbabel"', setup)
+        self.assertIn('Flags: checkedonce', setup[setup.index('Name: "installopenbabel"'):].splitlines()[0])
+        self.assertIn("--install-openbabel-if-missing", setup)
+        self.assertIn("--install-openbabel-if-missing", launcher)
+        self.assertIn("call :install_openbabel", launcher)
+        self.assertIn("OpenBabel-3.1.1-x64.exe", helper)
+        self.assertIn("F3BFC11F54174F2A634F9657429886F68281F1E3355BD67E711F49CC57A57E0C", helper)
+        self.assertIn("Get-FileHash", helper)
+
     def test_installer_build_uses_only_git_tracked_release_source(self):
         build = INSTALLER_BUILD_PATH.read_text(encoding="utf-8")
         self.assertIn("git -C $repoRoot archive", build)
@@ -75,6 +92,34 @@ class InstallationRootTests(unittest.TestCase):
         self.assertIn('default_settings["multiwfn_path"] = executable', source)
         self.assertIn("ensure_settings_file(base_dir, external_info)", source)
         self.assertIn("PATH is not required", source)
+
+    def test_shared_locator_reads_builder_multiwfn_setting(self):
+        import sys
+
+        tools_root = str(ROOT / "tools")
+        if tools_root not in sys.path:
+            sys.path.insert(0, tools_root)
+        from shared import multiwfn_locator
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "custom" / "renamed-multiwfn.exe"
+            executable.parent.mkdir()
+            executable.write_bytes(b"test")
+            settings = root / "orca_gaussian_builder_settings.json"
+            settings.write_text(json.dumps({"multiwfn_path": str(executable)}), encoding="utf-8")
+            with mock.patch.object(multiwfn_locator, "builder_settings_paths", return_value=[settings]):
+                self.assertEqual(Path(multiwfn_locator.find_multiwfn()).resolve(), executable.resolve())
+
+    def test_embedded_analysis_tools_receive_builder_multiwfn_path(self):
+        builder = (ROOT / "tools" / "Orca_input" / "orca_input.py").read_text(encoding="utf-8")
+        nci = (ROOT / "tools" / "NCI_plot" / "nci_plotter.py").read_text(encoding="utf-8")
+        qtaim = (ROOT / "tools" / "qtaim-cp" / "qtaim.py").read_text(encoding="utf-8")
+        self.assertGreaterEqual(builder.count("initial_multiwfn=self.multiwfn_path_var.get().strip() or None"), 3)
+        self.assertIn("initial_multiwfn: Optional[str] = None", nci)
+        self.assertIn("find_multiwfn(configured_multiwfn)", nci)
+        self.assertIn("initial_multiwfn: Optional[str] = None", qtaim)
+        self.assertIn('find_multiwfn(initial_multiwfn or "")', qtaim)
 
     def test_orca_validation_does_not_require_a_fixed_filename(self):
         source = INSTALLER_PATH.read_text(encoding="utf-8")

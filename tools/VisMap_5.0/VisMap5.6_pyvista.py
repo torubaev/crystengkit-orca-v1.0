@@ -60,6 +60,7 @@ from shared.window_layout import compute_visualization_layout, place_visualizati
 from shared.tk_helpers import bind_mousewheel_to_canvas, executable_filetypes, install_edit_context_menu, keep_entry_end_visible, load_header_icon
 from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 from shared.molecule_style import cylinder_between
+from shared.multiwfn_locator import find_multiwfn as find_shared_multiwfn
 
 ESP_ICON_PATH = TOOLS_ROOT / "images" / "tr_ESP_icon.png"
 COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
@@ -513,6 +514,9 @@ dnc2all = {1: ['H', 1.09, 0.23, 1.00794, 0.99609375, 0.9765625, 0.80078125],
 # ----------------------------
 
 def find_multiwfn_path():
+    shared_path = find_shared_multiwfn()
+    if shared_path:
+        return shared_path
     env_path = os.environ.get("Multiwfnpath")
     if env_path:
         expanded = os.path.expanduser(os.path.expandvars(env_path))
@@ -2642,8 +2646,14 @@ def launch_gui(initial_inputfile=None, initial_nproc="8", initial_mode="old", in
         if "molecule_opacity" in (state or {}):
             APP_STATE["molecule_opacity_scale"].set(int(state["molecule_opacity"]))
 
+    def set_input_path(path):
+        """Synchronize the embedded ESP input with the current Builder job."""
+        clean_path = str(path or "").strip()
+        input_file_var.set(os.path.abspath(clean_path) if clean_path else "")
+
     root.get_state = get_state
     root.set_state = set_state
+    root.set_input_path = set_input_path
     if run_mainloop and not embedded:
         root.mainloop()
     return root

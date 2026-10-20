@@ -5,6 +5,7 @@ cd /d "%PROJECT_ROOT%"
 
 set "INSTALL_PYTHON_IF_MISSING=0"
 set "INSTALL_MSMPI_IF_MISSING=0"
+set "INSTALL_OPENBABEL_IF_MISSING=0"
 set "CHECKER_ARGS= "--project-root=%PROJECT_ROOT%""
 set "PYTHON_INSTALLED_EXE="
 
@@ -14,6 +15,8 @@ if /i "%~1"=="--install-python-if-missing" (
     set "INSTALL_PYTHON_IF_MISSING=1"
 ) else if /i "%~1"=="--install-msmpi-if-missing" (
     set "INSTALL_MSMPI_IF_MISSING=1"
+) else if /i "%~1"=="--install-openbabel-if-missing" (
+    set "INSTALL_OPENBABEL_IF_MISSING=1"
 ) else (
     set "CHECKER_ARGS=%CHECKER_ARGS% %~1"
 )
@@ -23,6 +26,7 @@ goto parse_args
 :after_parse
 
 if "%INSTALL_MSMPI_IF_MISSING%"=="1" call :install_msmpi
+if "%INSTALL_OPENBABEL_IF_MISSING%"=="1" call :install_openbabel
 
 rem Prefer the managed environment already installed beside CrystEngKit.
 rem This avoids treating every installer upgrade as a new environment setup.
@@ -120,4 +124,21 @@ if errorlevel 1 (
     exit /b 0
 )
 echo Microsoft MPI Runtime installed. Restart CrystEngKit before running parallel ORCA jobs.
+exit /b 0
+
+:install_openbabel
+where obabel.exe >nul 2>nul
+if not errorlevel 1 exit /b 0
+if exist "%ProgramFiles%\OpenBabel-3.1.1\obabel.exe" exit /b 0
+if exist "%ProgramFiles%\Open Babel-3.1.1\obabel.exe" exit /b 0
+if exist "%ProgramFiles(x86)%\OpenBabel-3.1.1\obabel.exe" exit /b 0
+
+echo Open Babel was not found. Installing Open Babel 3.1.1 for molecular file conversion...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_ROOT%\install_openbabel.ps1"
+if errorlevel 1 (
+    echo Open Babel installation failed or was cancelled.
+    echo CrystEngKit will still work, but some molecular formats will be unavailable.
+    exit /b 0
+)
+echo Open Babel installed. Restart CrystEngKit before importing Open Babel-dependent formats.
 exit /b 0

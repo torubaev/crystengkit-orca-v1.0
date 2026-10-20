@@ -1,5 +1,5 @@
-; Full offline Windows installer for CrystEngKit ORCA.
-; All project files are embedded. No network download is performed by Setup.
+; Full Windows installer for CrystEngKit ORCA.
+; All project files are embedded. Checked optional dependencies may be downloaded.
 
 #define MyAppName "CrystEngKit ORCA"
 #ifndef MyAppVersion
@@ -47,6 +47,7 @@ Name: "runchecker"; Description: "Run installation checker after setup"; GroupDe
 Name: "installpython"; Description: "Install Python 3.12 with winget if Python 3.9+ is not found"; GroupDescription: "Python setup:"; Flags: unchecked
 Name: "setupvenv"; Description: "Create a local Python environment and install required packages"; GroupDescription: "Python setup:"; Flags: checkedonce
 Name: "installmsmpi"; Description: "Install Microsoft MPI Runtime for parallel ORCA calculations"; GroupDescription: "ORCA parallel processing:"; Flags: checkedonce
+Name: "installopenbabel"; Description: "Install Open Babel 3.1.1 for additional molecular file formats"; GroupDescription: "Molecular file conversion:"; Flags: checkedonce
 
 [Files]
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -63,6 +64,7 @@ Source: "{#SourceRoot}\benchmark_sets\*"; DestDir: "{app}\benchmark_sets"; Flags
 Source: "{#SourceRoot}\S22_NCI_benchmark_set\*"; DestDir: "{app}\S22_NCI_benchmark_set"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "{#SourceRoot}\packaging\windows\launch_orca_builder.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\packaging\windows\run_install_checker.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\packaging\windows\install_openbabel.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\ORCA Input Builder"; Filename: "{app}\launch_orca_builder.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\tools\images\orca_builder.ico"
@@ -84,4 +86,6 @@ begin
     Result := Result + ' --setup-venv';
   if WizardIsTaskSelected('installmsmpi') then
     Result := Result + ' --install-msmpi-if-missing';
+  if WizardIsTaskSelected('installopenbabel') then
+    Result := Result + ' --install-openbabel-if-missing';
 end;

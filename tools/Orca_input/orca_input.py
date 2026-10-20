@@ -58,6 +58,8 @@ from app_updater import (
 from orca_job_queue import OrcaJobQueue, OrcaQueueJob
 from input_format_converter import convert_input_text, detect_input_program
 from workspace_navigation import StackedPageController
+from calculation_report import render_report as render_calculation_report
+from calculation_report import verify_from_output as verify_calculation_from_output
 
 
 def user_config_dir() -> Path:
@@ -7661,6 +7663,73 @@ class App(tk.Tk):
             pass
         return data
 
+    def _data_verified_from_orca_output(self, out_path: str, fallback: Dict) -> Tuple[Dict, Dict]:
+        """Overlay input metadata with settings and work evidenced by ORCA output."""
+        return verify_calculation_from_output(out_path, fallback, ORCA_FUNCTIONALS, ORCA_BASIS)
+
+        # Legacy inline implementation retained temporarily below for source
+        # compatibility; execution is delegated to calculation_report.py.
+        data = dict(fallback)
+        evidence = {
+            "output_parsed": False,
+            "normal_termination": False,
+            "single_point_count": 0,
+            "optimization_performed": False,
+            "frequency_performed": False,
+            "tddft_performed": False,
+        }
+        try:
+            text = Path(out_path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return data, evidence
+        if not text.strip():
+            return data, evidence
+
+        upper_text = text.upper()
+        evidence.update({
+            "output_parsed": True,
+            "normal_termination": "ORCA TERMINATED NORMALLY" in upper_text,
+            "single_point_count": len(re.findall(r"(?m)^\s*FINAL SINGLE POINT ENERGY\b", text)),
+            "optimization_performed": bool(re.search(r"GEOMETRY OPTIMIZATION (?:RUN|CYCLE)", text, re.IGNORECASE)),
+            "frequency_performed": "VIBRATIONAL FREQUENCIES" in upper_text,
+            "tddft_performed": bool(re.search(r"(?:TD-DFT|TDDFT|ORCA CIS|ABSORPTION SPECTRUM)", text, re.IGNORECASE)),
+        })
+
+        echoed_lines = re.findall(r"(?m)^\|\s*\d+>\s*(![^\r\n]+)", text)
+        simple = echoed_lines[0].strip() if echoed_lines else ""
+        if simple:
+            # Reset every simple-input property before applying observed
+            # keywords, so stale GUI defaults cannot survive the overlay.
+            data.update({
+                "functional": "", "basis": "", "dispersion": "",
+                "ri_jcosx": False, "tight_scf": False, "grid": "",
+                "job_sp": False, "job_opt": False, "job_freq": False,
+                "job_nmr": False, "job_tddft": False,
+            })
+            tokens = simple[1:].split()
+            upper_tokens = {token.upper() for token in tokens}
+            functional_lookup = {item.upper(): item for item in ORCA_FUNCTIONALS}
+            basis_lookup = {item.upper(): item for item in ORCA_BASIS}
+            for token in tokens:
+                upper = token.upper()
+                if not data["functional"] and upper in functional_lookup:
+                    data["functional"] = functional_lookup[upper]
+                if not data["basis"] and upper in basis_lookup:
+                    data["basis"] = basis_lookup[upper]
+            data["dispersion"] = "D3BJ" if "D3BJ" in upper_tokens else ("D4" if "D4" in upper_tokens else "")
+            data["ri_jcosx"] = "RIJCOSX" in upper_tokens
+            data["tight_scf"] = "TIGHTSCF" in upper_tokens
+            data["grid"] = next((token for token in tokens if token.upper() in {"DEFGRID1", "DEFGRID2", "DEFGRID3"}), "")
+            data["job_opt"] = "OPT" in upper_tokens or evidence["optimization_performed"]
+            data["job_freq"] = "FREQ" in upper_tokens or evidence["frequency_performed"]
+            data["job_tddft"] = evidence["tddft_performed"]
+            data["job_sp"] = bool(evidence["single_point_count"]) and not data["job_opt"]
+
+        basis_matches = re.findall(r"(?im)^\s*Your calculation utilizes the basis:\s*([^\r\n]+)", text)
+        if basis_matches and not str(data.get("functional", "")).upper().endswith("-3C"):
+            data["basis"] = basis_matches[-1].strip()
+        return data, evidence
+
     def _summary_context_for_output(self, out_path: str) -> Dict:
         active = dict(self.active_run_context or {})
         active_input = active.get("input_path")
@@ -7695,6 +7764,7 @@ class App(tk.Tk):
 
     def _build_calculation_summary(self, context: Dict, out_path: str) -> Dict[str, object]:
         data = dict(context.get("data", {}))
+        data, execution_evidence = self._data_verified_from_orca_output(out_path, data)
         inp_path = context.get("input_path", "")
         resolved_solvent = resolve_solvent(data.get("solvent_text", "")) if data.get("solvent_text") else None
         energies = self._parse_orca_energy_terms(out_path)
@@ -7740,6 +7810,7 @@ class App(tk.Tk):
                 "cube_files": cube_files,
             },
             "results_hartree": energies,
+            "execution_evidence": execution_evidence,
         }
 
     def _summary_reference_library(self) -> Dict[str, str]:
@@ -7783,6 +7854,10 @@ class App(tk.Tk):
         return "single-point"
 
     def _calculation_summary_lines(self, summary: Dict[str, object]) -> List[str]:
+        return render_calculation_report(summary, GITHUB_URL)
+
+        # Legacy inline renderer retained temporarily below for source
+        # compatibility; execution is delegated to calculation_report.py.
         settings = summary.get("settings", {})
         version = summary.get("orca_version", "")
         functional = settings.get("functional", "")
@@ -7790,6 +7865,7 @@ class App(tk.Tk):
         dispersion = settings.get("dispersion", "")
         grid = settings.get("grid", "")
         solvent = settings.get("solvent_resolved") or settings.get("solvent_input") or ""
+        execution = summary.get("execution_evidence", {})
 
         refs = self._summary_reference_library()
         used_refs: List[str] = []
@@ -7803,8 +7879,16 @@ class App(tk.Tk):
             dispersion_ref = self._reference_marker(dispersion_ref_key, used_refs)
 
         version_text = f" (version {version})" if version else ""
-        method_bits = [f"a {functional} functional"]
-        if functional_ref:
+        composite_method = str(functional).strip().upper() in {
+            "HF-3C", "B97-3C", "R2SCAN-3C", "PBEH-3C", "WB97X-3C"
+        }
+        if composite_method:
+            method_bits = [f"the {functional} composite method"]
+        elif functional:
+            method_bits = [f"the {functional} functional"]
+        else:
+            method_bits = ["the electronic-structure method specified in the input"]
+        if functional_ref and not composite_method:
             method_bits[-1] += f" {functional_ref}"
         if dispersion:
             dispersion_text = f"dispersion correction ({dispersion})"
@@ -7817,7 +7901,15 @@ class App(tk.Tk):
                 basis_text += f" {basis_ref}"
             method_bits.append(basis_text)
 
-        primary_task = "geometry optimization" if settings.get("job_opt") else "the requested single-point calculation"
+        single_point_count = int(execution.get("single_point_count") or 0)
+        if execution.get("optimization_performed"):
+            primary_task = "the geometry optimization that was performed"
+        elif single_point_count > 1:
+            primary_task = f"the series of {single_point_count} single-point calculations that was performed"
+        elif single_point_count == 1:
+            primary_task = "the single-point calculation that was performed"
+        else:
+            primary_task = "the calculation"
         paragraphs = [
             f"Theoretical calculations were carried out with the ORCA{version_text} program package {orca_ref}. "
             + ", ".join(method_bits)
@@ -7851,28 +7943,18 @@ class App(tk.Tk):
 
         post = summary.get("post_processing", {})
         analysis_files = summary.get("analysis_files", {})
-        has_analysis = bool(
-            settings.get("print_mos")
-            or settings.get("job_esp_mep")
-            or post.get("esp_mep_generated")
-            or analysis_files.get("cube_files")
-        )
-        if has_analysis:
+        has_multiwfn_analysis = bool(post.get("esp_mep_generated"))
+        if has_multiwfn_analysis:
             multiwfn_ref = self._reference_marker("MULTIWFN", used_refs)
-            nci_ref = self._reference_marker("NCI", used_refs)
-            nciplot_ref = self._reference_marker("NCIPLOT", used_refs)
-            qtaim_ref = self._reference_marker("QTAIM", used_refs)
             paragraphs.append(
-                "HOMO-LUMO, QTAIM, NCI plot and MEP were evaluated by the Multiwfn program "
-                f"{multiwfn_ref}, and respective plot figures (Fig. X) were prepared using CrystEngKit software ({GITHUB_URL}). "
-                f"NCI analysis follows the reduced-density-gradient/sign(lambda2)rho formalism {nci_ref} and NCIPLOT convention {nciplot_ref}; "
-                f"QTAIM analysis follows Bader's atoms-in-molecules formalism {qtaim_ref}."
+                f"Electrostatic-potential data were generated with Multiwfn {multiwfn_ref} through "
+                f"CrystEngKit software ({GITHUB_URL})."
             )
-            paragraphs.extend([
+            paragraphs.append(
                 "MEP parameters used in CrystEngKit: electron-density isovalue 0.001 e/A3 isosurface unless changed in the ESP/MEP viewer.",
-                "QTAIM parameters used in CrystEngKit: Multiwfn critical-point and bond-path output with CrystEngKit viewer settings for CP visibility, CP colors, bond-path radius, and background.",
-                "NCI parameters used in CrystEngKit: RDG isovalue 0.50 and sign(lambda2)rho coloring unless changed in the NCI plotter.",
-            ])
+            )
+        elif post.get("wfn_wfx_generated") or analysis_files.get("wavefunction_files"):
+            paragraphs.append("A wavefunction file was generated for subsequent analysis; no downstream analysis is asserted in this report.")
 
         reference_lines = ["", "References"]
         reference_lines.extend(f"[{index}] {refs[key]}" for index, key in enumerate(used_refs, start=1) if key in refs)
@@ -8992,6 +9074,13 @@ class App(tk.Tk):
         return any(job.status == "queued" for job in self.job_queue.jobs)
 
     def _context_for_current_input(self, inp_path: str, orca_path: str) -> Dict:
+        # The saved input is the calculation ORCA will actually execute.  Its
+        # method keywords must therefore be authoritative for reports; the UI
+        # may still contain defaults when a hand-written input was loaded.
+        data = self._data_from_orca_input_file(inp_path)
+        data["job_interaction"] = bool(self.job_interaction_var.get())
+        data["interaction_relaxation"] = bool(self.interaction_relax_var.get())
+        data["interaction_thermo"] = bool(self.interaction_thermo_var.get())
         context = {
             "interaction_enabled": bool(self.job_interaction_var.get()),
             "interaction_relax": bool(self.interaction_relax_var.get()),
@@ -9005,7 +9094,7 @@ class App(tk.Tk):
             "frag_b_mult": int(self.frag_b_mult_var.get()),
             "input_path": inp_path,
             "orca_path": orca_path,
-            "data": self.collect(),
+            "data": data,
             "dimer_optimized": bool(self.job_opt_var.get()),
         }
         return context

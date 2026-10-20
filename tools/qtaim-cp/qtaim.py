@@ -2327,7 +2327,7 @@ def visualize_qtaim(
 # -----------------------------
 
 class QTAIMGui(ttk.Frame):
-    def __init__(self, initial_input_path: Optional[str] = None, parent=None, *, embedded: bool = False):
+    def __init__(self, initial_input_path: Optional[str] = None, parent=None, *, initial_multiwfn: Optional[str] = None, embedded: bool = False):
         self.host_window = None
         if parent is None:
             set_windows_app_id("QTAIM")
@@ -2343,7 +2343,7 @@ class QTAIMGui(ttk.Frame):
             configure_builder_ui_style(self.host_window)
 
         self.input_path = tk.StringVar()
-        self.multiwfn_path = tk.StringVar(value=find_multiwfn() or "")
+        self.multiwfn_path = tk.StringVar(value=find_multiwfn(initial_multiwfn or "") or "")
         self.log_path = tk.StringVar()
         self.cp_file_path = tk.StringVar()
         self.path_file_path = tk.StringVar()
@@ -3052,6 +3052,17 @@ class QTAIMGui(ttk.Frame):
         self.cps = []
         self.bond_paths = []
         self.after(100, self.run_multiwfn_threaded)
+
+    def clear_input_path(self):
+        """Detach stale analysis data when Builder switches to another job."""
+        self.input_path.set("")
+        self.log_path.set("")
+        self.cp_file_path.set("")
+        self.path_file_path.set("")
+        self.atoms = []
+        self.cps = []
+        self.bond_paths = []
+        self.log("Builder input changed; waiting for a matching .wfn or .wfx file.")
 
     def _remember_input_path(self, path: str):
         self.recent_input_files = remember_recent_file(path, self.recent_input_files)

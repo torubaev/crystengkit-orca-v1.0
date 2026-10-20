@@ -28,7 +28,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 import app_identity as _app_identity
-from shared.multiwfn_locator import auto_detect_multiwfn_path
+from shared.multiwfn_locator import auto_detect_multiwfn_path, find_multiwfn, load_saved_multiwfn_path as load_builder_multiwfn_path
 from shared.orca_parallel import default_orca_nprocs
 from shared.tk_helpers import executable_filetypes, install_edit_context_menu, load_header_icon
 try:
@@ -637,30 +637,21 @@ def detect_associated_files(output_path: str) -> Dict[str, str]:
     output = Path(output_path).resolve(); result = {}
     for suffix in ASSOCIATED_SUFFIXES:
         exact = output.with_name(output.stem + suffix)
-        candidates = [exact] if exact.is_file() else sorted(output.parent.glob("*" + suffix), key=lambda p: (p.stem != output.stem, p.name.lower()))
-        if candidates:
-            result[suffix] = str(candidates[0].resolve())
+        if exact.is_file():
+            result[suffix] = str(exact.resolve())
     return result
 
 
 def load_saved_multiwfn_path() -> str:
-    candidates = [MODULE_SETTINGS, MODULE_DIR / "orca_gaussian_builder_settings.json", APP_ROOT / "orca_gaussian_builder_settings.json"]
-    for config in candidates:
-        try:
-            data = json.loads(config.read_text(encoding="utf-8"))
-            for key in ("multiwfn_path", "multiwfn_executable", "Multiwfnpath"):
-                value = str(data.get(key, "")).strip()
-                if value: return value
-        except Exception:
-            pass
-    env_value = os.environ.get("Multiwfnpath", "").strip()
-    if env_value:
-        env_path = Path(env_value).expanduser()
-        if env_path.is_dir():
-            for name in ("Multiwfn.exe", "Multiwfn", "multiwfn"):
-                if (env_path / name).is_file(): return str(env_path / name)
-        return env_value
-    return auto_detect_multiwfn_path()
+    builder_value = load_builder_multiwfn_path()
+    if builder_value:
+        return builder_value
+    module_value = ""
+    try:
+        module_value = str(json.loads(MODULE_SETTINGS.read_text(encoding="utf-8")).get("multiwfn_path", "")).strip()
+    except Exception:
+        pass
+    return find_multiwfn(module_value) or ""
 
 
 class TDDFTPanel(ttk.Frame):
@@ -688,10 +679,8 @@ class TDDFTPanel(ttk.Frame):
         self.builder_context_var = tk.StringVar(value="")
         self.set_builder_context(builder_context or {})
         self.associated_files, self.analysis_result = {}, {}
-        self.multiwfn_var = tk.StringVar(value=load_saved_multiwfn_path())
         context_multiwfn = str((builder_context or {}).get("multiwfn_path", "")).strip()
-        if context_multiwfn and not self.multiwfn_var.get().strip():
-            self.multiwfn_var.set(context_multiwfn)
+        self.multiwfn_var = tk.StringVar(value=find_multiwfn(context_multiwfn) or load_saved_multiwfn_path())
         self.progress_var = tk.IntVar(value=0)
         self.progress_text = tk.StringVar(value="0%")
         self.associated_summary_var = tk.StringVar(value="Load an ORCA .out file to detect associated files.")
@@ -1274,7 +1263,10 @@ class TDDFTPanel(ttk.Frame):
         self.builder_context_var.set(self.builder_context_var.get() + memory_line)
 
         if hasattr(self, "output_label"):
-            self._auto_load_builder_output()
+            if self._pending_builder_output_path:
+                self._auto_load_builder_output()
+            elif str(context.get("structure_source_path", "")).strip() and self.output_path:
+                self._clear_loaded_output()
         if hasattr(self, "calculation_workspace") and not self.calculation_workspace.input_buffer.strip():
             self._sync_existing_builder_input()
 
@@ -1295,6 +1287,20 @@ class TDDFTPanel(ttk.Frame):
             self._set_loaded_output(resolved)
         except Exception as exc:
             self.update_progress(0, f"Builder output not loaded: {exc}", "red")
+
+    def _clear_loaded_output(self) -> None:
+        """Drop post-processing data that belongs to the previous Builder job."""
+        self.states = []
+        self.output_path = ""
+        self.associated_files = {}
+        self.analysis_result = {}
+        self.tree.delete(*self.tree.get_children())
+        self.analysis_root_combo.configure(values=())
+        self.analysis_root_var.set("")
+        self.output_label.configure(text="Not loaded - waiting for the current Builder job output.")
+        self.associated_summary_var.set("No matching associated files detected.")
+        self._set_ui_mode("input")
+        self.update_progress(0, "Builder input changed; previous output detached.")
 
     def _close_window(self):
         if self.on_close:

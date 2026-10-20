@@ -67,7 +67,7 @@ from app_identity import configure_tk_window_identity, install_dev_reload_shortc
 from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, executable_filetypes, keep_entry_end_visible, load_header_icon
 from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 from shared.molecule_style import add_mesh_safe, molecule_material_parameters
-from shared.multiwfn_locator import find_multiwfn, find_multiwfn_deep
+from shared.multiwfn_locator import find_multiwfn, find_multiwfn_deep, load_saved_multiwfn_path
 from shared.window_layout import compute_visualization_layout, place_visualization_windows
 
 NCI_ICON_PATH = TOOLS_ROOT / "images" / "tr_NCI_icon.png"
@@ -644,7 +644,7 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
 
 
 class NCIPlotterApp:
-    def __init__(self, root, initial_wavefunction_path: Optional[str] = None, *, embedded: bool = False):
+    def __init__(self, root, initial_wavefunction_path: Optional[str] = None, *, initial_multiwfn: Optional[str] = None, embedded: bool = False):
         self.root = root
         self.embedded = bool(embedded)
         self.window_height = screen_fraction_height(self.root)
@@ -656,7 +656,8 @@ class NCIPlotterApp:
         self.config = self.load_config()
 
         self.wavefunction_path = tk.StringVar(value="")
-        self.multiwfn_path = tk.StringVar(value=self.config.get("multiwfn_path", ""))
+        configured_multiwfn = initial_multiwfn or load_saved_multiwfn_path() or self.config.get("multiwfn_path", "")
+        self.multiwfn_path = tk.StringVar(value=find_multiwfn(configured_multiwfn) or "")
         self.output_dir = tk.StringVar(value="")
 
         self.rdg_isovalue = tk.DoubleVar(value=0.50)
@@ -1191,6 +1192,17 @@ class NCIPlotterApp:
         outdir = outdir.parent / f"{outdir.name}_NCI"
         self.output_dir.set(str(outdir))
         self.log(f"Selected wavefunction file: {p}")
+
+    def clear_wavefunction_path(self) -> None:
+        """Detach stale results when Builder switches to a different job."""
+        self.wavefunction_path.set("")
+        self.output_dir.set("")
+        self.rdg_cube = None
+        self.signrho_cube = None
+        self.rdg_cube_path = None
+        self.signrho_cube_path = None
+        self.auto_start_requested = False
+        self.log("Builder input changed; waiting for a matching .wfn or .wfx file.")
 
     def prompt_for_multiwfn(self) -> Optional[str]:
         path = filedialog.askopenfilename(

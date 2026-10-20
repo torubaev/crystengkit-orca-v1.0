@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "crystengkit-orca-v1.0",
+			"path": "."
+		},
+		{
+			"name": "publ_orca_suite",
+			"path": "../publ_orca_suite"
+		}
+	],
+	"settings": {}
+}

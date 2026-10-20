@@ -34,6 +34,18 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class ConversionDiagnostic:
+    """A machine-readable statement about one translated source feature."""
+
+    severity: str
+    status: str
+    feature: str
+    location: str
+    explanation: str
+    source_text: str = ""
+
+
+@dataclass
 class ConversionResult:
     """Result of Gaussian → ORCA conversion."""
     orca_input: str = ""
@@ -44,6 +56,10 @@ class ConversionResult:
     title: str = ""
     source_route: str = ""
     extracted_keywords: Dict[str, any] = field(default_factory=dict)
+    diagnostics: List[ConversionDiagnostic] = field(default_factory=list)
+    blocked: bool = False
+    draft_output: str = ""
+    target_version: str = "ORCA 6.1"
 
 
 class BasisSetMapper:
@@ -68,6 +84,7 @@ class BasisSetMapper:
         "6-31+g": "6-31+G",
         "631+g": "6-31+G",
         "6-31+g(d)": "6-31+G(d)",
+        "6-31+g(d,p)": "6-31+G(d,p)",
         "6-31++g": "6-31++G",
         "631++g": "6-31++G",
         "6-31++g(d,p)": "6-31++G(d,p)",
@@ -128,20 +145,15 @@ class BasisSetMapper:
         normalized = gaussian_basis.strip().lower()
         if normalized in cls.GAUSSIAN_TO_ORCA_BASIS:
             return cls.GAUSSIAN_TO_ORCA_BASIS[normalized], None
-        compact = re.sub(r"[()_\-]", "", normalized)
-        if compact in cls.GAUSSIAN_TO_ORCA_BASIS:
-            return cls.GAUSSIAN_TO_ORCA_BASIS[compact], None
-
-        for key, value in cls.GAUSSIAN_TO_ORCA_BASIS.items():
-            if re.sub(r"[()_\-]", "", key) == compact:
-                return value, None
-
-        # Try partial match for less common variants
-        for key, value in cls.GAUSSIAN_TO_ORCA_BASIS.items():
-            if key in normalized or normalized in key or key in compact or compact in key:
-                return value, f"Basis set '{gaussian_basis}' partially matched to '{value}'"
-
-        return gaussian_basis, f"Unknown basis set '{gaussian_basis}'; using as-is"
+        aliases = {
+            "def2svp": "def2-SVP", "def2svpd": "def2-SVPD",
+            "def2tzvp": "def2-TZVP", "def2tzvpp": "def2-TZVPP",
+            "def2tzvpd": "def2-TZVPD", "def2qzvp": "def2-QZVP",
+            "def2qzvpp": "def2-QZVPP",
+        }
+        if normalized in aliases:
+            return aliases[normalized], None
+        return "", f"Unsupported or unknown Gaussian basis set '{gaussian_basis}'"
 
 
 class FunctionalMapper:
@@ -208,10 +220,6 @@ class FunctionalMapper:
         "dsd-pbe": "DSD-PBE",
         "b2gp-plyp": "B2GP-PLYP",
 
-        # Composite methods (map to closest single-point)
-        "g2": "B3LYP",
-        "g3": "B3LYP",
-        "cbs-qb3": "B3LYP",
         "pm3": "PM3",
         "am1": "AM1",
         "pddg": "PDDG",
@@ -237,14 +245,9 @@ class FunctionalMapper:
             if key.lower().replace("-", "").replace("*", "") == compact:
                 return value, None
 
-        # Partial match
-        for key, value in cls.GAUSSIAN_TO_ORCA_FUNCTIONAL.items():
-            normalized_key = key.lower()
-            compact_key = normalized_key.replace("-", "").replace("*", "")
-            if normalized_key in normalized or normalized in normalized_key or compact_key in compact or compact in compact_key:
-                return value, f"Functional '{gaussian_functional}' partially matched to '{value}'"
-
-        return gaussian_functional, f"Unknown functional '{gaussian_functional}'; using as-is"
+        if normalized in {"g2", "g3", "cbs-qb3", "cbsqb3"}:
+            return "", f"Gaussian composite workflow '{gaussian_functional}' has no single-job ORCA equivalent"
+        return "", f"Unsupported or unknown Gaussian method '{gaussian_functional}'"
 
 
 class SolvationMapper:
@@ -299,8 +302,7 @@ class SolvationMapper:
         if normalized in cls.GAUSSIAN_TO_ORCA_SOLVENT:
             return cls.GAUSSIAN_TO_ORCA_SOLVENT[normalized], None
 
-        # Return as-is if not found (ORCA might support it directly)
-        return gaussian_solvent, f"Solvent '{gaussian_solvent}' not in mapping; using as-is"
+        return "", f"Unsupported or unknown ORCA SMD/CPCM solvent '{gaussian_solvent}'"
 
 
 class DispersionMapper:
@@ -328,7 +330,7 @@ class DispersionMapper:
         if normalized in cls.DISPERSION_MAP:
             return cls.DISPERSION_MAP[normalized], None
 
-        return gaussian_disp, f"Unknown dispersion '{gaussian_disp}'; using as-is"
+        return "", f"Unsupported or unknown Gaussian dispersion '{gaussian_disp}'"
 
 
 def _split_route_tokens(route: str) -> List[str]:

@@ -130,6 +130,107 @@ class ImportHelperTests(unittest.TestCase):
         self.assertIn('workspace_action_widgets.get("TD-DFT")', source)
         self.assertIn("grid_remove", source)
 
+    def test_manual_composite_method_input_is_authoritative_for_run_report(self):
+        class Flag:
+            def get(self): return False
+
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            inp = Path(tmpdir) / "rotation.inp"
+            inp.write_text(
+                "! r2SCAN-3c TightSCF\n\n* xyz 0 1\nH 0 0 0\nH 0 0 1\n*\n",
+                encoding="utf-8",
+            )
+            app = object.__new__(orca_input.App)
+            app.collect = lambda: {
+                "functional": "B3LYP", "basis": "def2-SVP", "ri_jcosx": True,
+                "tight_scf": True, "grid": "DefGrid2", "print_mos": True,
+            }
+            app.job_interaction_var = Flag()
+            app.interaction_relax_var = Flag()
+            app.interaction_thermo_var = Flag()
+            app.fragment_a_indices = []
+            app.fragment_b_indices = []
+            app.frag_a_charge_var = self._Var("0")
+            app.frag_a_mult_var = self._Var("1")
+            app.frag_b_charge_var = self._Var("0")
+            app.frag_b_mult_var = self._Var("1")
+            app.job_opt_var = Flag()
+
+            context = app._context_for_current_input(str(inp), "orca.exe")
+
+        data = context["data"]
+        self.assertEqual(data["functional"], "r2SCAN-3c")
+        self.assertEqual(data["basis"], "")
+        self.assertFalse(data["ri_jcosx"])
+        self.assertEqual(data["grid"], "")
+        self.assertFalse(data["print_mos"])
+
+    def test_composite_method_report_does_not_invent_functional_or_basis(self):
+        app = object.__new__(orca_input.App)
+        summary = {
+            "orca_version": "6.0.1",
+            "settings": {
+                "functional": "r2SCAN-3c", "basis": "", "dispersion": "",
+                "ri_jcosx": False, "tight_scf": True, "grid": "",
+                "solvent_resolved": "", "solvent_input": "", "job_opt": False,
+                "job_interaction": False, "print_mos": False, "job_esp_mep": False,
+            },
+            "post_processing": {},
+            "analysis_files": {"wavefunction_files": [], "cube_files": []},
+        }
+        report = "\n".join(app._calculation_summary_lines(summary))
+        self.assertIn("r2SCAN-3c composite method", report)
+        self.assertNotIn("B3LYP", report)
+        self.assertNotIn("def2-SVP", report)
+        self.assertNotIn("RIJCOSX approximation", report)
+        self.assertNotIn("HOMO-LUMO, QTAIM", report)
+
+    def test_output_evidence_overrides_stale_input_metadata(self):
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        output = (
+            "Program Version 6.0.1 - RELEASE\n"
+            "INPUT FILE\n"
+            "|  1> ! r2SCAN-3c TightSCF\n"
+            "FINAL SINGLE POINT ENERGY -10.0\n"
+            "FINAL SINGLE POINT ENERGY -10.1\n"
+            "****ORCA TERMINATED NORMALLY****\n"
+        )
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            out_path = Path(tmpdir) / "rotation.out"
+            out_path.write_text(output, encoding="utf-8")
+            app = object.__new__(orca_input.App)
+            data, evidence = app._data_verified_from_orca_output(
+                str(out_path),
+                {"functional": "B3LYP", "basis": "def2-SVP", "ri_jcosx": True, "grid": "DefGrid2"},
+            )
+
+        self.assertEqual(data["functional"], "r2SCAN-3c")
+        self.assertEqual(data["basis"], "")
+        self.assertFalse(data["ri_jcosx"])
+        self.assertEqual(data["grid"], "")
+        self.assertEqual(evidence["single_point_count"], 2)
+        self.assertTrue(evidence["normal_termination"])
+
+    def test_report_states_observed_multi_job_count(self):
+        app = object.__new__(orca_input.App)
+        summary = {
+            "orca_version": "6.0.1",
+            "settings": {
+                "functional": "r2SCAN-3c", "basis": "", "dispersion": "",
+                "ri_jcosx": False, "tight_scf": True, "grid": "",
+                "solvent_resolved": "", "solvent_input": "", "job_opt": False,
+                "job_interaction": False, "print_mos": False, "job_esp_mep": False,
+            },
+            "execution_evidence": {"single_point_count": 60, "optimization_performed": False},
+            "post_processing": {},
+            "analysis_files": {"wavefunction_files": [], "cube_files": []},
+        }
+        report = "\n".join(app._calculation_summary_lines(summary))
+        self.assertIn("series of 60 single-point calculations", report)
+
     def test_run_current_input_does_not_implicitly_start_pending_queue(self):
         source = inspect.getsource(orca_input.App.run_orca)
         self.assertNotIn("_has_queued_jobs", source)

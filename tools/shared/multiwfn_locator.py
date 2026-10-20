@@ -3,15 +3,75 @@
 from __future__ import annotations
 
 import os
+import json
+import platform
 import shutil
 import time
 from pathlib import Path
 from typing import Optional
 
 
+MULTIWFN_NAMES = ("Multiwfn.exe", "Multiwfn", "multiwfn")
+SETTINGS_FILENAME = "orca_gaussian_builder_settings.json"
+SETTINGS_KEYS = ("multiwfn_path", "multiwfn_executable", "Multiwfnpath")
+
+
+def user_config_dir() -> Path:
+    system = platform.system().lower()
+    if system == "windows":
+        root = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(root) / "CrystEngKit-ORCA"
+    if system == "darwin":
+        return Path.home() / "Library" / "Application Support" / "CrystEngKit-ORCA"
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "CrystEngKit-ORCA"
+
+
+def builder_settings_paths() -> list[Path]:
+    tools_root = Path(__file__).resolve().parents[1]
+    app_root = tools_root.parent
+    return [
+        user_config_dir() / SETTINGS_FILENAME,
+        tools_root / "Orca_input" / SETTINGS_FILENAME,
+        app_root / SETTINGS_FILENAME,
+    ]
+
+
+def _resolve_configured_value(value: str) -> str:
+    raw = str(value or "").strip().strip('"')
+    if not raw:
+        return ""
+    path = Path(os.path.expandvars(raw)).expanduser()
+    candidates = [path / name for name in MULTIWFN_NAMES] if path.is_dir() else [path]
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return str(candidate.resolve())
+        except OSError:
+            continue
+    if path.name == raw and not path.parent.as_posix().strip("."):
+        found = shutil.which(raw)
+        if found:
+            return str(Path(found).resolve())
+    return ""
+
+
+def load_saved_multiwfn_path(settings_paths: Optional[list[Path]] = None) -> str:
+    """Return the first valid Multiwfn path saved by Builder or a legacy install."""
+    for settings_path in settings_paths or builder_settings_paths():
+        try:
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        for key in SETTINGS_KEYS:
+            resolved = _resolve_configured_value(str(data.get(key, "")))
+            if resolved:
+                return resolved
+    return ""
+
+
 def auto_detect_multiwfn_path(saved: str = "") -> str:
     """Resolve a saved, environment, conventional, or PATH Multiwfn location."""
-    names = ("Multiwfn.exe", "Multiwfn", "multiwfn")
+    names = MULTIWFN_NAMES
     candidates: list[Path] = []
     for value in (saved, os.environ.get("Multiwfnpath", "")):
         value = str(value or "").strip().strip('"')
@@ -49,7 +109,14 @@ def auto_detect_multiwfn_path(saved: str = "") -> str:
     return ""
 
 
-def find_multiwfn() -> Optional[str]:
+def find_multiwfn(saved: str = "") -> Optional[str]:
+    for configured in (saved, load_saved_multiwfn_path()):
+        resolved = _resolve_configured_value(configured)
+        if resolved:
+            return resolved
+    detected = auto_detect_multiwfn_path()
+    if detected:
+        return detected
     candidates = [
         r"C:\Multiwfn_2026.2.2_bin_Win64\Multiwfn.exe",
         r"C:\Multiwfn\Multiwfn.exe",
@@ -115,8 +182,8 @@ def likely_multiwfn_search_roots() -> list[Path]:
     return unique
 
 
-def find_multiwfn_deep(max_seconds: float = 18.0, max_visited: int = 70000, max_depth: int = 6) -> Optional[str]:
-    quick = find_multiwfn()
+def find_multiwfn_deep(max_seconds: float = 18.0, max_visited: int = 70000, max_depth: int = 6, saved: str = "") -> Optional[str]:
+    quick = find_multiwfn(saved)
     if quick:
         return quick
 

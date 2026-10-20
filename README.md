@@ -37,7 +37,7 @@ Typical input formats are:
 - 3D `.mol`, `.sdf`, or `.sd` files; and
 - ChemDraw `.cdxml`, `.cdxm`, or binary `.cdx` files.
 
-CDXML/CDXM files with complete stored `xyz` coordinates are imported natively; 2D-only ChemDraw drawings and binary CDX use Open Babel for conversion and optional 3D generation. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
+CDXML/CDXM files are imported natively from either stored `xyz` coordinates or ordinary 2D ChemDraw coordinates. The native 2D reader expands implicit hydrogens and produces a starting geometry that must be inspected and optimized. Binary CDX uses Open Babel. Generic `.inp` files are treated as ORCA inputs, not Gaussian inputs.
 
 The suite is built around widely used, freely available academic/freeware programs. ORCA[^orca-site] is used for quantum-chemical calculations. Multiwfn[^multiwfn-site] is used for:
 
@@ -115,7 +115,7 @@ CrystEngKit uses external chemistry programs that must be installed separately:
 - **[orca_2aim](https://www.faccts.de/orca/)**, from the ORCA package, for creating wavefunction files
 - **[Multiwfn](http://sobereva.com/multiwfn/)**, for ESP, NCI, and QTAIM analysis
 
-The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again. On Windows, setup offers the Microsoft MPI Runtime as a checked optional component for parallel ORCA calculations. If MPI is skipped or cannot be installed, CrystEngKit automatically defaults generated ORCA inputs to one process.
+The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again. On Windows, setup offers Open Babel 3.1.1 as a checked optional component for additional molecular formats and Microsoft MPI Runtime as a checked optional component for parallel ORCA calculations; either checkbox can be cleared. If MPI is skipped or cannot be installed, CrystEngKit automatically defaults generated ORCA inputs to one process.
 
 ### Manual installation
 
@@ -125,6 +125,7 @@ You need:
 
 - **Python 3.9 or newer**
 - the Python packages listed in `requirements.txt`
+- **[Open Babel](https://openbabel.org/)** for binary CDX and additional molecular formats
 - **[ORCA](https://www.faccts.de/orca/)**, **[orca_2aim](https://www.faccts.de/orca/)**, and **[Multiwfn](http://sobereva.com/multiwfn/)** for the full ESP, NCI, and QTAIM workflow
 
 After downloading or cloning the repository, run the checker.
@@ -524,7 +525,7 @@ Use it when the NCI and QTAIM output files have already been generated for the s
    - `.gau`; and
    - `.gjc`.
 
-   Binary `.cdx` and 2D-only ChemDraw XML use Open Babel. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
+   Binary `.cdx` uses Open Babel. CDXML/CDXM, including 2D-only ChemDraw XML, use the native reader. External ORCA/Gaussian `.out` / `.log` files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.
    
    ![ORCA Input Builder job setup window](images/wiki/orca-input_1.png)
 
