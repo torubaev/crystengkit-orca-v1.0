@@ -59,6 +59,7 @@ from orca_job_queue import OrcaJobQueue, OrcaQueueJob
 from input_format_converter import convert_input_text, detect_input_program
 from workspace_navigation import StackedPageController
 from calculation_report import render_report as render_calculation_report
+from calculation_report import render_interaction_report
 from calculation_report import verify_from_output as verify_calculation_from_output
 
 
@@ -7968,14 +7969,23 @@ class App(tk.Tk):
         return lines
 
     def _interaction_summary_lines(self, summary: Dict[str, object]) -> List[str]:
+        return render_interaction_report(summary)
+
+        # Legacy inline renderer retained temporarily for source compatibility;
+        # execution is delegated to calculation_report.py.
         lines = ["Intermolecular interaction results", f"Geometry source: {summary['geometry_source']}", f"Dimer output: {summary['dimer_output']}", ""]
         eh = summary.get("electronic_hartree", {})
         kcal = summary.get("electronic_kcal_mol", {})
         kj = summary.get("electronic_kj_mol", {})
         labels = {
-            "interaction_uncorrected": "interaction_uncorrected",
-            "bsse": "bsse_magnitude",
-            "interaction_cp_corrected": "interaction_cp_corrected",
+            "dimer": "Raw dimer electronic energy",
+            "monomer_A_frozen": "Raw monomer A electronic energy",
+            "monomer_B_frozen": "Raw monomer B electronic energy",
+            "monomer_A_in_AB_basis": "Raw monomer A energy in the full dimer basis",
+            "monomer_B_in_AB_basis": "Raw monomer B energy in the full dimer basis",
+            "interaction_uncorrected": "Uncorrected interaction energy",
+            "bsse": "BSSE magnitude",
+            "interaction_cp_corrected": "Counterpoise-corrected interaction energy",
             "fragment_deformation_energy": "fragment_deformation_energy",
             "dimer_geometry_relaxation": "dimer_geometry_relaxation",
             "relaxation_energy": "relaxation_energy",
@@ -7984,6 +7994,11 @@ class App(tk.Tk):
             "binding_gibbs": "binding_gibbs",
         }
         for key in [
+            "dimer",
+            "monomer_A_frozen",
+            "monomer_B_frozen",
+            "monomer_A_in_AB_basis",
+            "monomer_B_in_AB_basis",
             "interaction_uncorrected",
             "bsse",
             "interaction_cp_corrected",
@@ -7994,8 +8009,26 @@ class App(tk.Tk):
             "binding_enthalpy",
             "binding_gibbs",
         ]:
-            if key in eh:
-                lines.append(f"{labels.get(key, key)}: {eh[key]: .10f} Eh   ({kcal.get(key, 0.0): .4f} kcal/mol | {kj.get(key, 0.0): .4f} kJ/mol)")
+            value = eh.get(key)
+            if value is None:
+                continue
+            if key in {"dimer", "monomer_A_frozen", "monomer_B_frozen", "monomer_A_in_AB_basis", "monomer_B_in_AB_basis"}:
+                lines.append(f"{labels[key]}: {value: .10f} Eh")
+            else:
+                lines.append(f"{labels.get(key, key)}: {value: .10f} Eh   ({kcal.get(key, 0.0): .4f} kcal/mol | {kj.get(key, 0.0): .4f} kJ/mol)")
+        cp_kcal = kcal.get("interaction_cp_corrected")
+        if cp_kcal is not None:
+            if cp_kcal < -0.1:
+                interpretation = "negative, indicating a stabilizing electronic interaction at the reported geometry"
+            elif cp_kcal > 0.1:
+                interpretation = "positive, indicating an unfavorable electronic interaction at the reported geometry"
+            else:
+                interpretation = "close to zero at the reported geometry"
+            lines.extend([
+                "",
+                f"Energy comment: The counterpoise-corrected interaction energy is {interpretation}. ",
+                "The uncorrected value contains basis-set superposition error; the counterpoise-corrected value is the preferred electronic interaction energy for this calculation. These values do not include thermal or entropic contributions unless separately reported below.",
+            ])
         failed_jobs = summary.get("failed_jobs", [])
         if failed_jobs:
             lines.append("")
@@ -8675,6 +8708,8 @@ class App(tk.Tk):
             self.queue_state_path = path
             self.job_queue.save(path)
             self._save_launcher_settings()
+            self._refresh_queue_selector()
+            self._refresh_queue_tree()
             self.status.configure(text=f"Saved ORCA queue file: {path}")
         except Exception as exc:
             messagebox.showerror("Save Queue error", str(exc))
@@ -8715,12 +8750,9 @@ class App(tk.Tk):
         return cleaned or None
 
     def _ensure_queue_for_addition(self) -> bool:
-        if not self._queue_has_any_jobs():
-            name = self._ask_for_queue_name("New ORCA job queue")
-            if not name:
-                return False
-            self.job_queue.create_queue(name)
-            self._refresh_queue_selector()
+        # The queue manager always has an active queue ("Default" initially).
+        # Naming another queue is optional and belongs to the explicit New
+        # queue action; adding the first input must not force that dialog.
         return self._ensure_queue_state_path()
 
     def _create_job_queue(self):
@@ -8762,15 +8794,15 @@ class App(tk.Tk):
             )
 
     def _add_files_to_job_queue(self):
-        if not self._ensure_queue_for_addition():
-            return
         paths = filedialog.askopenfilenames(
             title="Add ORCA input files to queue",
             filetypes=[("ORCA input files", "*.inp"), ("All files", "*.*")],
         )
         if not paths:
             return
-        added = self.job_queue.add_input_files(paths)
+        if not self._ensure_queue_for_addition():
+            return
+        added = self.job_queue.add_input_files(paths, context=self._queue_context_snapshot(include_fragments=False))
         self._save_job_queue()
         self._refresh_queue_selector()
         self._refresh_queue_tree()
@@ -8788,7 +8820,10 @@ class App(tk.Tk):
                 return
             if Path(inp_path).suffix.lower() != ".inp":
                 raise ValueError(f"Only ORCA .inp files can be queued: {inp_path}")
-            added = self.job_queue.add_input_files([inp_path])
+            added = self.job_queue.add_input_files(
+                [inp_path],
+                context=self._queue_context_snapshot(include_fragments=True),
+            )
             self._save_job_queue()
             self._refresh_queue_selector()
             self._refresh_queue_tree()
@@ -8813,6 +8848,7 @@ class App(tk.Tk):
             except Exception:
                 pass
         if not indices:
+            self.status.configure(text="Select one or more queue jobs to remove.")
             return
         running_indices = [
             idx for idx in indices
@@ -8821,10 +8857,14 @@ class App(tk.Tk):
         if running_indices:
             messagebox.showinfo("Queue Jobs", "The running job cannot be removed. Stop it first if needed.")
             return
-        self.job_queue.remove_indices(indices)
-        self._save_job_queue()
+        removed = self.job_queue.remove_indices(indices)
+        saved = self._save_job_queue()
         self._refresh_queue_tree()
-        self.status.configure(text=f"Queue updated. Active queue: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+        save_note = "" if saved else " Changes are not saved."
+        self.status.configure(
+            text=f"Removed {removed} queue job(s). Active queue: {self.job_queue.active_queue}. "
+            f"Queue: {self.job_queue.summary()}.{save_note}"
+        )
 
     def _clear_job_queue(self):
         if self.run_process and self.run_process.poll() is None:
@@ -8848,6 +8888,12 @@ class App(tk.Tk):
         self._save_job_queue()
         self._refresh_queue_tree()
         self.status.configure(text=f"Queue reset. Active queue: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+
+    def _autosave_job_queue(self):
+        if self._save_job_queue():
+            self.status.configure(text=f"Queue autosaved: {self.queue_state_path}")
+        else:
+            self.status.configure(text="Queue autosave was cancelled or failed.")
 
     def open_job_queue(self):
         if self.queue_window is not None and self.queue_window.winfo_exists():
@@ -8905,7 +8951,7 @@ class App(tk.Tk):
         ttk.Button(buttons, text="Run Queue", command=self.run_job_queue, style="Primary.TButton").grid(row=0, column=4, sticky="ew", padx=(6, 0))
         ttk.Button(buttons, text="Save Queue", command=self.save_job_queue_as).grid(row=0, column=5, sticky="ew", padx=(6, 0))
         ttk.Button(buttons, text="Load Queue", command=self.load_job_queue_as).grid(row=0, column=6, sticky="ew", padx=(6, 0))
-        ttk.Button(buttons, text="Autosave now", command=self._save_job_queue).grid(row=0, column=7, sticky="ew", padx=(6, 0))
+        ttk.Button(buttons, text="Autosave now", command=self._autosave_job_queue).grid(row=0, column=7, sticky="ew", padx=(6, 0))
         ttk.Button(buttons, text="Close", command=win.destroy).grid(row=0, column=8, sticky="ew", padx=(6, 0))
 
         self._refresh_queue_selector()
@@ -9078,13 +9124,16 @@ class App(tk.Tk):
         # method keywords must therefore be authoritative for reports; the UI
         # may still contain defaults when a hand-written input was loaded.
         data = self._data_from_orca_input_file(inp_path)
-        data["job_interaction"] = bool(self.job_interaction_var.get())
-        data["interaction_relaxation"] = bool(self.interaction_relax_var.get())
-        data["interaction_thermo"] = bool(self.interaction_thermo_var.get())
+        interaction_enabled = bool(self.job_interaction_var.get())
+        interaction_relax = bool(self.interaction_relax_var.get())
+        interaction_thermo = bool(self.interaction_thermo_var.get())
+        data["job_interaction"] = interaction_enabled
+        data["interaction_relaxation"] = interaction_relax
+        data["interaction_thermo"] = interaction_thermo
         context = {
-            "interaction_enabled": bool(self.job_interaction_var.get()),
-            "interaction_relax": bool(self.interaction_relax_var.get()),
-            "interaction_thermo": bool(self.interaction_thermo_var.get()),
+            "interaction_enabled": interaction_enabled,
+            "interaction_relax": interaction_relax,
+            "interaction_thermo": interaction_thermo,
             "interaction_cp": True,
             "fragment_a_indices": list(self.fragment_a_indices),
             "fragment_b_indices": list(self.fragment_b_indices),
@@ -9099,14 +9148,46 @@ class App(tk.Tk):
         }
         return context
 
-    def _context_for_queued_input(self, inp_path: str, orca_path: str) -> Dict:
+    def _queue_context_snapshot(self, include_fragments: bool) -> Dict[str, object]:
+        """Capture Builder options that cannot be reconstructed from an .inp file."""
+        interaction_enabled = bool(self.job_interaction_var.get())
+        if not interaction_enabled:
+            return {}
         return {
+            "interaction_enabled": interaction_enabled,
+            "interaction_relax": bool(self.interaction_relax_var.get()),
+            "interaction_thermo": bool(self.interaction_thermo_var.get()),
+            "interaction_cp": True,
+            "fragment_a_indices": list(self.fragment_a_indices) if include_fragments else [],
+            "fragment_b_indices": list(self.fragment_b_indices) if include_fragments else [],
+            "frag_a_charge": int(self.frag_a_charge_var.get()),
+            "frag_a_mult": int(self.frag_a_mult_var.get()),
+            "frag_b_charge": int(self.frag_b_charge_var.get()),
+            "frag_b_mult": int(self.frag_b_mult_var.get()),
+        }
+
+    def _context_for_queued_input(self, job: OrcaQueueJob, orca_path: str) -> Dict:
+        inp_path = job.input_path
+        data = self._data_from_orca_input_file(inp_path)
+        saved = dict(job.context or {})
+        context = {
             "input_path": inp_path,
             "orca_path": orca_path,
-            "data": self._data_from_orca_input_file(inp_path),
+            "data": data,
             "post_processing": {},
             "queue_job": True,
         }
+        context.update(saved)
+        context["input_path"] = inp_path
+        context["orca_path"] = orca_path
+        context["data"] = data
+        context["post_processing"] = {}
+        context["queue_job"] = True
+        context["dimer_optimized"] = bool(data.get("job_opt"))
+        data["job_interaction"] = bool(context.get("interaction_enabled"))
+        data["interaction_relaxation"] = bool(context.get("interaction_relax"))
+        data["interaction_thermo"] = bool(context.get("interaction_thermo", True))
+        return context
 
     @staticmethod
     def _json_safe_run_value(value):
@@ -9375,10 +9456,14 @@ class App(tk.Tk):
         if context.get("interaction_enabled"):
             interaction_warnings = self._preflight_interaction_context(context)
 
-        self.clear_monitor(reset_status=False)
+        # A queue is one user-visible workflow.  Keep its monitor history across
+        # jobs so the queue header, completed-job output, and transition to the
+        # next input do not disappear whenever a new ORCA process starts.
+        if not context.get("queue_job"):
+            self.clear_monitor(reset_status=False)
         self._show_output_mode("monitor")
         if context.get("queue_job"):
-            self.append_monitor(f"=== Queued ORCA job ===\nInput: {inp_path}\n")
+            self.append_monitor(f"\n=== Queued ORCA job ===\nInput: {inp_path}\n")
         for warning in interaction_warnings:
             self.append_monitor(f"Interaction warning: {warning}")
         self.monitor_started_at = time.time()
@@ -9427,13 +9512,19 @@ class App(tk.Tk):
         self._refresh_queue_tree()
         if job is None:
             self.queue_running = False
-            self.status.configure(text=f"ORCA queue finished: {self.job_queue.active_queue}. Queue: {self.job_queue.summary()}")
+            queue_summary = self.job_queue.summary()
+            self.append_monitor(
+                f"\n=== ORCA job queue finished ===\n"
+                f"Active queue: {self.job_queue.active_queue}\n"
+                f"Queue: {queue_summary}\n"
+            )
+            self.status.configure(text=f"ORCA queue finished: {self.job_queue.active_queue}. Queue: {queue_summary}")
             self._set_monitor_stage("Queue finished")
             self._set_monitor_progress(100.0)
-            messagebox.showinfo("ORCA queue finished", f"Queued ORCA jobs finished.\n\nQueue: {self.job_queue.active_queue}\n{self.job_queue.summary()}")
+            messagebox.showinfo("ORCA queue finished", f"Queued ORCA jobs finished.\n\nQueue: {self.job_queue.active_queue}\n{queue_summary}")
             return
         try:
-            context = self._context_for_queued_input(job.input_path, orca_path)
+            context = self._context_for_queued_input(job, orca_path)
             if not self._start_orca_input(
                 job.input_path,
                 orca_path,
@@ -10173,6 +10264,11 @@ class App(tk.Tk):
             self.active_queue_job = None
             self._save_job_queue()
             self._refresh_queue_tree()
+            self.append_monitor(
+                f"\n=== Queued job {status} ===\n"
+                f"Output: {out_path}\n"
+                f"Queue: {self.job_queue.summary()}\n"
+            )
             orca_path = str(context.get("orca_path", "")).strip()
             if self.queue_running and orca_path:
                 self.after(500, lambda path=orca_path: self._start_next_queued_job(path))

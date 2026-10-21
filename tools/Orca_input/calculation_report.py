@@ -208,6 +208,70 @@ def render_report(summary: Mapping, github_url: str) -> List[str]:
     return lines
 
 
+def render_interaction_report(summary: Mapping) -> List[str]:
+    """Render raw and derived counterpoise interaction-energy results."""
+    lines = [
+        "Intermolecular interaction results",
+        f"Geometry source: {summary['geometry_source']}",
+        f"Dimer output: {summary['dimer_output']}",
+        "",
+    ]
+    hartree = summary.get("electronic_hartree", {})
+    kcal = summary.get("electronic_kcal_mol", {})
+    kj = summary.get("electronic_kj_mol", {})
+    raw_labels = {
+        "dimer": "Raw dimer electronic energy",
+        "monomer_A_frozen": "Raw monomer A electronic energy",
+        "monomer_B_frozen": "Raw monomer B electronic energy",
+        "monomer_A_in_AB_basis": "Raw monomer A energy in the full dimer basis",
+        "monomer_B_in_AB_basis": "Raw monomer B energy in the full dimer basis",
+    }
+    derived_labels = {
+        "interaction_uncorrected": "Uncorrected interaction energy",
+        "bsse": "BSSE magnitude",
+        "interaction_cp_corrected": "Counterpoise-corrected interaction energy",
+        "fragment_deformation_energy": "Fragment deformation energy",
+        "dimer_geometry_relaxation": "Dimer geometry-relaxation energy",
+        "relaxation_energy": "Total relaxation energy",
+        "binding_electronic": "Electronic binding energy",
+        "binding_enthalpy": "Binding enthalpy",
+        "binding_gibbs": "Binding Gibbs energy",
+    }
+    for key, label in raw_labels.items():
+        value = hartree.get(key)
+        if value is not None:
+            lines.append(f"{label}: {value: .10f} Eh")
+    for key, label in derived_labels.items():
+        value = hartree.get(key)
+        if value is not None:
+            lines.append(
+                f"{label}: {value: .10f} Eh   "
+                f"({kcal.get(key, 0.0): .4f} kcal/mol | {kj.get(key, 0.0): .4f} kJ/mol)"
+            )
+    cp_kcal = kcal.get("interaction_cp_corrected")
+    if cp_kcal is not None:
+        if cp_kcal < -0.1:
+            interpretation = "negative, indicating a stabilizing electronic interaction at the reported geometry"
+        elif cp_kcal > 0.1:
+            interpretation = "positive, indicating an unfavorable electronic interaction at the reported geometry"
+        else:
+            interpretation = "close to zero at the reported geometry"
+        lines.extend([
+            "",
+            f"Energy comment: The counterpoise-corrected interaction energy is {interpretation}.",
+            "The uncorrected value contains basis-set superposition error; the counterpoise-corrected value is the preferred electronic interaction energy for this calculation. These values do not include thermal or entropic contributions unless separately reported below.",
+        ])
+    failed_jobs = summary.get("failed_jobs", [])
+    if failed_jobs:
+        lines.extend(["", "Crash notes:"])
+        lines.extend(f"- {item['name']}: {item['error']}" for item in failed_jobs)
+    warnings = summary.get("warnings", [])
+    if warnings:
+        lines.extend(["", "Warnings:"])
+        lines.extend(f"- {item}" for item in warnings)
+    return lines
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate an evidence-based ORCA calculation report.")
     parser.add_argument("output", help="ORCA .out file")

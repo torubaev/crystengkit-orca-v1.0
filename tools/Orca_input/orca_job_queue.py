@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -16,6 +16,7 @@ class OrcaQueueJob:
     output_path: str
     status: str = "queued"
     message: str = ""
+    context: Dict[str, object] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -92,7 +93,7 @@ class OrcaJobQueue:
         self.current_index = None
         self.current_queue = None
 
-    def add_input_files(self, paths: Iterable[str]) -> int:
+    def add_input_files(self, paths: Iterable[str], context: Optional[Dict[str, object]] = None) -> int:
         added = 0
         seen = {str(Path(job.input_path).resolve()).lower() for job in self.jobs}
         for raw_path in paths:
@@ -106,17 +107,25 @@ class OrcaJobQueue:
                 OrcaQueueJob(
                     input_path=str(path),
                     output_path=str(path.with_suffix(".out")),
+                    context=dict(context or {}),
                 )
             )
             seen.add(key)
             added += 1
         return added
 
-    def remove_indices(self, indices: Iterable[int]):
-        blocked = set(indices)
-        self.jobs = [job for idx, job in enumerate(self.jobs) if idx not in blocked]
+    def remove_indices(self, indices: Iterable[int]) -> int:
+        """Remove jobs from the active queue and return the number removed."""
+        jobs = self.jobs
+        blocked = {idx for idx in indices if 0 <= idx < len(jobs)}
+        if not blocked:
+            return 0
+        # ``jobs`` is a read-only property exposing the active queue list.  It
+        # must be mutated in place rather than assigned to.
+        jobs[:] = [job for idx, job in enumerate(jobs) if idx not in blocked]
         self.current_index = None
         self.current_queue = None
+        return len(blocked)
 
     def reset_pending(self):
         for job in self.jobs:

@@ -231,12 +231,83 @@ class ImportHelperTests(unittest.TestCase):
         report = "\n".join(app._calculation_summary_lines(summary))
         self.assertIn("series of 60 single-point calculations", report)
 
+    def test_interaction_report_includes_raw_cp_and_interpretation(self):
+        app = object.__new__(orca_input.App)
+        summary = {
+            "geometry_source": "dimer.out",
+            "dimer_output": "dimer.out",
+            "electronic_hartree": {
+                "dimer": -20.030,
+                "monomer_A_frozen": -10.000,
+                "monomer_B_frozen": -10.000,
+                "monomer_A_in_AB_basis": -10.005,
+                "monomer_B_in_AB_basis": -10.005,
+                "interaction_uncorrected": -0.030,
+                "bsse": 0.010,
+                "interaction_cp_corrected": -0.020,
+            },
+            "electronic_kcal_mol": {
+                "interaction_uncorrected": -18.8253,
+                "bsse": 6.2751,
+                "interaction_cp_corrected": -12.5502,
+            },
+            "electronic_kj_mol": {
+                "interaction_uncorrected": -78.7649,
+                "bsse": 26.2550,
+                "interaction_cp_corrected": -52.5100,
+            },
+        }
+
+        report = "\n".join(app._interaction_summary_lines(summary))
+
+        self.assertIn("Raw dimer electronic energy: -20.0300000000 Eh", report)
+        self.assertIn("Raw monomer A energy in the full dimer basis: -10.0050000000 Eh", report)
+        self.assertIn("Uncorrected interaction energy", report)
+        self.assertIn("BSSE magnitude", report)
+        self.assertIn("Counterpoise-corrected interaction energy", report)
+        self.assertIn("stabilizing electronic interaction", report)
+
     def test_run_current_input_does_not_implicitly_start_pending_queue(self):
         source = inspect.getsource(orca_input.App.run_orca)
         self.assertNotIn("_has_queued_jobs", source)
         self.assertNotIn("_start_job_queue", source)
         queue_source = inspect.getsource(orca_input.App.run_job_queue)
         self.assertIn("_start_job_queue", queue_source)
+
+    def test_queued_input_restores_saved_interaction_context(self):
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            inp = Path(tmpdir) / "dimer.inp"
+            inp.write_text("! B3LYP def2-SVP Opt\n\n* xyz 0 1\nH 0 0 0\nH 0 0 1\n*\n", encoding="utf-8")
+            job = orca_input.OrcaQueueJob(
+                str(inp),
+                str(inp.with_suffix(".out")),
+                context={
+                    "interaction_enabled": True,
+                    "interaction_relax": False,
+                    "interaction_thermo": True,
+                    "frag_a_charge": 0,
+                    "frag_a_mult": 1,
+                    "frag_b_charge": 0,
+                    "frag_b_mult": 1,
+                },
+            )
+            app = object.__new__(orca_input.App)
+            app.collect = lambda: {
+                "program": "ORCA", "functional": "", "basis": "", "dispersion": "",
+                "ri_jcosx": False, "tight_scf": False, "grid": "", "charge": 0,
+                "multiplicity": 1, "solvent_text": "", "job_sp": False, "job_opt": False,
+                "job_freq": False, "job_nmr": False, "job_tddft": False,
+                "job_esp_mep": False, "job_interaction": False, "print_mos": False,
+                "freeze_heavy": False, "freeze_all": False,
+            }
+
+            context = app._context_for_queued_input(job, "orca.exe")
+
+        self.assertTrue(context["interaction_enabled"])
+        self.assertTrue(context["data"]["job_interaction"])
+        self.assertTrue(context["dimer_optimized"])
 
     def test_show_input_regenerates_loaded_input_after_builder_change(self):
         app = object.__new__(orca_input.App)
