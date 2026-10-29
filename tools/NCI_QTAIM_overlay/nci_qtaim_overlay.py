@@ -80,6 +80,22 @@ def float_setting(settings: dict, key: str, default: float) -> float:
 def str_setting(settings: dict, key: str, default: str) -> str:
     value = str(settings.get(key, default))
     return value if value else default
+
+
+def color_to_rgb01(color: str) -> tuple[float, float, float]:
+    """Convert a PyVista/Tk color without making rendering depend on matplotlib."""
+    try:
+        return tuple(float(value) for value in pv.Color(color).float_rgb)
+    except Exception:
+        pass
+    value = str(color).strip().lstrip("#")
+    if len(value) == 6:
+        try:
+            return tuple(int(value[index:index + 2], 16) / 255.0 for index in (0, 2, 4))
+        except ValueError:
+            pass
+    named = {"yellow": (1.0, 1.0, 0.0), "white": (1.0, 1.0, 1.0), "black": (0.0, 0.0, 0.0)}
+    return named.get(str(color).strip().lower(), (1.0, 1.0, 0.0))
 MAX_SEARCH_DEPTH = 3
 MAX_SEARCH_FILES = 2500
 SKIP_DIR_NAMES = {
@@ -692,6 +708,7 @@ def add_qtaim_bcps(
     show_rcp: bool = False,
     show_ccp: bool = False,
     show_unknown: bool = False,
+    cp_colors: Optional[dict[str, str]] = None,
 ):
     """
     Add QTAIM critical points to the plotter, filtering by type based on visibility flags.
@@ -740,7 +757,7 @@ def add_qtaim_bcps(
         sphere = pv.Sphere(radius=cp_radius, center=center, theta_resolution=48, phi_resolution=48)
         
         # Color based on CP type
-        color = CP_COLORS.get(normalized_type, "white")
+        color = (cp_colors or CP_COLORS).get(normalized_type, CP_COLORS.get(normalized_type, "white"))
         
         plotter.add_mesh(
             sphere,
@@ -771,19 +788,26 @@ def add_qtaim_bcps(
     return count
 
 
-def add_bond_paths(plotter, bond_paths, radius: float = 0.055, color: str = "yellow"):
+def add_bond_paths(
+    plotter,
+    bond_paths,
+    radius: float = 0.055,
+    color: str = "yellow",
+    width: float = 6.0,
+):
     count = 0
     for bp in bond_paths:
         pts = np.asarray(bp.points, dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] != 3:
             continue
-        actor = plotter.add_lines(pts, color=color, width=6, connected=True)
+        line_width = max(1.0, float(width))
+        actor = plotter.add_lines(pts, color=color, width=line_width, connected=True)
         try:
             prop = actor.GetProperty()
             prop.SetLighting(False)
             prop.SetRenderLinesAsTubes(False)
-            prop.SetLineWidth(6)
-            prop.SetColor(1.0, 1.0, 0.0)
+            prop.SetLineWidth(line_width)
+            prop.SetColor(*color_to_rgb01(color))
         except Exception:
             pass
         count += 1
@@ -1011,6 +1035,9 @@ def build_overlay(
     bond_radius: float = 0.075,
     show_covalent_bonds: bool = True,
     show_bond_paths: bool = True,
+    cp_colors: Optional[dict[str, str]] = None,
+    bond_path_color: str = "yellow",
+    bond_path_width: float = 6.0,
     save_path: Optional[Path] = None,
     show_window: bool = True,
     parent_window: Optional[tk.Misc] = None,
@@ -1126,6 +1153,7 @@ def build_overlay(
                 show_rcp=show_rcp,
                 show_ccp=show_ccp,
                 show_unknown=show_unknown,
+                cp_colors=cp_colors,
             )
 
     if show_paths and show_bond_paths and inputs.qtaim_path_file and Path(inputs.qtaim_path_file).is_file():
@@ -1147,7 +1175,13 @@ def build_overlay(
             "bond-path",
         )
         paths = filter_paths_to_molecule(paths, rdg_cube.atom_coords)
-        path_count = add_bond_paths(plotter, paths, radius=max(0.040, bond_radius * 0.95))
+        path_count = add_bond_paths(
+            plotter,
+            paths,
+            radius=max(0.040, bond_radius * 0.95),
+            color=bond_path_color,
+            width=bond_path_width,
+        )
 
     plotter.add_text(
         f"Layers: molecule {'on' if show_molecule else 'off'} | NCI {nci_surface_count} | BCPs {cp_count} | paths {path_count}",
@@ -1311,6 +1345,9 @@ class OverlayApp(tk.Tk):
         self.cp_scale = tk.DoubleVar(value=float_setting(qtaim_graphics, "cp_scale", 0.14))
         self.atom_scale = tk.DoubleVar(value=float_setting(qtaim_graphics, "atom_scale", 0.38))
         self.bond_radius = tk.DoubleVar(value=float_setting(qtaim_graphics, "bond_radius", 0.075))
+        self.cp_colors = dict(qtaim_graphics.get("cp_colors") or CP_COLORS)
+        self.bond_path_color = str_setting(qtaim_graphics, "bond_path_color", "yellow")
+        self.bond_path_width = float_setting(qtaim_graphics, "bond_path_width", 6.0)
         
         self.image_width = tk.IntVar(value=3000)
         self.image_height = tk.IntVar(value=2250)
@@ -1479,6 +1516,17 @@ class OverlayApp(tk.Tk):
             messagebox.showerror("Overlay failed", str(exc))
 
     def overlay_build_kwargs(self) -> dict:
+        # QTAIM is the source of truth for shared QTAIM styling. Re-read its
+        # live JSON for every render so an already-open overlay does not keep
+        # stale colors or line widths after they are changed in QTAIM.
+        qtaim_graphics = load_qtaim_graphics_settings()
+        self.cp_colors = dict(qtaim_graphics.get("cp_colors") or self.cp_colors)
+        self.bond_path_color = str_setting(qtaim_graphics, "bond_path_color", self.bond_path_color)
+        self.bond_path_width = float_setting(qtaim_graphics, "bond_path_width", self.bond_path_width)
+        self.cp_scale.set(float_setting(qtaim_graphics, "cp_scale", float(self.cp_scale.get())))
+        self.atom_scale.set(float_setting(qtaim_graphics, "atom_scale", float(self.atom_scale.get())))
+        self.bond_radius.set(float_setting(qtaim_graphics, "bond_radius", float(self.bond_radius.get())))
+        self.background.set(str_setting(qtaim_graphics, "background", self.background.get()))
         inputs = OverlayInputs(
             rdg_cube=Path(self.rdg_cube.get().strip()) if self.rdg_cube.get().strip() else None,
             signrho_cube=Path(self.signrho_cube.get().strip()) if self.signrho_cube.get().strip() else None,
@@ -1509,6 +1557,9 @@ class OverlayApp(tk.Tk):
             "atom_scale": float(self.atom_scale.get()),
             "bond_radius": float(self.bond_radius.get()),
             "show_covalent_bonds": bool(self.show_covalent_bonds.get()),
+            "cp_colors": self.cp_colors,
+            "bond_path_color": self.bond_path_color,
+            "bond_path_width": self.bond_path_width,
         }
 
     def save_overlay_image(self):
@@ -1620,6 +1671,7 @@ def run_from_wavefunction(wavefunction_file: Path, args) -> bool:
             root.destroy()
         return False
 
+    qtaim_graphics = load_qtaim_graphics_settings()
     build_kwargs = {
         "inputs": inspection.inputs,
         "rdg_isovalue": args.rdg_isovalue,
@@ -1644,6 +1696,9 @@ def run_from_wavefunction(wavefunction_file: Path, args) -> bool:
         "bond_radius": float(args.bond_radius),
         "show_covalent_bonds": args.show_covalent_bonds == "1",
         "show_bond_paths": args.show_bond_paths == "1",
+        "cp_colors": dict(qtaim_graphics.get("cp_colors") or CP_COLORS),
+        "bond_path_color": str_setting(qtaim_graphics, "bond_path_color", "yellow"),
+        "bond_path_width": float_setting(qtaim_graphics, "bond_path_width", 6.0),
     }
     if args.no_gui:
         build_overlay(**build_kwargs)
@@ -1721,6 +1776,9 @@ def main():
             bond_radius=float(args.bond_radius),
             show_covalent_bonds=args.show_covalent_bonds == "1",
             show_bond_paths=args.show_bond_paths == "1",
+            cp_colors=dict(qtaim_graphics.get("cp_colors") or CP_COLORS),
+            bond_path_color=str_setting(qtaim_graphics, "bond_path_color", "yellow"),
+            bond_path_width=float_setting(qtaim_graphics, "bond_path_width", 6.0),
         )
         return
 

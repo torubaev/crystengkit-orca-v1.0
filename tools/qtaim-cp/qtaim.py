@@ -1850,7 +1850,13 @@ def color_to_rgb01(color: str) -> Tuple[float, float, float]:
     return (1.0, 1.0, 0.0)
 
 
-def add_exact_bond_paths(plotter, bond_paths: List[BondPath], radius: float = 0.10, color: str = "yellow") -> int:
+def add_exact_bond_paths(
+    plotter,
+    bond_paths: List[BondPath],
+    radius: float = 0.10,
+    color: str = "yellow",
+    width: float = 6.0,
+) -> int:
     if not bond_paths:
         return 0
     import numpy as np
@@ -1861,12 +1867,13 @@ def add_exact_bond_paths(plotter, bond_paths: List[BondPath], radius: float = 0.
         pts = np.array(bp.points, dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] != 3:
             continue
-        actor = plotter.add_lines(pts, color=color, width=6, connected=True)
+        line_width = max(1.0, float(width))
+        actor = plotter.add_lines(pts, color=color, width=line_width, connected=True)
         try:
             prop = actor.GetProperty()
             prop.SetLighting(False)
             prop.SetRenderLinesAsTubes(False)
-            prop.SetLineWidth(6)
+            prop.SetLineWidth(line_width)
             prop.SetColor(*color_to_rgb01(color))
         except Exception:
             pass
@@ -2047,6 +2054,7 @@ def draw_qtaim_scene(
     background: str = "black",
     cp_colors: Optional[Dict[str, str]] = None,
     bond_path_color: str = DEFAULT_BOND_PATH_COLOR,
+    bond_path_width: float = 6.0,
 ) -> None:
     if pv is None:
         raise RuntimeError("PyVista is not installed. Install with: pip install pyvista vtk")
@@ -2112,6 +2120,7 @@ def draw_qtaim_scene(
             visible_bond_paths,
             radius=max(0.040, bond_radius * 0.95),
             color=bond_path_color,
+            width=bond_path_width,
         )
 
     label_points = []
@@ -2289,6 +2298,7 @@ def visualize_qtaim(
     background: str = "black",
     cp_colors: Optional[Dict[str, str]] = None,
     bond_path_color: str = DEFAULT_BOND_PATH_COLOR,
+    bond_path_width: float = 6.0,
 ) -> None:
     if pv is None:
         raise RuntimeError("PyVista is not installed. Install with: pip install pyvista vtk")
@@ -2316,6 +2326,7 @@ def visualize_qtaim(
         background=background,
         cp_colors=cp_colors,
         bond_path_color=bond_path_color,
+        bond_path_width=bond_path_width,
     )
     bring_pyvista_window_to_front(plotter)
     plotter.show(title="QTAIM")
@@ -2380,6 +2391,7 @@ class QTAIMGui(ttk.Frame):
             "unknown": tk.StringVar(value=CP_COLORS["unknown"]),
         }
         self.bond_path_color = tk.StringVar(value=DEFAULT_BOND_PATH_COLOR)
+        self.bond_path_width = tk.DoubleVar(value=6.0)
         self.multiwfn_commands = DEFAULT_MULTIWFN_COMMANDS
         self._graphics_save_job = None
         self.live_plot_job = None
@@ -2421,7 +2433,7 @@ class QTAIMGui(ttk.Frame):
             "show_molecule", "show_covalent_bonds", "show_bond_paths", "atom_scale",
             "cp_scale", "bond_radius", "timeout_s", "background", "cp_energy_unit",
             "open_native_after_run", "use_existing_outputs", "path_display_range",
-            "image_resolution", "bond_path_color",
+            "image_resolution", "bond_path_color", "bond_path_width",
         )
         state = {name: getattr(self, name).get() for name in names}
         state["cp_colors"] = {key: variable.get() for key, variable in self.cp_color_vars.items()}
@@ -2468,6 +2480,7 @@ class QTAIMGui(ttk.Frame):
             "atom_scale": self.atom_scale,
             "cp_scale": self.cp_scale,
             "bond_radius": self.bond_radius,
+            "bond_path_width": self.bond_path_width,
         }
         for key, var in float_vars.items():
             try:
@@ -2513,6 +2526,7 @@ class QTAIMGui(ttk.Frame):
             "path_display_range": str(self.path_display_range.get()),
             "cp_colors": {key: var.get() for key, var in self.cp_color_vars.items()},
             "bond_path_color": str(self.bond_path_color.get()),
+            "bond_path_width": float(self.bond_path_width.get()),
         }
 
     def save_current_graphics_settings(self) -> None:
@@ -2606,6 +2620,7 @@ class QTAIMGui(ttk.Frame):
             self.cp_energy_unit,
             self.path_display_range,
             self.bond_path_color,
+            self.bond_path_width,
             *self.cp_color_vars.values(),
         ):
             var.trace_add("write", self.schedule_graphics_settings_save)
@@ -2853,6 +2868,8 @@ class QTAIMGui(ttk.Frame):
         path_wrap.pack(anchor="w", pady=(4, 0))
         ttk.Checkbutton(path_wrap, text="QTAIM paths", variable=self.show_bond_paths).pack(side="left")
         self.make_color_swatch(path_wrap, self.bond_path_color, "Select QTAIM path color").pack(side="left", padx=(4, 2))
+        ttk.Label(path_wrap, text="Width").pack(side="left", padx=(8, 2))
+        ttk.Entry(path_wrap, textvariable=self.bond_path_width, width=5).pack(side="left")
 
         size_frame = ttk.LabelFrame(settings, text="Sizes", padding=8)
         size_frame.pack(fill="x", pady=(0, 8))
@@ -3615,6 +3632,7 @@ class QTAIMGui(ttk.Frame):
                 background=self.background.get(),
                 cp_colors=self.current_cp_colors(),
                 bond_path_color=self.bond_path_color.get(),
+                bond_path_width=float(self.bond_path_width.get()),
             )
             if camera_position is not None:
                 try:
@@ -3680,6 +3698,7 @@ class QTAIMGui(ttk.Frame):
         for key, var in self.cp_color_vars.items():
             var.set(CP_COLORS[key])
         self.bond_path_color.set(DEFAULT_BOND_PATH_COLOR)
+        self.bond_path_width.set(6.0)
         self.update_plot()
 
     def save_image(self):
