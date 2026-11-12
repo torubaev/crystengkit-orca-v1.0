@@ -731,7 +731,24 @@ class CrystalHabitApp(tk.Tk):
         if not self.final_xyz or not self.final_xyz.is_file():
             messagebox.showwarning(APP_TITLE, "No completed CGAspects XYZ file is available.", parent=self)
             return
-        subprocess.Popen([str(exe), str(self.final_xyz)], cwd=str(self.final_xyz.parent))
+        stage = Path(tempfile.mkdtemp(prefix="CrystalHabit_CGAspects_"))
+        staged_xyz = stage / self.final_xyz.name
+        try:
+            shutil.copy2(self.final_xyz, staged_xyz)
+            process = subprocess.Popen([str(exe), str(staged_xyz)], cwd=str(stage))
+        except Exception as exc:
+            shutil.rmtree(stage, ignore_errors=True)
+            messagebox.showerror(APP_TITLE, f"CGAspects could not be opened:\n{exc}", parent=self)
+            return
+
+        self.log.insert("end", f"\nOpened CGAspects with {self.final_xyz.name}\n")
+        self.log.see("end")
+
+        def cleanup_after_exit() -> None:
+            process.wait()
+            shutil.rmtree(stage, ignore_errors=True)
+
+        threading.Thread(target=cleanup_after_exit, daemon=True).start()
 
     def on_close(self) -> None:
         if self.worker and self.worker.is_alive():
