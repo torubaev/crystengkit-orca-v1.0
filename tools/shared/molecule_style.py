@@ -10,9 +10,9 @@ def molecule_material_parameters() -> Dict[str, object]:
     return {
         "lighting": True,
         "smooth_shading": True,
-        "ambient": 0.18,
-        "diffuse": 0.78,
-        "specular": 0.48,
+        "ambient": 0.10,
+        "diffuse": 0.82,
+        "specular": 0.55,
         "specular_power": 45,
     }
 

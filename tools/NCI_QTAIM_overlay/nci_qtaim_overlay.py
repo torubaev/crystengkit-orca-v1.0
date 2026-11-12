@@ -556,9 +556,9 @@ def add_mesh_material(plotter, mesh, color: str, opacity: float = 1.0):
         color=color,
         opacity=opacity,
         smooth_shading=True,
-        ambient=0.18,
-        diffuse=0.78,
-        specular=0.48,
+        ambient=0.10,
+        diffuse=0.82,
+        specular=0.55,
         specular_power=45,
     )
 
@@ -573,11 +573,9 @@ def configure_hq_scene_lights(plotter, extent: float) -> None:
     except Exception:
         extent = 1.0
     light_specs = [
-        ("headlight", None, 0.72),
-        ("camera light", None, 0.34),
-        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.56),
-        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.30),
-        ("scene light", (0.0, 3.2 * extent, -2.6 * extent), 0.18),
+        ("headlight", None, 0.16),
+        ("scene light", (2.6 * extent, -3.4 * extent, 4.2 * extent), 0.95),
+        ("scene light", (-3.0 * extent, 2.4 * extent, 3.6 * extent), 0.10),
     ]
     for light_type, position, intensity in light_specs:
         try:
@@ -624,7 +622,7 @@ def add_molecule(plotter, nci_module, atom_numbers, atom_coords, show_bonds=True
 
     for z, coord in zip(atom_numbers, atom_coords):
         scale = max(0.2, float(atom_scale) / 0.38)
-        radius = float(np.clip(covalent_radius(int(z)) * 0.42 * scale, 0.16, 0.55))
+        radius = float(np.clip(covalent_radius(int(z)) * 0.34 * scale, 0.12, 0.48))
         sphere = pv.Sphere(
             radius=radius,
             center=tuple(float(x) for x in coord),

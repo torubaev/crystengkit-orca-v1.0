@@ -1363,10 +1363,9 @@ def configure_pyvista_defaults(
         extent = 1.0
 
     light_specs = [
-        ("headlight", None, 0.95),
-        ("camera light", None, 0.45),
-        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.35),
-        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.25),
+        ("headlight", None, 0.16),
+        ("scene light", (3.0 * extent, -4.0 * extent, 5.0 * extent), 0.95),
+        ("scene light", (-3.0 * extent, 3.0 * extent, 4.0 * extent), 0.10),
     ]
 
     for light_type, position, intensity in light_specs:
@@ -2815,7 +2814,7 @@ def covalent_radius(symbol: str) -> float:
 
 
 def display_atom_radius(symbol: str) -> float:
-    return float(np.clip(covalent_radius(symbol) * 0.42, 0.16, 0.55))
+    return float(np.clip(covalent_radius(symbol) * 0.34, 0.12, 0.48))
 
 
 def add_ball_and_stick_atom(pv_module, plotter, symbol, point, color=None, name=None):
