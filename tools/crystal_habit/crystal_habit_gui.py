@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+import html
 import json
 import os
 from pathlib import Path
@@ -146,6 +147,7 @@ class CrystalHabitApp(tk.Tk):
         self.stop_event = threading.Event()
         self.started_at: float | None = None
         self.current_run_root: Path | None = None
+        self.current_config: dict[str, object] | None = None
         self.final_xyz: Path | None = None
 
         self.cif_var = tk.StringVar()
@@ -331,6 +333,8 @@ class CrystalHabitApp(tk.Tk):
         self.stop_button = ttk.Button(buttons, text="Stop", style="Danger.TButton", command=self.stop, state="disabled")
         self.stop_button.pack(side="left", padx=7)
         ttk.Button(buttons, text="Open results folder", command=self.open_results).pack(side="left", padx=4)
+        self.report_button = ttk.Button(buttons, text="Show summary report", command=self.open_summary_report, state="disabled")
+        self.report_button.pack(side="left", padx=4)
         self.aspects_button = ttk.Button(buttons, text="Open in CGAspects", command=self.open_cgaspects, state="disabled")
         self.aspects_button.pack(side="left", padx=4)
         ttk.Button(buttons, text="Clear log", command=lambda: self.log.delete("1.0", "end")).pack(side="right")
@@ -502,6 +506,7 @@ class CrystalHabitApp(tk.Tk):
         run_root = config["output"] / f"{config['cif'].stem}_habit_{stamp}"
         run_root.mkdir(parents=True, exist_ok=False)
         self.current_run_root = run_root
+        self.current_config = config
         self.final_xyz = None
         self.stop_event.clear()
         self.started_at = time.time()
@@ -511,10 +516,12 @@ class CrystalHabitApp(tk.Tk):
         self.run_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.aspects_button.configure(state="disabled")
+        self.report_button.configure(state="normal")
         (run_root / "gui-settings.json").write_text(
             json.dumps({k: str(v) if isinstance(v, Path) else v for k, v in config.items() if k != "paths"} | {"paths": {k: str(v) for k, v in config["paths"].items()}}, indent=2),
             encoding="utf-8",
         )
+        self._write_summary_report(config, run_root, "Running")
         self.worker = threading.Thread(target=self._run_all, args=(config, run_root), daemon=True)
         self.worker.start()
 
@@ -526,6 +533,7 @@ class CrystalHabitApp(tk.Tk):
         self._emit("log", "Stop requested.\n")
 
     def _run_all(self, config: dict[str, object], run_root: Path) -> None:
+        completed_solvents: list[str] = []
         try:
             total = len(config["solvents"])
             for index, solvent in enumerate(config["solvents"]):
@@ -539,11 +547,15 @@ class CrystalHabitApp(tk.Tk):
                 self._emit("stage", "Crystal Grower")
                 xyz = self._run_crystogen(config, run_root, solvent, crystal_dir, index, total)
                 self.final_xyz = xyz
+                completed_solvents.append(str(solvent))
             self._emit("progress", (100.0, "100%"))
+            self._write_summary_report(config, run_root, "Completed", completed_solvents)
             self._emit("done", f"All calculations completed: {run_root}")
         except InterruptedError as exc:
+            self._write_summary_report(config, run_root, "Stopped", completed_solvents, str(exc))
             self._emit("stopped", str(exc))
         except Exception as exc:
+            self._write_summary_report(config, run_root, "Failed", completed_solvents, str(exc))
             self._emit("error", str(exc))
         finally:
             self.process = None
@@ -722,6 +734,78 @@ class CrystalHabitApp(tk.Tk):
             os.startfile(folder)
         else:
             messagebox.showwarning(APP_TITLE, "The results folder does not exist yet.", parent=self)
+
+    def _write_summary_report(
+        self,
+        config: dict[str, object],
+        run_root: Path,
+        status: str,
+        completed_solvents: list[str] | None = None,
+        note: str = "",
+    ) -> Path:
+        completed = completed_solvents or []
+        solvents = [str(item) for item in config["solvents"]]
+        esc = lambda value: html.escape(str(value))
+        solvent_text = ", ".join(esc(item) for item in solvents)
+        completed_text = ", ".join(esc(item) for item in completed) if completed else "None"
+        solvation = str(config["solvation"])
+        smd_reference = "" if solvation.lower() != "smd" else """
+          <li>Marenich, A. V.; Cramer, C. J.; Truhlar, D. G. <i>J. Phys. Chem. B</i> <b>2009</b>, 113, 6378–6396. <a href="https://doi.org/10.1021/jp810292n">https://doi.org/10.1021/jp810292n</a> (SMD).</li>"""
+        note_html = f"<p><b>Status note:</b> {esc(note)}</p>" if note else ""
+        report = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Crystal Habit Summary</title>
+<style>
+body {{ font-family: "Segoe UI", Arial, sans-serif; max-width: 900px; margin: 36px auto; color: #172033; line-height: 1.45; }}
+h1 {{ color: #1e3a5f; margin-bottom: 0; }} h2 {{ color: #294f78; margin-top: 1.4em; }}
+.status {{ display: inline-block; margin: 8px 0 16px; padding: 5px 10px; border-radius: 4px; background: #e8f1fb; font-weight: 700; }}
+table {{ border-collapse: collapse; width: 100%; }} th, td {{ border-bottom: 1px solid #d8dee8; padding: 7px 9px; text-align: left; vertical-align: top; }}
+th {{ width: 30%; background: #f4f6f9; }} code {{ color: #263348; }} .small {{ color: #53627a; font-size: 0.92em; }}
+</style></head><body>
+<h1>Crystal Habit Calculation Summary</h1>
+<div class="status">{esc(status)}</div>
+<p class="small">Generated {esc(time.strftime('%Y-%m-%d %H:%M:%S'))}</p>
+{note_html}
+<h2>Scientific workflow</h2>
+<p>CrystalClear, executed through OCC 0.9.7, was used to calculate solvent-dependent crystal interaction and facet energetics. The resulting molecular structure and interaction net were supplied to CrystoGen/CrystalGrower for a kinetic Monte Carlo simulation of crystal growth and habit.</p>
+<h2>Calculation</h2>
+<table>
+<tr><th>Crystal structure</th><td><code>{esc(config['cif'])}</code></td></tr>
+<tr><th>Solvents</th><td>{solvent_text}</td></tr>
+<tr><th>Completed solvents</th><td>{completed_text}</td></tr>
+<tr><th>CrystalClear model</th><td>{esc(config['model'])}</td></tr>
+<tr><th>Solvation treatment</th><td>{esc(solvation)}</td></tr>
+<tr><th>Interaction radius</th><td>{esc(config['radius'])} Å</td></tr>
+<tr><th>Surface cutoff, d<sub>min</sub></th><td>{esc(config['dmin'])} Å</td></tr>
+<tr><th>CrystalClear threads</th><td>{esc(config['threads'])}</td></tr>
+<tr><th>Growth temperature</th><td>{esc(config['temperature'])} °C</td></tr>
+<tr><th>Monte Carlo iterations</th><td>{int(config['iterations']):,}</td></tr>
+<tr><th>CrystoGen memory setting</th><td>{int(config['memory']):,}</td></tr>
+<tr><th>Results directory</th><td><code>{esc(run_root)}</code></td></tr>
+</table>
+<h2>Software</h2>
+<ul><li>Crystal Habit Builder (CrystEngKit-ORCA workflow interface)</li><li>OCC 0.9.7 / CrystalClear</li><li>CrystoGen / CrystalGrower kinetic Monte Carlo engine</li><li>CGAspects for morphology inspection</li></ul>
+<h2>References</h2>
+<ol>
+<li>Spackman, P. R.; Walisinghe, A. J.; Anderson, M. W.; Gale, J. D. <i>Chem. Sci.</i> <b>2023</b>, 14, 7192–7207. <a href="https://doi.org/10.1039/D2SC06761G">https://doi.org/10.1039/D2SC06761G</a> (CrystalClear).</li>
+<li>Hill, A. R. <i>et al.</i> <i>Chem. Sci.</i> <b>2021</b>, 12, 1126–1146. <a href="https://doi.org/10.1039/D0SC05017B">https://doi.org/10.1039/D0SC05017B</a> (CrystalGrower).</li>
+{smd_reference}
+</ol>
+</body></html>"""
+        report_path = run_root / "crystal-habit-summary.html"
+        report_path.write_text(report, encoding="utf-8")
+        return report_path
+
+    def open_summary_report(self) -> None:
+        if not self.current_run_root:
+            messagebox.showwarning(APP_TITLE, "No calculation report is available yet.", parent=self)
+            return
+        report_path = self.current_run_root / "crystal-habit-summary.html"
+        if not report_path.is_file() and self.current_config is not None:
+            self._write_summary_report(self.current_config, self.current_run_root, self.stage_var.get())
+        if report_path.is_file():
+            os.startfile(report_path)
+        else:
+            messagebox.showerror(APP_TITLE, "The summary report could not be created.", parent=self)
 
     def open_cgaspects(self) -> None:
         exe = Path(self.cgaspects_var.get())
