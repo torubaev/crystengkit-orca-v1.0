@@ -146,11 +146,13 @@ $failures = [Collections.Generic.List[string]]::new()
 foreach ($item in $planned) {
     $solventDir = Join-Path $runRoot $item.SafeName
     New-Item -ItemType Directory -Path $solventDir | Out-Null
-    Copy-Item -LiteralPath $resolvedCif -Destination (Join-Path $solventDir 'input.cif')
+    $workDir = Join-Path ([IO.Path]::GetTempPath()) ("OCC-{0}-{1}-{2}" -f $PID, $stamp, $item.SafeName)
+    New-Item -ItemType Directory -Path $workDir | Out-Null
+    Copy-Item -LiteralPath $resolvedCif -Destination (Join-Path $workDir 'input.cif')
     $commandLine = '"{0}" {1}' -f $OccExe, ($item.Arguments -join ' ')
-    $commandLine | Set-Content -LiteralPath (Join-Path $solventDir 'command.txt') -Encoding utf8
+    $commandLine | Set-Content -LiteralPath (Join-Path $workDir 'command.txt') -Encoding utf8
 
-    Push-Location -LiteralPath $solventDir
+    Push-Location -LiteralPath $workDir
     try {
         & $OccExe @($item.Arguments) 2>&1 | Tee-Object -FilePath 'occ.log'
         $exitCode = $LASTEXITCODE
@@ -175,6 +177,8 @@ foreach ($item in $planned) {
         $failures.Add("$($item.Solvent): $($_.Exception.Message)")
     } finally {
         Pop-Location
+        Copy-Item -Path (Join-Path $workDir '*') -Destination $solventDir -Recurse -Force
+        Remove-Item -LiteralPath $workDir -Recurse -Force
     }
 }
 
