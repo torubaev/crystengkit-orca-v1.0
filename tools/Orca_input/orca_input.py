@@ -80,6 +80,7 @@ DEFAULT_ESP_SCRIPT = TOOLS_ROOT / "VisMap_5.0" / "VisMap5.6_pyvista.py"
 DEFAULT_NCI_SCRIPT = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 DEFAULT_QTAIM_SCRIPT = TOOLS_ROOT / "qtaim-cp" / "qtaim.py"
 DEFAULT_TD_DFT_SCRIPT = TOOLS_ROOT / Path("TD_DFT") / "td_dft_module.py"
+DEFAULT_CRYSTAL_HABIT_SCRIPT = TOOLS_ROOT / "crystal_habit" / "crystal_habit_gui.py"
 
 
 def _read_app_version() -> str:
@@ -4350,6 +4351,23 @@ class App(tk.Tk):
         action_link.bind("<Button-1>", lambda _e: activate())
         self.workspace_action_widgets[label] = {"box": box, "button": button, "label": action_link}
 
+    def _add_header_text_action(self, parent, column: int, label: str, command):
+        button = tk.Button(
+            parent,
+            text=label,
+            command=command,
+            bg="#2a4b75",
+            fg="#f8fafc",
+            activebackground="#345986",
+            activeforeground="#f8fafc",
+            relief="flat",
+            padx=12,
+            pady=12,
+            cursor="hand2",
+            font=("Segoe UI", 11, "bold"),
+        )
+        button.grid(row=0, column=column, rowspan=2, padx=(8, 0), sticky="ns")
+
     def _activate_workspace_action(self, label: str) -> None:
         """Update persistent-header identity and active navigation styling."""
         tool_titles = {
@@ -4442,6 +4460,7 @@ class App(tk.Tk):
         self._add_header_image_action(header, 5, NCI_ICON_PATH, "NCI plot", self.launch_nci)
         self._add_header_image_action(header, 6, QTAIM_ICON_PATH, "QTAIM CP", self.launch_qtaim)
         self._add_header_image_action(header, 7, HOMO_LUMO_ICON_PATH, "TD-DFT", self.launch_td_dft)
+        self._add_header_text_action(header, 8, "Crystal Habit", self.launch_crystal_habit)
 
         self.workspace_host = ttk.Frame(self, style="Panel.TFrame")
         self.workspace_host.grid(row=1, column=0, sticky="nsew")
@@ -7017,6 +7036,12 @@ class App(tk.Tk):
                 self.open_tddft_module()
         except Exception as exc:
             messagebox.showerror("TD-DFT launcher", str(exc))
+
+    def launch_crystal_habit(self):
+        try:
+            self._launch_python_tool(str(DEFAULT_CRYSTAL_HABIT_SCRIPT))
+        except Exception as exc:
+            messagebox.showerror("Crystal Habit launcher", str(exc), parent=self)
 
     def launch_esp(self):
         try:
