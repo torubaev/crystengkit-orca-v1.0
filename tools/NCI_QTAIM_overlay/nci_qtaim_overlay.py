@@ -556,10 +556,10 @@ def add_mesh_material(plotter, mesh, color: str, opacity: float = 1.0):
         color=color,
         opacity=opacity,
         smooth_shading=True,
-        ambient=0.50,
-        diffuse=0.62,
-        specular=0.18,
-        specular_power=20,
+        ambient=0.18,
+        diffuse=0.78,
+        specular=0.48,
+        specular_power=45,
     )
 
 
