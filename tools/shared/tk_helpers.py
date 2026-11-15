@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import tkinter as tk
 from tkinter import ttk
@@ -168,7 +169,13 @@ def load_header_icon(path: Any, max_size: int = 56) -> Optional[tk.PhotoImage]:
     """Load and integer-downsample a Tk header icon if it exists."""
     if not path.is_file():
         return None
-    image = tk.PhotoImage(file=str(path))
+    try:
+        image = tk.PhotoImage(file=str(path))
+    except tk.TclError:
+        # Tk can fail to open OneDrive/cloud-placeholder paths even when the
+        # file is readable. Feeding the same bytes in memory avoids that OS
+        # path-provider limitation.
+        image = tk.PhotoImage(data=base64.b64encode(path.read_bytes()))
     factor = max(1, int(max(image.width() / max_size, image.height() / max_size) + 0.999))
     return image.subsample(factor, factor) if factor > 1 else image
 

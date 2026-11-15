@@ -7038,7 +7038,13 @@ class App(tk.Tk):
 
     def launch_crystal_habit(self):
         try:
-            self._launch_python_tool(str(DEFAULT_CRYSTAL_HABIT_SCRIPT))
+            source = str(getattr(self, "structure_source_path", "") or "").strip().strip('"')
+            cif_path = None
+            if source:
+                candidate = Path(source).expanduser()
+                if candidate.suffix.lower() == ".cif" and candidate.is_file():
+                    cif_path = str(candidate.resolve())
+            self._launch_python_tool(str(DEFAULT_CRYSTAL_HABIT_SCRIPT), cif_path)
         except Exception as exc:
             messagebox.showerror("Crystal Habit launcher", str(exc), parent=self)
 

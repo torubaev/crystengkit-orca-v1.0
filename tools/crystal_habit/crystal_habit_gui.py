@@ -15,16 +15,41 @@ import tempfile
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
 
 APP_TITLE = "Crystal Habit Builder"
 APP_DIR = Path(__file__).resolve().parent
+TOOLS_ROOT = APP_DIR.parent
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
+from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
+from shared.tk_helpers import configure_builder_ui_style, load_header_icon
+
+CRYSTAL_HABIT_ICON_PATH = TOOLS_ROOT / "images" / "tr_orca_icon.png"
+GITHUB_URL = "https://github.com/torubaev/crystengkit-orca-v1.0"
+DOCUMENTATION_URL = GITHUB_URL + "/blob/main/tools/crystal_habit/README.md"
+AI_ASSISTANT_URL = "https://chatgpt.com/g/g-6a6063dcc6b88191b88ac7a6c3b9476d-crystengkit-orca-assistant"
+LINKEDIN_URL = "https://www.linkedin.com/in/torubaev/"
+CONTACT_EMAIL = "torubaev(at)gmail.com"
+COPYRIGHT_NOTE = "(c) Yury Torubaev, 2026"
+ABOUT_PURPOSE = (
+    "Runs a solvent-dependent crystal-habit workflow from a CIF structure. It uses "
+    "CrystalClear for interaction and facet energetics, CrystoGen/CrystalGrower for "
+    "kinetic Monte Carlo growth simulations, and CGAspects for morphology inspection."
+)
+CITATION_REFERENCE = (
+    "Torubaev, Y. CrystEngKit-ORCA: practical GUI tools for ORCA and "
+    "Multiwfn calculations in supramolecular chemistry and crystal engineering, "
+    "version 1.0; GitHub, 2026. https://github.com/torubaev/crystengkit-orca-v1.0"
+)
+CITATION_TEXT = f"Cite as: {CITATION_REFERENCE}"
 DEFAULT_CRYSTALCLEAR = Path.home() / "Documents" / "OCC-CrystalClear" / "Run-CrystalClear.ps1"
 DEFAULT_CRYSTOGEN = APP_DIR / "tools" / "crystogen" / "crystogen.exe"
 DEFAULT_CGASPECTS = Path(r"C:\Program Files\CrystoGen\CGAspects\CGAspects.exe")
 DEFAULT_OUTPUT = Path.home() / "Documents" / "CrystalHabitBuilder" / "runs"
-ORCA_TOOLS = Path.home() / "OneDrive" / "Python" / "crystengkit-orca-v1.0" / "tools"
+ORCA_TOOLS = TOOLS_ROOT
 
 SOLVENTS = (
     ("Water", "water"),
@@ -133,9 +158,24 @@ def safe_name(value: str) -> str:
     return value or "solvent"
 
 
+def normalize_initial_cif(value: str | os.PathLike[str] | None) -> str:
+    """Return an existing CIF as an absolute path, or an empty value."""
+    if not value:
+        return ""
+    try:
+        path = Path(value).expanduser().resolve()
+    except (OSError, TypeError, ValueError):
+        return ""
+    if path.is_file() and path.suffix.lower() == ".cif":
+        return str(path)
+    return ""
+
+
 class CrystalHabitApp(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self, initial_cif: str | os.PathLike[str] | None = None) -> None:
+        set_windows_app_id("CrystalHabit")
         super().__init__()
+        configure_tk_window_identity(self, "CrystalHabit")
         self.title(APP_TITLE)
         self.geometry("1180x780")
         self.minsize(980, 680)
@@ -150,7 +190,7 @@ class CrystalHabitApp(tk.Tk):
         self.current_config: dict[str, object] | None = None
         self.final_xyz: Path | None = None
 
-        self.cif_var = tk.StringVar()
+        self.cif_var = tk.StringVar(value=normalize_initial_cif(initial_cif))
         self.output_var = tk.StringVar(value=str(DEFAULT_OUTPUT))
         self.crystalclear_var = tk.StringVar(value=str(DEFAULT_CRYSTALCLEAR))
         self.crystogen_var = tk.StringVar(value=str(DEFAULT_CRYSTOGEN))
@@ -174,48 +214,17 @@ class CrystalHabitApp(tk.Tk):
 
         self._configure_styles()
         self._build()
-        self.bind_all("<Control-r>", self._reload_application, add="+")
+        install_dev_reload_shortcut(
+            self,
+            Path(__file__),
+            can_restart=lambda: not (self.worker and self.worker.is_alive()),
+        )
         self.after(150, self._drain_events)
         self.after(1000, self._update_metrics)
 
-    def _reload_application(self, _event=None) -> str:
-        """Hidden Ctrl+R reload, matching ORCA Input Builder behavior."""
-        if self.worker and self.worker.is_alive():
-            self.bell()
-            return "break"
-
-        command = [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]]
-        kwargs = {"cwd": os.getcwd()}
-        if os.name == "nt":
-            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        try:
-            subprocess.Popen(command, **kwargs)
-        except Exception:
-            self.bell()
-            return "break"
-
-        self.after_idle(self.destroy)
-        return "break"
-
     def _configure_styles(self) -> None:
+        configure_builder_ui_style(self)
         style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
-        self.configure(background="#f4f6f9")
-        style.configure("TFrame", background="#f4f6f9")
-        style.configure("Panel.TFrame", background="#f8fafc")
-        style.configure("Header.TFrame", background="#1e3a5f")
-        style.configure("HeaderTitle.TLabel", background="#1e3a5f", foreground="#f8fafc", font=("Segoe UI", 15, "bold"))
-        style.configure("HeaderSub.TLabel", background="#1e3a5f", foreground="#d7e1ee", font=("Segoe UI", 10, "bold"))
-        style.configure("TLabelframe", background="#f8fafc", bordercolor="#d8dee8", relief="solid", padding=10)
-        style.configure("TLabelframe.Label", background="#f8fafc", foreground="#172033", font=("Segoe UI", 10, "bold"))
-        style.configure("TLabel", background="#f8fafc", foreground="#263348", font=("Segoe UI", 9))
-        style.configure("Muted.TLabel", background="#f4f6f9", foreground="#53627a", font=("Segoe UI", 9))
-        style.configure("TCheckbutton", background="#f8fafc", font=("Segoe UI", 9))
-        style.configure("TButton", padding=(9, 5), font=("Segoe UI", 9))
-        style.configure("Primary.TButton", background="#2f80c8", foreground="#ffffff", padding=(14, 8), font=("Segoe UI", 10, "bold"))
         style.map("Primary.TButton", background=[("active", "#3b94df"), ("pressed", "#1f68a8")], foreground=[("active", "#ffffff")])
         style.configure("Danger.TButton", background="#b91c1c", foreground="#ffffff", padding=(12, 8), font=("Segoe UI", 9, "bold"))
         style.map(
@@ -231,10 +240,22 @@ class CrystalHabitApp(tk.Tk):
 
         header = ttk.Frame(self, style="Header.TFrame", padding=(18, 12))
         header.grid(row=0, column=0, sticky="ew")
-        header.columnconfigure(0, weight=1)
-        ttk.Label(header, text=APP_TITLE, style="HeaderTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(header, text="CrystalClear → Crystal Grower → CGAspects", style="HeaderSub.TLabel").grid(row=1, column=0, sticky="w", pady=(3, 0))
-        ttk.Label(header, text="OCC / CrystoGen", style="HeaderSub.TLabel").grid(row=0, column=1, rowspan=2, padx=10)
+        self.header_icon = load_header_icon(CRYSTAL_HABIT_ICON_PATH)
+        if self.header_icon is not None:
+            tk.Label(header, image=self.header_icon, bg="#1e3a5f", bd=0, highlightthickness=0).grid(
+                row=0, column=0, rowspan=2, sticky="w", padx=(0, 10)
+            )
+        ttk.Label(header, text=APP_TITLE, style="HeaderTitle.TLabel").grid(row=0, column=1, sticky="w")
+        ttk.Label(header, text="CrystalClear → CrystalGrower → CGAspects", style="HeaderSub.TLabel").grid(
+            row=1, column=1, sticky="w", pady=(3, 0)
+        )
+        header.columnconfigure(2, weight=1)
+        header_actions = ttk.Frame(header, style="Header.TFrame")
+        header_actions.grid(row=0, column=3, rowspan=2, sticky="e")
+        about_link = ttk.Label(header_actions, text="About", style="HeaderLink.TLabel", cursor="hand2")
+        about_link.pack(side="right", padx=(12, 0))
+        about_link.bind("<Button-1>", lambda _event: self.open_about_window())
+        ttk.Label(header_actions, text="OCC / CrystoGen", style="HeaderAction.TLabel").pack(side="right")
 
         body = ttk.Frame(self, padding=12)
         body.grid(row=1, column=0, sticky="nsew")
@@ -414,6 +435,87 @@ class CrystalHabitApp(tk.Tk):
             self.log.insert("end", f"\nPyVista viewer error: {exc}\n", "error")
             self.log.see("end")
             messagebox.showerror("PyVista viewer", str(exc), parent=self)
+
+    def open_about_window(self) -> None:
+        win = tk.Toplevel(self)
+        win.title("About")
+        win.transient(self)
+        win.columnconfigure(0, weight=1)
+
+        def copy_citation(_event=None) -> None:
+            try:
+                win.clipboard_clear()
+                win.clipboard_append(CITATION_REFERENCE)
+                citation_label.configure(text="Cite as: copied to clipboard", foreground="#047857")
+
+                def restore_citation() -> None:
+                    if citation_label.winfo_exists():
+                        citation_label.configure(text=CITATION_TEXT, foreground="#1d4ed8")
+
+                win.after(1400, restore_citation)
+            except Exception as exc:
+                messagebox.showerror("Copy citation", str(exc), parent=win)
+
+        box = ttk.Frame(win, padding=14)
+        box.grid(row=0, column=0, sticky="nsew")
+        box.columnconfigure(1, weight=1)
+
+        icon = load_header_icon(CRYSTAL_HABIT_ICON_PATH, max_size=144)
+        if icon is not None:
+            win.about_icon = icon
+            ttk.Label(box, image=icon).grid(row=0, column=0, rowspan=8, sticky="n", padx=(0, 18))
+
+        ttk.Label(box, text=APP_TITLE, font=("Segoe UI", 12, "bold")).grid(row=0, column=1, sticky="w")
+        ttk.Label(box, text=ABOUT_PURPOSE, justify="left", wraplength=420).grid(
+            row=1, column=1, sticky="w", pady=(8, 0)
+        )
+        ttk.Separator(box, orient="horizontal").grid(row=2, column=1, sticky="ew", pady=(12, 8))
+        ttk.Label(box, text="GitHub", font=("Segoe UI", 9, "bold")).grid(row=3, column=1, sticky="w")
+        github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2")
+        github_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
+        github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL, new=2))
+        ttk.Label(box, text="Documentation", font=("Segoe UI", 9, "bold")).grid(
+            row=5, column=1, sticky="w", pady=(8, 0)
+        )
+        docs_link = ttk.Label(box, text="README: Crystal Habit Builder", foreground="#1d4ed8", cursor="hand2")
+        docs_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
+        docs_link.bind("<Button-1>", lambda _event: webbrowser.open(DOCUMENTATION_URL, new=2))
+        ai_link = ttk.Label(box, text="AI assistant", foreground="#1d4ed8", cursor="hand2")
+        ai_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
+        ai_link.bind("<Button-1>", lambda _event: webbrowser.open(AI_ASSISTANT_URL, new=2))
+        citation_label = ttk.Label(
+            box,
+            text=CITATION_TEXT,
+            foreground="#1d4ed8",
+            cursor="hand2",
+            justify="left",
+            wraplength=430,
+        )
+        citation_label.grid(row=8, column=1, sticky="w", pady=(10, 0))
+        citation_label.bind("<Button-1>", copy_citation)
+        ttk.Separator(box, orient="horizontal").grid(row=9, column=1, sticky="ew", pady=(12, 8))
+        ttk.Label(box, text=COPYRIGHT_NOTE, foreground="#4b5563").grid(row=10, column=1, sticky="w")
+        contact = ttk.Frame(box)
+        contact.grid(row=11, column=1, sticky="w", pady=(7, 0))
+        ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
+        linkedin_icon = tk.Label(
+            contact,
+            text="in",
+            bg="#0a66c2",
+            fg="white",
+            cursor="hand2",
+            font=("Arial", 9, "bold"),
+            padx=4,
+            pady=1,
+        )
+        linkedin_icon.grid(row=0, column=1, padx=(10, 0))
+        linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL, new=2))
+        ttk.Button(box, text="Close", command=win.destroy).grid(
+            row=12, column=0, columnspan=2, sticky="e", pady=(14, 0)
+        )
+        win.geometry("620x430")
+        win.minsize(560, 390)
+        win.grab_set()
 
     def _program_paths(self) -> None:
         window = tk.Toplevel(self)
@@ -842,5 +944,11 @@ th {{ width: 30%; background: #f4f6f9; }} code {{ color: #263348; }} .small {{ c
         self.destroy()
 
 
+def main(argv: list[str] | None = None) -> None:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    initial_cif = arguments[0] if arguments else None
+    CrystalHabitApp(initial_cif=initial_cif).mainloop()
+
+
 if __name__ == "__main__":
-    CrystalHabitApp().mainloop()
+    main()
