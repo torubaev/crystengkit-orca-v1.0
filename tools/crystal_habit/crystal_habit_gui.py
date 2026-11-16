@@ -171,6 +171,12 @@ def normalize_initial_cif(value: str | os.PathLike[str] | None) -> str:
     return ""
 
 
+def default_results_folder(cif_path: str | os.PathLike[str] | None) -> Path:
+    """Use the selected CIF directory, falling back only when no CIF is available."""
+    normalized = normalize_initial_cif(cif_path)
+    return Path(normalized).parent if normalized else DEFAULT_OUTPUT
+
+
 class CrystalHabitApp(tk.Tk):
     def __init__(self, initial_cif: str | os.PathLike[str] | None = None) -> None:
         set_windows_app_id("CrystalHabit")
@@ -190,8 +196,9 @@ class CrystalHabitApp(tk.Tk):
         self.current_config: dict[str, object] | None = None
         self.final_xyz: Path | None = None
 
-        self.cif_var = tk.StringVar(value=normalize_initial_cif(initial_cif))
-        self.output_var = tk.StringVar(value=str(DEFAULT_OUTPUT))
+        initial_cif_path = normalize_initial_cif(initial_cif)
+        self.cif_var = tk.StringVar(value=initial_cif_path)
+        self.output_var = tk.StringVar(value=str(default_results_folder(initial_cif_path)))
         self.crystalclear_var = tk.StringVar(value=str(DEFAULT_CRYSTALCLEAR))
         self.crystogen_var = tk.StringVar(value=str(DEFAULT_CRYSTOGEN))
         self.cgaspects_var = tk.StringVar(value=str(DEFAULT_CGASPECTS))
@@ -374,6 +381,7 @@ class CrystalHabitApp(tk.Tk):
         value = filedialog.askopenfilename(title="Select crystal structure", filetypes=[("CIF files", "*.cif"), ("All files", "*.*")])
         if value:
             self.cif_var.set(value)
+            self.output_var.set(str(Path(value).resolve().parent))
 
     def _browse_output(self) -> None:
         value = filedialog.askdirectory(title="Select results folder")
@@ -747,14 +755,18 @@ class CrystalHabitApp(tk.Tk):
                         self._emit("progress", (overall, f"CrystoGen {current:,}/{iterations:,}"))
             if self.process and self.process.returncode != 0:
                 raise RuntimeError(f"Crystal Grower failed for {solvent}.")
-            parameter_files = list(stage.glob(f".{root}_simulation_parameters.txt"))
-            parameter_text = parameter_files[0].read_text(encoding="utf-8", errors="replace") if parameter_files else ""
-            completion_pattern = rf"Total iterations completed[^\r\n]*\b{iterations}\b"
-            if not re.search(completion_pattern, parameter_text):
-                raise RuntimeError(f"Crystal Grower completion could not be validated for {solvent}.")
+            # Copy the completed working files before validation so diagnostics
+            # survive even when a CrystalGrower output check fails.
             for item in stage.iterdir():
                 if item.is_file() and item.name != "CrystoGen.key":
                     shutil.copy2(item, result_dir / item.name)
+
+            # Do not use glob here: CIF stems may contain glob metacharacters.
+            parameter_file = stage / f".{root}_simulation_parameters.txt"
+            parameter_text = parameter_file.read_text(encoding="utf-8", errors="replace") if parameter_file.is_file() else ""
+            completion_pattern = rf"Total iterations completed[^\r\n]*\b{iterations}\b"
+            if not re.search(completion_pattern, parameter_text):
+                raise RuntimeError(f"Crystal Grower completion could not be validated for {solvent}.")
             xyz_files = list(result_dir.glob("*_CGAspects.XYZ"))
             if not xyz_files:
                 raise RuntimeError(f"No CGAspects XYZ result was generated for {solvent}.")
@@ -800,6 +812,8 @@ class CrystalHabitApp(tk.Tk):
                     self.stage_var.set("Completed")
                     self.log.insert("end", f"\n{value}\n", "success")
                     self.aspects_button.configure(state="normal" if self.final_xyz else "disabled")
+                    if self.final_xyz:
+                        self.open_cgaspects()
                     messagebox.showinfo(APP_TITLE, str(value), parent=self)
                 elif kind == "stopped":
                     self._finish_controls()
