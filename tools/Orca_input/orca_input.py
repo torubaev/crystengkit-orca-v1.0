@@ -61,6 +61,7 @@ from workspace_navigation import StackedPageController
 from calculation_report import render_report as render_calculation_report
 from calculation_report import render_interaction_report
 from calculation_report import verify_from_output as verify_calculation_from_output
+from calculation_report import append_tool_use_record, parse_tool_use_records
 
 
 def user_config_dir() -> Path:
@@ -1054,6 +1055,7 @@ HOMO_LUMO_ICON_PATH = ICON_DIR / "tr_homo_lumo_icon.png"
 ESP_ICON_PATH = ICON_DIR / "tr_ESP_icon.png"
 NCI_ICON_PATH = ICON_DIR / "tr_NCI_icon.png"
 QTAIM_ICON_PATH = ICON_DIR / "qtaim.png"
+CRYSTAL_HABIT_ICON_PATH = ICON_DIR / "tr_crystal_habit_icon.png"
 BUILDER_ICON_ICO_PATH = ICON_DIR / "orca_builder.ico"
 HARTREE_TO_KCAL_MOL = 627.509474
 HARTREE_TO_KJ_MOL = 2625.49962
@@ -3640,12 +3642,12 @@ def generate_orca(data: Dict, structure: Structure, solvent: Optional[Dict[str, 
         atoms = structure.atoms
         constraints = []
         if data.get("freeze_all"):
-            for i, (sym, *_rest) in enumerate(atoms):
-                constraints.append(f"{{ {sym} {i+1} C }}")
+            for i, (_sym, *_rest) in enumerate(atoms):
+                constraints.append(f"{{ C {i} C }}")
         elif data.get("freeze_heavy"):
             for i, (sym, *_rest) in enumerate(atoms):
-                if sym != "H":
-                    constraints.append(f"{{ {sym} {i+1} C }}")
+                if sym.upper() != "H":
+                    constraints.append(f"{{ C {i} C }}")
         if constraints:
             lines += ["", "%geom", "  Constraints"]
             lines += ["    " + c for c in constraints]
@@ -4074,6 +4076,7 @@ class App(tk.Tk):
         self.monitor_started_at: Optional[float] = None
         self.monitor_status_text: str = "Idle"
         self.monitor_progress_value: float = 0.0
+        self.monitor_activity_phase: int = 0
         self.active_run_context: Optional[Dict] = None
         self.queue_state_path: Optional[Path] = None
         self.job_queue = OrcaJobQueue()
@@ -4122,7 +4125,7 @@ class App(tk.Tk):
 
         self.interaction_relax_var = tk.BooleanVar(value=False)
         self.interaction_relax_var.trace_add("write", lambda *args: self._update_interaction_section())
-        self.interaction_thermo_var = tk.BooleanVar(value=True)
+        self.interaction_thermo_var = tk.BooleanVar(value=False)
         self.interaction_thermo_var.trace_add("write", lambda *args: self._update_interaction_section())
         self.frag_a_charge_var = tk.StringVar(value="0")
         self.frag_a_mult_var = tk.StringVar(value="1")
@@ -4304,10 +4307,19 @@ class App(tk.Tk):
         self.header_images.append(img)
         return img
 
-    def _add_header_image_action(self, parent, column: int, icon_path: Path, label: str, command):
+    def _add_header_image_action(
+        self,
+        parent,
+        column: int,
+        icon_path: Path,
+        label: str,
+        command,
+        *,
+        icon_max_size: int = 72,
+    ):
         box = ttk.Frame(parent, style="Header.TFrame")
         box.grid(row=0, column=column, rowspan=2, padx=(8, 0), sticky="ns")
-        icon = self._load_header_icon(icon_path)
+        icon = self._load_header_icon(icon_path, max_size=icon_max_size)
         def activate():
             command()
 
@@ -4377,6 +4389,7 @@ class App(tk.Tk):
             "NCI plot": "Noncovalent Interactions",
             "QTAIM CP": "QTAIM Critical Points",
             "TD-DFT": "TD-DFT",
+            "Crystal Habit": "Crystal Habit Builder",
         }
         self.workspace_title_var.set(tool_titles.get(label, "ORCA Input Builder"))
         for name, widgets in self.workspace_action_widgets.items():
@@ -4415,9 +4428,9 @@ class App(tk.Tk):
         if hasattr(self, "builder_ui_level_status"):
             self.builder_ui_level_status.configure(
                 text=(
-                    "Basic interface · TD-DFT is available in Advanced"
+                    "Basic interface · Input, HOMO-LUMO, ESP, NCI and QTAIM"
                     if normalized == "BASIC"
-                    else "Advanced interface · TD-DFT controls enabled"
+                    else "Advanced interface · Basic tools plus TD-DFT, Crystal Habit and experimental options"
                 )
             )
         tddft_row = self.__dict__.get("tddft_setup_row")
@@ -4426,9 +4439,17 @@ class App(tk.Tk):
                 tddft_row.grid()
             else:
                 tddft_row.grid_remove()
-        tddft_action = self.workspace_action_widgets.get("TD-DFT")
-        if tddft_action is not None:
-            action_box = tddft_action.get("box")
+        thermo_row = self.__dict__.get("interaction_thermo_row")
+        if thermo_row is not None:
+            if normalized == "ADVANCED":
+                thermo_row.grid()
+            else:
+                thermo_row.grid_remove()
+        for action_name in ("TD-DFT", "Crystal Habit"):
+            advanced_action = self.workspace_action_widgets.get(action_name)
+            if advanced_action is None:
+                continue
+            action_box = advanced_action.get("box")
             if action_box is not None:
                 if normalized == "ADVANCED":
                     action_box.grid()
@@ -4460,7 +4481,14 @@ class App(tk.Tk):
         self._add_header_image_action(header, 5, NCI_ICON_PATH, "NCI plot", self.launch_nci)
         self._add_header_image_action(header, 6, QTAIM_ICON_PATH, "QTAIM CP", self.launch_qtaim)
         self._add_header_image_action(header, 7, HOMO_LUMO_ICON_PATH, "TD-DFT", self.launch_td_dft)
-        self._add_header_text_action(header, 8, "Crystal Habit", self.launch_crystal_habit)
+        self._add_header_image_action(
+            header,
+            8,
+            CRYSTAL_HABIT_ICON_PATH,
+            "Crystal Habit",
+            self.launch_crystal_habit,
+            icon_max_size=88,
+        )
 
         self.workspace_host = ttk.Frame(self, style="Panel.TFrame")
         self.workspace_host.grid(row=1, column=0, sticky="nsew")
@@ -4668,11 +4696,17 @@ class App(tk.Tk):
         ttk.Checkbutton(relax_row, text="Relaxation energy / binding E (separate optimized jobs)", variable=self.interaction_relax_var).grid(row=0, column=0, sticky="w")
         relax_info = InfoIcon(relax_row, "Relaxation/binding analysis creates separate optimized follow-up jobs for the dimer and monomers. The main job remains as selected above.")
         relax_info.grid(row=0, column=1, padx=(5, 0))
-        thermo_row = ttk.Frame(self.interaction_box)
-        thermo_row.grid(row=8, column=0, columnspan=4, sticky="w", pady=(2, 0))
-        ttk.Checkbutton(thermo_row, text="Delta H and G / thermodynamic frequencies", variable=self.interaction_thermo_var).grid(row=0, column=0, sticky="w")
-        thermo_info = InfoIcon(thermo_row, "When enabled together with relaxation/binding mode, optimized dimer and monomer follow-up jobs include frequencies for Delta H and G. Vertical CP interaction energies remain electronic-energy terms.")
+        self.interaction_thermo_row = ttk.Frame(self.interaction_box)
+        self.interaction_thermo_row.grid(row=8, column=0, columnspan=4, sticky="w", pady=(2, 0))
+        ttk.Checkbutton(
+            self.interaction_thermo_row,
+            text="Delta H and G / thermodynamic frequencies (experimental)",
+            variable=self.interaction_thermo_var,
+            command=self._confirm_interaction_thermochemistry,
+        ).grid(row=0, column=0, sticky="w")
+        thermo_info = InfoIcon(self.interaction_thermo_row, "Experimental: creates separate optimized dimer and monomer frequency jobs for Delta H and G. The current implementation is synchronous and may be slow or unresponsive. Validate all results independently.")
         thermo_info.grid(row=0, column=1, padx=(5, 0))
+        self._set_builder_ui_level(self.builder_ui_level_var.get())
         ttk.Button(self.interaction_box, text="Generate interaction job folders", command=self.generate_interaction_jobs).grid(row=9, column=0, columnspan=4, sticky="ew", pady=(7, 0))
         ttk.Label(self.interaction_box, textvariable=self.fragment_status_var, wraplength=380, justify="left").grid(row=10, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
@@ -5154,6 +5188,7 @@ class App(tk.Tk):
         action_labels = {
             "homo_lumo": "HOMO LUMO", "esp": "ESP map", "nci": "NCI plot",
             "qtaim": "QTAIM CP", "tddft": "TD-DFT", "torsion": "TD-DFT",
+            "crystal_habit": "Crystal Habit",
         }
         self._activate_workspace_action(action_labels.get(key, title))
 
@@ -5620,6 +5655,24 @@ class App(tk.Tk):
                     self.job_opt_var.set(True)
         finally:
             self._syncing_constraint_flags = False
+
+    def _confirm_interaction_thermochemistry(self) -> None:
+        """Require explicit acknowledgement when the user enables this experimental path."""
+        if not self.interaction_thermo_var.get():
+            return
+        confirmed = messagebox.askyesno(
+            "Experimental thermochemistry — are you sure?",
+            "This is an experimental feature and may result in very long calculations, "
+            "an unresponsive Builder, failed ORCA subjobs, or incomplete results.\n\n"
+            "It launches separate optimized dimer and monomer frequency calculations. "
+            "The current workflow has limited cancellation and recovery support. All Delta H "
+            "and Delta G values must be validated independently before scientific use.\n\n"
+            "Enable experimental Delta H/G calculations anyway?",
+            parent=self,
+            icon="warning",
+        )
+        if not confirmed:
+            self.interaction_thermo_var.set(False)
 
     def _update_interaction_section(self):
         if getattr(self, "interaction_box", None) is None:
@@ -6607,6 +6660,34 @@ class App(tk.Tk):
         win.grab_set()
 
     def open_about_window(self):
+        """Open About content for the tool currently shown in the workspace."""
+        key = str(getattr(self, "active_workspace_key", "builder") or "builder")
+        controller = self.embedded_tool_controllers.get(key)
+        if key == "torsion" and controller is not None:
+            controller = self.embedded_tool_controllers.get("tddft") or controller
+        controller_about = getattr(controller, "open_about_window", None)
+        if callable(controller_about):
+            controller_about()
+            return
+
+        module = self._embedded_tool_modules.get(key)
+        tool_about = {
+            "homo_lumo": ("HOMO-LUMO Plotter", "HOMO_LUMO_ICON_PATH"),
+            "esp": ("VisMap", "ESP_ICON_PATH"),
+            "nci": ("NCI Plotter", "NCI_ICON_PATH"),
+            "qtaim": ("QTAIM Critical Points Viewer", "QTAIM_ICON_PATH"),
+        }.get(key)
+        if module is not None and tool_about is not None:
+            dialog = getattr(module, "open_about_dialog", None)
+            purpose = getattr(module, "ABOUT_PURPOSE", "")
+            icon_path = getattr(module, tool_about[1], None)
+            if callable(dialog) and icon_path is not None:
+                dialog(self, tool_about[0], icon_path, purpose)
+                return
+
+        self._open_builder_about_window()
+
+    def _open_builder_about_window(self):
         win = tk.Toplevel(self)
         win.title("About")
         win.transient(self)
@@ -6996,6 +7077,7 @@ class App(tk.Tk):
                 "esp": "Electrostatic Potential",
                 "nci": "Noncovalent Interactions",
                 "qtaim": "QTAIM Critical Points",
+                "crystal_habit": "Crystal Habit Builder",
             }
             page = ttk.Frame(self.workspace_host, style="Panel.TFrame")
             self.page_controller.register(key, titles[key], page)
@@ -7045,7 +7127,17 @@ class App(tk.Tk):
                 candidate = Path(source).expanduser()
                 if candidate.suffix.lower() == ".cif" and candidate.is_file():
                     cif_path = str(candidate.resolve())
-            self._launch_python_tool(str(DEFAULT_CRYSTAL_HABIT_SCRIPT), cif_path)
+            page = self._embedded_tool_page("crystal_habit")
+            panel = self.embedded_tool_controllers.get("crystal_habit")
+            if panel is None or not panel.winfo_exists():
+                module = self._load_embedded_tool_module("crystal_habit", str(DEFAULT_CRYSTAL_HABIT_SCRIPT))
+                panel = module.CrystalHabitApp(page, embedded=True, initial_cif=cif_path)
+                panel.pack(fill="both", expand=True)
+                self.embedded_tool_controllers["crystal_habit"] = panel
+                self._restore_workspace_state()
+            else:
+                panel.set_cif_path(cif_path)
+            self._show_embedded_workspace("crystal_habit", "Crystal Habit Builder")
         except Exception as exc:
             messagebox.showerror("Crystal Habit launcher", str(exc), parent=self)
 
@@ -7505,7 +7597,7 @@ class App(tk.Tk):
         local["job_sp"] = True
         return generate_orca(local, structure, solvent)
 
-    def _build_orca_relaxed_fragment_input(self, data: Dict, structure: Structure, charge: int, multiplicity: int, solvent: Optional[Dict[str, str]], do_freq: bool = True) -> str:
+    def _build_orca_relaxed_fragment_input(self, data: Dict, structure: Structure, charge: int, multiplicity: int, solvent: Optional[Dict[str, str]], do_freq: bool = False) -> str:
         local = dict(data)
         local["charge"] = charge
         local["multiplicity"] = multiplicity
@@ -7523,7 +7615,7 @@ class App(tk.Tk):
         local["job_sp"] = True
         return generate_orca(local, structure, solvent)
 
-    def _build_orca_relaxed_dimer_input(self, data: Dict, structure: Structure, charge: int, multiplicity: int, solvent: Optional[Dict[str, str]], do_freq: bool = True) -> str:
+    def _build_orca_relaxed_dimer_input(self, data: Dict, structure: Structure, charge: int, multiplicity: int, solvent: Optional[Dict[str, str]], do_freq: bool = False) -> str:
         local = dict(data)
         local["charge"] = charge
         local["multiplicity"] = multiplicity
@@ -7541,7 +7633,7 @@ class App(tk.Tk):
         local["job_sp"] = True
         return generate_orca(local, structure, solvent)
 
-    def _build_interaction_job_specs(self, data: Dict, structure: Structure, solvent: Optional[Dict[str, str]], a_charge: int, a_mult: int, b_charge: int, b_mult: int, include_dimer: bool = True, include_cp: bool = True, include_relax: bool = False, include_thermo: bool = True) -> List[Dict[str, str]]:
+    def _build_interaction_job_specs(self, data: Dict, structure: Structure, solvent: Optional[Dict[str, str]], a_charge: int, a_mult: int, b_charge: int, b_mult: int, include_dimer: bool = True, include_cp: bool = True, include_relax: bool = False, include_thermo: bool = False) -> List[Dict[str, str]]:
         specs: List[Dict[str, str]] = []
         all_indices = list(range(len(structure.atoms)))
         if include_dimer:
@@ -7837,6 +7929,7 @@ class App(tk.Tk):
                 "freeze_all": bool(data.get("freeze_all")),
             },
             "post_processing": dict(context.get("post_processing", {})),
+            "tool_use_records": parse_tool_use_records(out_path),
             "analysis_files": {
                 "wavefunction_files": wavefunction_files,
                 "cube_files": cube_files,
@@ -8208,7 +8301,7 @@ class App(tk.Tk):
             int(context["frag_b_charge"]),
             int(context["frag_b_mult"]),
             bool(context.get("interaction_relax")),
-            bool(context.get("interaction_thermo", True)),
+            bool(context.get("interaction_thermo", False)),
         )
         if errors:
             raise ValueError("\n".join(errors))
@@ -8337,7 +8430,7 @@ class App(tk.Tk):
             int(context["frag_b_charge"]),
             int(context["frag_b_mult"]),
             bool(context.get("interaction_relax")),
-            bool(context.get("interaction_thermo", True)),
+            bool(context.get("interaction_thermo", False)),
         )
         errors.extend(science_errors)
         warnings.extend(science_warnings)
@@ -8371,7 +8464,7 @@ class App(tk.Tk):
             include_dimer=False,
             include_cp=True,
             include_relax=bool(context.get("interaction_relax")),
-            include_thermo=bool(context.get("interaction_thermo", True)),
+            include_thermo=bool(context.get("interaction_thermo", False)),
         )
         orca_path = context["orca_path"]
         results: Dict[str, Dict[str, Optional[float]]] = {"dimer": {"output": dimer_out_path, **self._parse_orca_energy_terms(dimer_out_path)}}
@@ -9057,7 +9150,14 @@ class App(tk.Tk):
                 suggested = str(Path(source_path).with_suffix(default_ext))
             else:
                 self._confirm_tddft_memory_risk()
-                text = self.synchronize_input_preview()
+                # Save exactly what is visible in the editable preview.  A
+                # structure source (.cif/.xyz/...) has no engine input text of
+                # its own, and regenerating here used to discard manual edits
+                # just before the file was written.  Generate only when the
+                # editor is empty.
+                text = self.get_preview_text()
+                if not text.strip():
+                    text = self.synchronize_input_preview()
                 suggested = self.suggest_input_save_path()
             out = filedialog.asksaveasfilename(
                 defaultextension=".inp" if self.program_var.get() == "ORCA" else ".gjf",
@@ -9217,7 +9317,7 @@ class App(tk.Tk):
         context["dimer_optimized"] = bool(data.get("job_opt"))
         data["job_interaction"] = bool(context.get("interaction_enabled"))
         data["interaction_relaxation"] = bool(context.get("interaction_relax"))
-        data["interaction_thermo"] = bool(context.get("interaction_thermo", True))
+        data["interaction_thermo"] = bool(context.get("interaction_thermo", False))
         return context
 
     @staticmethod
@@ -9268,6 +9368,10 @@ class App(tk.Tk):
                 "after the current calculation. Choose No to keep the Builder open.",
                 parent=self,
             ):
+                return
+        crystal_habit = self.embedded_tool_controllers.get("crystal_habit")
+        if crystal_habit is not None and crystal_habit.winfo_exists():
+            if not crystal_habit.prepare_for_parent_close():
                 return
         self._save_workspace_state_safely()
         self.destroy()
@@ -9519,7 +9623,7 @@ class App(tk.Tk):
         self._save_active_job_state(self.run_process.pid, inp_path, out_path, orca_path, workdir, context)
 
         self.append_monitor(f"$ {' '.join(args)}\nWorking directory: {workdir}\nOutput file: {out_path}\n\n")
-        self._set_monitor_progress(5.0)
+        self._set_monitor_activity("ORCA is running; overall completion cannot be estimated")
         self._schedule_monitor_poll()
         return True
 
@@ -9602,7 +9706,6 @@ class App(tk.Tk):
                     stage = self.parse_orca_stage(chunk)
                     if stage:
                         self._set_monitor_stage(stage)
-                        self._set_monitor_progress(self._progress_for_orca_stage(stage))
             except Exception:
                 pass
 
@@ -9620,6 +9723,7 @@ class App(tk.Tk):
                 self._schedule_monitor_poll(MONITOR_CATCHUP_DELAY_MS)
                 return
             if code is None:
+                self._pulse_monitor_activity()
                 self._schedule_monitor_poll(MONITOR_CATCHUP_DELAY_MS if read_more_soon else MONITOR_POLL_DELAY_MS)
                 return
             self.run_process = None
@@ -9680,6 +9784,28 @@ class App(tk.Tk):
             value = max(self.monitor_progress_value, value)
         self.monitor_progress_value = value
         self.monitor_progress_label.configure(text=self._format_monitor_progress(value))
+        self.update_idletasks()
+
+    def _set_monitor_activity(self, message: str = "Working"):
+        """Show activity without claiming an unknowable completion percentage."""
+        self.monitor_activity_phase = 0
+        self.monitor_progress_label.configure(text=f"Activity: [{'#' + '-' * 29}] {message}")
+        self.update_idletasks()
+
+    def _pulse_monitor_activity(self):
+        width = 30
+        block_width = 5
+        span = width - block_width
+        phase = self.monitor_activity_phase % (2 * span or 1)
+        position = phase if phase <= span else 2 * span - phase
+        bar = "-" * position + "#" * block_width + "-" * (width - position - block_width)
+        self.monitor_activity_phase += 1
+        self.monitor_progress_label.configure(
+            text=f"Activity: [{bar}] ORCA is running; elapsed time is shown above"
+        )
+
+    def _set_monitor_terminal(self, result: str):
+        self.monitor_progress_label.configure(text=f"Result: {result}")
         self.update_idletasks()
 
 
@@ -10148,6 +10274,14 @@ class App(tk.Tk):
         context = self.active_run_context or {}
         queue_job = bool(context.get("queue_job") and self.active_queue_job)
         output_ok, output_reason = validate_orca_output_file(out_path)
+        if out_path and Path(out_path).is_file():
+            append_tool_use_record(
+                out_path,
+                "ORCA",
+                "completed" if code == 0 and output_ok else "failed",
+                purpose="electronic-structure calculation",
+                exit_code=code,
+            )
         if code == 0 and output_ok:
             self._set_monitor_progress(65.0)
             post_messages = []
@@ -10164,11 +10298,17 @@ class App(tk.Tk):
                     self._set_monitor_stage("Generating WFN/WFX")
                     self._set_monitor_progress(70.0)
                     wavefunction_path = self.run_orca_2aim(out_path)
+                    append_tool_use_record(
+                        out_path, "orca_2aim", "completed", purpose="WFN/WFX generation"
+                    )
                     self._set_monitor_progress(75.0)
                     context["post_processing"]["wfn_wfx_generated"] = True
                     context["post_processing"]["wavefunction_path"] = wavefunction_path
                     post_messages.append("WFN/WFX generation completed.")
                 except Exception as exc:
+                    append_tool_use_record(
+                        out_path, "orca_2aim", "failed", purpose="WFN/WFX generation", error=str(exc)
+                    )
                     self._set_monitor_progress(75.0)
                     context["post_processing"]["wfn_wfx_error"] = str(exc)
                     post_messages.append(f"WFN/WFX generation failed: {exc}")
@@ -10178,10 +10318,16 @@ class App(tk.Tk):
                     self._set_monitor_stage("Generating ESP/MEP cubes")
                     self._set_monitor_progress(78.0)
                     self.run_esp_cube_generation(wavefunction_path)
+                    append_tool_use_record(
+                        out_path, "Multiwfn", "completed", purpose="ESP/MEP cube generation"
+                    )
                     self._set_monitor_progress(85.0)
                     context["post_processing"]["esp_mep_generated"] = True
                     post_messages.append("ESP/MEP cube generation completed.")
                 except Exception as exc:
+                    append_tool_use_record(
+                        out_path, "Multiwfn", "failed", purpose="ESP/MEP cube generation", error=str(exc)
+                    )
                     self._set_monitor_progress(85.0)
                     context["post_processing"]["esp_mep_error"] = str(exc)
                     post_messages.append(f"ESP/MEP post-processing failed: {exc}")
@@ -10248,6 +10394,7 @@ class App(tk.Tk):
                 self._show_orca_completion_dialog(out_path, succeeded=True)
         else:
             self._set_monitor_stage(f"Finished with exit code {code}")
+            self._set_monitor_terminal("FAILED")
             failure = classify_orca_failure_file(out_path)
             if failure.get("category") == "tddft_memory":
                 message = failure["message"] + "\n\nDownstream analysis was not launched."

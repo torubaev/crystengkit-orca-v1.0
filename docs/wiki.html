@@ -243,6 +243,7 @@
 <a class="nav-link level-2" href="#starting-the-suite">Starting the Suite</a>
 <details class="nav-group" open><summary><a href="#tools">Tools</a></summary><div class="nav-children"><a class="nav-link level-3" href="#orca-input-builder">ORCA Input Builder</a>
 <a class="nav-link level-3" href="#td-dft-setup-analysis-and-visualization">TD-DFT Setup, Analysis, and Visualization</a>
+<a class="nav-link level-3" href="#crystal-habit-builder">Crystal Habit Builder</a>
 <a class="nav-link level-3" href="#homo-lumo-plotter">HOMO-LUMO Plotter</a>
 <a class="nav-link level-3" href="#esp-vismap">ESP / VisMap</a>
 <a class="nav-link level-3" href="#nci-plotter">NCI Plotter</a>
@@ -299,7 +300,7 @@
 <li>3D <code>.mol</code>, <code>.sdf</code>, or <code>.sd</code> files; and</li>
 <li>ChemDraw <code>.cdxml</code>, <code>.cdxm</code>, or binary <code>.cdx</code> files.</li>
 </ul>
-<p>CDXML/CDXM files with complete stored <code>xyz</code> coordinates are imported natively; 2D-only ChemDraw drawings and binary CDX use Open Babel for conversion and optional 3D generation. Generic <code>.inp</code> files are treated as ORCA inputs, not Gaussian inputs.</p>
+<p>CDXML/CDXM files are imported natively from either stored <code>xyz</code> coordinates or ordinary 2D ChemDraw coordinates. The native 2D reader expands implicit hydrogens and produces a starting geometry that must be inspected and optimized. Binary CDX uses Open Babel. Generic <code>.inp</code> files are treated as ORCA inputs, not Gaussian inputs.</p>
 <p>The suite is built around widely used, freely available academic/freeware programs. ORCA<sup><a href="#ref-orca-site">orca-site</a></sup> is used for quantum-chemical calculations. Multiwfn<sup><a href="#ref-multiwfn-site">multiwfn-site</a></sup> is used for:</p>
 <ul>
 <li>wavefunction analysis;</li>
@@ -335,8 +336,8 @@
 <li>organize saved ORCA inputs into named, persistent job queues and run them sequentially</li>
 <li>prepare a privacy-redacted ORCA-progress prompt for a selected browser AI service</li>
 <li>generate manuscript-ready computation summaries for experimental sections and supporting information</li>
-<li>configure TD-DFT/TDA absorption and emission workflows, UV-Vis spectra, and natural transition orbitals</li>
-<li>launch HOMO-LUMO, ESP, NCI, QTAIM, TD-DFT, and interaction-energy computations and visualizations.</li>
+<li>configure TD-DFT/TDA absorption and emission calculations, UV-Vis spectra, and natural transition orbitals</li>
+<li>launch HOMO-LUMO, ESP, NCI, QTAIM, TD-DFT, Crystal Habit, and interaction-energy calculations and visualizations.</li>
 </ul>
 <figure><img src="../images/wiki/orca-input_2.png" alt="Orca Input builder. Intermolecular computation section"></figure>
 <h2 id="installation-and-requirements">Installation and Requirements</h2>
@@ -358,13 +359,14 @@
 <li><strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">orca_2aim</a></strong>, from the ORCA package, for creating wavefunction files</li>
 <li><strong><a href="http://sobereva.com/multiwfn/" target="_blank" rel="noopener noreferrer">Multiwfn</a></strong>, for ESP, NCI, and QTAIM analysis</li>
 </ul>
-<p>The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again. On Windows, setup offers the Microsoft MPI Runtime as a checked optional component for parallel ORCA calculations. If MPI is skipped or cannot be installed, CrystEngKit automatically defaults generated ORCA inputs to one process.</p>
+<p>The installer does not install ORCA or Multiwfn, because they have their own official download pages and license terms. If the installer reports that one of them is missing, install it from the official source and run the installer again. On Windows, setup offers Open Babel 3.1.1 as a checked optional component for additional molecular formats and Microsoft MPI Runtime as a checked optional component for parallel ORCA calculations; either checkbox can be cleared. If MPI is skipped or cannot be installed, CrystEngKit automatically defaults generated ORCA inputs to one process.</p>
 <h3 id="manual-installation">Manual installation</h3>
 <p>Use manual installation only if the web installer is not suitable for your computer, or if you are installing on Linux or macOS.</p>
 <p>You need:</p>
 <ul>
 <li><strong>Python 3.9 or newer</strong></li>
 <li>the Python packages listed in <code>requirements.txt</code></li>
+<li><strong><a href="https://openbabel.org/" target="_blank" rel="noopener noreferrer">Open Babel</a></strong> for binary CDX and additional molecular formats</li>
 <li><strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">ORCA</a></strong>, <strong><a href="https://www.faccts.de/orca/" target="_blank" rel="noopener noreferrer">orca_2aim</a></strong>, and <strong><a href="http://sobereva.com/multiwfn/" target="_blank" rel="noopener noreferrer">Multiwfn</a></strong> for the full ESP, NCI, and QTAIM workflow</li>
 </ul>
 <p>After downloading or cloning the repository, run the checker.</p>
@@ -389,9 +391,11 @@
 <li><strong>HOMO LUMO</strong>;</li>
 <li><strong>ESP map</strong>;</li>
 <li><strong>NCI plot</strong>;</li>
-<li><strong>QTAIM CP</strong>; and</li>
-<li><strong>TD-DFT</strong>.</li>
+<li><strong>QTAIM CP</strong>;</li>
+<li><strong>TD-DFT</strong>; and</li>
+<li><strong>Crystal Habit</strong> (Advanced interface).</li>
 </ul>
+<p><strong>Basic interface</strong> presents the everyday calculation and analysis controls: Input, HOMO-LUMO, ESP, NCI, and QTAIM. <strong>Advanced interface</strong> keeps all Basic controls and adds the specialist TD-DFT and Crystal Habit pages. Changing the interface mode does not discard loaded structures, settings, or results.</p>
 <p>The active tool is highlighted and its name is shown at the left. Tool pages remain mounted while you switch, so the following remain available during the session:</p>
 <ul>
 <li>loaded files;</li>
@@ -422,6 +426,18 @@
 <li>the final optimized geometry for optimization jobs; or</li>
 <li>the printed input geometry for single-point jobs.</li>
 </ul>
+<h4 id="edit-synchronize-save-and-convert-input">Edit, synchronize, save, and convert input</h4>
+<p><code>Show input</code> displays the editable input text. For a loaded ORCA or Gaussian input, manual text edits remain authoritative while the Builder controls stay unchanged. Changing a Builder-owned control regenerates the input after a short delay and can replace manual text edits, so make control changes first and then apply any hand-written keywords. For an input generated from a structure file such as <code>.cif</code> or <code>.xyz</code>, use <code>Save input as...</code> before making final manual edits, reopen the saved engine input, and then edit it without changing Builder controls.</p>
+<p><code>Save input as...</code> uses the destination extension to choose the output engine:</p>
+<ul>
+<li><code>.inp</code> saves or converts to ORCA;</li>
+<li><code>.gjf</code>, <code>.com</code>, <code>.gau</code>, and <code>.gjc</code> save or convert to Gaussian; and</li>
+<li>saving to the same engine preserves the current text unchanged.</li>
+</ul>
+<p>Changing the <code>Program</code> selector alone does not convert a loaded input. Conversion occurs only when saving to an extension belonging to the other engine, and conversion notes or warnings are written to the monitor. Always review converted keywords because the two programs do not have one-to-one syntax for every feature.</p>
+<p>The same converter can be used without the GUI:</p>
+<div class="code-block"><button class="copy-code" type="button" aria-label="Copy code" title="Copy code">Copy</button><pre><code>python tools/Orca_input/input_format_converter.py source.gjf output.inp
+python tools/Orca_input/input_format_converter.py source.inp output.gjf</code></pre></div>
 <p>The right panel uses one large shared text window with a <code>Show input</code> / <code>Job monitor</code> switch. During a run, <code>Show input</code> displays the exact input being executed without regenerating or replacing it. <code>Job monitor</code> shows:</p>
 <ul>
 <li>live output;</li>
@@ -435,6 +451,7 @@
 <li>queue controls; and</li>
 <li>privacy-redacted AI progress-prompt generation.</li>
 </ul>
+<p>Calculation summaries are evidence-based: the Builder reads the executed ORCA output to verify normal termination, the method and basis reported by ORCA, and whether optimization, frequencies, TD-DFT, or single-point work actually ran. This prevents stale GUI defaults from being presented as executed settings. The summary also records available analysis files and produces publication-oriented computational details with references. Normal termination confirms completion, not scientific suitability.</p>
 <p>Active jobs are recorded in the user configuration folder. If the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process; <strong>Reconnect</strong> provides the same action manually. A reconnected queue pauses after its current calculation.</p>
 <p>Before rerunning a successfully completed job, the Builder warns that all same-basename result files may be overwritten and recommends a next unused name, such as <code>filename_01.inp</code> or <code>filename_02.inp</code>. Accepting the recommendation opens a Save As dialog prefilled with that name; ORCA starts only after the user saves the copied input under the suggested or another unused name. Choosing overwrite opens a second <strong>ATTENTION — Are you sure?</strong> confirmation.</p>
 <p>The Builder tries to generate <code>.wfn</code> and <code>.wfx</code> files automatically after every successful ORCA run. For older calculations, use <code>Generate WFN/WFX</code> when the matching <code>.out</code> and <code>.gbw</code> files are available.</p>
@@ -562,6 +579,14 @@ restarts/</code></pre></div>
 </ul>
 <p>The solvent part is omitted for gas-phase calculations. Export dialogs suggest these traceable names but still allow them to be edited before saving.</p>
 <p>&lt;/details&gt;</p>
+<h3 id="crystal-habit-builder">Crystal Habit Builder</h3>
+<p>Crystal Habit Builder runs a solvent-dependent crystal-morphology calculation sequence from a CIF structure. It uses CrystalClear for interaction and facet energetics, then CrystalGrower/CrystoGen for kinetic Monte Carlo growth simulations and CGAspects for morphology inspection.</p>
+<p>The tool is available in the Input Builder&#x27;s <strong>Advanced</strong> interface and reuses the CIF currently loaded in the Builder. See the <a href="tools/crystal_habit/README.md">Crystal Habit Builder README</a> for setup and calculation details.</p>
+<p>Method references:</p>
+<ul>
+<li><a href="https://doi.org/10.1039/D2SC06761G" target="_blank" rel="noopener noreferrer">CrystalClear: Spackman <em>et al.</em>, <em>Chemical Science</em> 2023</a></li>
+<li><a href="https://doi.org/10.1039/D0SC05017B" target="_blank" rel="noopener noreferrer">CrystalGrower/CrystoGen: Hill <em>et al.</em>, <em>Chemical Science</em> 2021</a></li>
+</ul>
 <h3 id="homo-lumo-plotter">HOMO-LUMO Plotter</h3>
 <figure><img src="../images/wiki/orca_homo-lumo_2.png" alt="HOMO-LUMO energy diagram tool"></figure>
 <p>Creates frontier-orbital energy diagrams<sup><a href="#ref-frontier-orbitals">frontier-orbitals</a></sup> from ORCA/Gaussian output or pasted orbital energies. For finished ORCA jobs, it can also:</p>
@@ -655,7 +680,7 @@ restarts/</code></pre></div>
 <li><code>.gau</code>; and</li>
 <li><code>.gjc</code>.</li>
 </ul>
-<p>Binary <code>.cdx</code> and 2D-only ChemDraw XML use Open Babel. External ORCA/Gaussian <code>.out</code> / <code>.log</code> files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.</p>
+<p>Binary <code>.cdx</code> uses Open Babel. CDXML/CDXM, including 2D-only ChemDraw XML, use the native reader. External ORCA/Gaussian <code>.out</code> / <code>.log</code> files can also be imported; the Builder extracts the Cartesian coordinates printed in the output file and uses them as the starting structure for new input generation or follow-up processing.</p>
 <figure><img src="../images/wiki/orca-input_1.png" alt="ORCA Input Builder job setup window"></figure>
 <ol>
 <li>Check the geometry with <code>Structure preview</code> if needed. The preview opens in a compact PyVista window with a black background. Imported structures should be inspected before calculation.</li>
@@ -685,7 +710,7 @@ restarts/</code></pre></div>
 <li>dimer interaction energy.</li>
 </ul>
 <ol>
-<li>Use <code>Input preview</code> in the shared right panel to generate or refresh the current <code>.inp</code> text, then use <code>Save input file</code>.</li>
+<li>Use <code>Show input</code> in the shared right panel to generate or refresh the current input text, review it, then use <code>Save input as...</code>.</li>
 </ol>
 <ol start="2">
 <li>Click <code>Run Orca</code>. The shared right panel switches automatically to <code>Job monitor</code>, where the following are available:</li>
@@ -700,24 +725,27 @@ restarts/</code></pre></div>
 </ul>
 <p>To view an existing or generated summary, click <code>Show summary</code>; the text is shown in the <code>Job monitor</code> view.</p>
 <h3 id="run-orca-job-queues">Run ORCA Job Queues</h3>
-<p>Use <code>Add to Queue</code> to save the current input and add it to the active named queue. <code>Queue Jobs</code> opens the queue manager, where queues can be:</p>
+<p><code>Run Orca</code> runs only the input currently selected in the Builder; it does not start pending queue entries. Use <code>Add to Queue</code> to save the current input and add it to the active queue, then open <code>Queue Jobs</code> and click <code>Run Queue</code> to run pending entries sequentially. The initial <code>Default</code> queue can be used directly; creating a named queue is optional.</p>
+<p>Queues are currently intended for ordinary ORCA input jobs. Run an intermolecular interaction-energy workflow individually with <code>Run Orca</code> so its fragment assignments, monomer and counterpoise calculations, and final report remain attached to the active dimer workflow. Finish that workflow before loading and running the next dimer.</p>
+<p>The queue manager can:</p>
 <ul>
-<li>created;</li>
-<li>selected;</li>
-<li>saved;</li>
-<li>loaded;</li>
-<li>reordered; and</li>
-<li>reset.</li>
+<li>create and select named queues;</li>
+<li>save and load queue files;</li>
+<li>remove selected entries;</li>
+<li>reset finished entries to <code>queued</code>;</li>
+<li>clear the active queue;</li>
+<li>run the active queue; and</li>
+<li>autosave the current queue state.</li>
 </ul>
 <p>Jobs run sequentially and retain one of these statuses:</p>
 <ul>
-<li>pending;</li>
+<li>queued;</li>
 <li>running;</li>
-<li>completed;</li>
+<li>done;</li>
 <li>failed; or</li>
 <li>stopped.</li>
 </ul>
-<p>Queue state is stored in JSON so an interrupted list can be inspected or resumed after restarting the Builder.</p>
+<p>Queue state is stored in JSON so an interrupted list can be inspected or resumed after restarting the Builder. The monitor history is retained while the queue advances and ends with a status summary for the active queue.</p>
 <h3 id="request-an-ai-progress-comment">Request an AI Progress Comment</h3>
 <p>In <code>Settings</code>, choose the browser AI service; ChatGPT is the default. While an ORCA output is available, click <code>Ask AI about progress</code>. CrystEngKit reads the complete available <code>.out</code> and removes:</p>
 <ul>
@@ -834,9 +862,13 @@ restarts/</code></pre></div>
 <li>Choose whether to include relaxed binding analysis and thermodynamic terms.</li>
 </ol>
 <ol start="6">
-<li>Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.</li>
-<figure><img src="../images/wiki/orca-output_3.png" alt="ORCA dimer interaction energy output summary"></figure>
+<li>Click <code>Run Orca</code> to run this dimer individually. Do not add an intermolecular workflow to the ordinary job queue. The automatic workflow evaluates the dimer, isolated monomers A and B, and both monomers in the full dimer basis before calculating the interaction terms. Let the complete workflow finish before loading the next dimer.</li>
 </ol>
+<ol start="7">
+<li>Review the final summary. It reports the five raw electronic energies, uncorrected interaction energy, BSSE magnitude, and counterpoise-corrected interaction energy in Eh, kcal/mol, and kJ/mol. When relaxed-fragment or thermochemical analysis is enabled, the available deformation, binding, enthalpy, and Gibbs-energy terms are added. Successful terms remain in the report if a later subjob fails, together with a crash note identifying the failed subjob.</li>
+</ol>
+<p>For distinct contacts extracted from a crystal, use single-point calculations on the experimental geometries when the goal is to compare those observed contacts. An unconstrained gas-phase dimer optimization can translate or rotate the fragments into the same nearby minimum and erase the distinction between stacking, hydrogen-bonded, or other starting motifs. If an optimized geometry is required, inspect the final structure and use constraints where necessary before evaluating its interaction energy.</p>
+<figure><img src="../images/wiki/orca-output_3.png" alt="ORCA dimer interaction energy output summary"></figure>
 <p>As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&amp;id=4&amp;state=show&amp;order=ASC&amp;by=name_m&amp;method=</p>
 <h3 id="modeling-of-solvation-effects">Modeling of Solvation Effects</h3>
 <p>The <code>Solvent</code> field adds an implicit-solvent model. For ORCA, the Builder uses the SMD model<sup><a href="#ref-smd">smd</a></sup> through the <code>%cpcm</code> block<sup><a href="#ref-pcm">pcm</a></sup>. Choose a solvent from the dropdown menu, or use <code>Other solvent...</code> for a custom ORCA-recognized solvent name.</p>
@@ -900,7 +932,7 @@ restarts/</code></pre></div>
 <p>Check:</p>
 <ul>
 <li><code>Settings</code> -&gt; ORCA executable path</li>
-<li>whether <code>orca</code> / <code>orca.exe</code> exists and is accessible</li>
+<li>whether the selected executable exists and is accessible; custom ORCA executable filenames are supported</li>
 </ul>
 <h3 id="homo-lumo-button-does-not-work">HOMO-LUMO button does not work</h3>
 <p>Check:</p>
@@ -989,6 +1021,7 @@ tools/
   NCI_plot/
   NCI_QTAIM_overlay/
   qtaim-cp/
+  crystal_habit/
   shared/</code></pre></div>
       </article>
       <section class="references"><h2 id="references">References</h2><ol><li id="ref-csd"><span class="ref-key">[csd]</span> C. R. Groom, I. J. Bruno, M. P. Lightfoot and S. C. Ward, <em>The Cambridge Structural Database</em>, Acta Cryst. B, 2016, 72, 171–179. DOI: <a href="https://doi.org/10.1107/S2052520616003954" target="_blank" rel="noopener noreferrer">10.1107/S2052520616003954</a></li>

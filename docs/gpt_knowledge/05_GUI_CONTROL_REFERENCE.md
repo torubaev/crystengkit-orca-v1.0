@@ -2,14 +2,16 @@
 
 ## ORCA Input Builder
 
+- **Basic interface**: everyday Input, HOMO-LUMO, ESP/VisMap, NCI, and QTAIM controls.
+- **Advanced interface**: all Basic controls plus the specialist TD-DFT and Crystal Habit pages.
 - **Browse**: load a supported structure, ORCA input, or ORCA/Gaussian output.
 - **Structure preview**: inspect imported geometry and, for dimers, fragment assignment.
 - **Calculation setup**: program, solvent, functional, basis, dispersion, charge, multiplicity, grid, and SCF options.
 - **Calculation targets**: single point, optimization, frequencies, ESP/MEP, NMR, TD-DFT, constraints, and intermolecular interaction workflow.
 - **Show input**: display the generated input or the exact input currently being executed.
 - **Job monitor**: live ORCA text, estimated stage progress, and elapsed time.
-- **Save input file**: save editable generated input with a descriptive suggested name.
-- **Add to Queue / Queue Jobs**: maintain and run named persistent queues sequentially.
+- **Save input as...**: save the current engine input or convert it according to the destination extension; review conversion warnings.
+- **Add to Queue / Queue Jobs / Run Queue**: maintain and explicitly run ordinary ORCA inputs sequentially; intermolecular workflows are run individually with `Run Orca`.
 - **Generate WFN/WFX**: use `orca_2aim` with matching completed `.out` and `.gbw` files.
 - **Stop job / Open .out / Open folder / Show summary / Ask AI about progress / Clear monitor**: monitor actions.
 - **Settings**: executable paths, helper scripts, Python commands, and browser AI selection.
@@ -31,6 +33,7 @@
 - **NCI Plotter**: Multiwfn RDG/sign(lambda2)rho grids, NCI surface settings, and NCI + QTAIM overlay launch.
 - **QTAIM**: Multiwfn critical points and paths, CP filters, energy labels when available, and visualization settings.
 - **NCI + QTAIM Overlay**: combined molecule, NCI surface, critical points, and bond paths.
+- **Crystal Habit**: solvent-dependent crystal-morphology calculations from the CIF loaded in the Builder; available in the Advanced interface.
 
 ## Hidden developer shortcut
 

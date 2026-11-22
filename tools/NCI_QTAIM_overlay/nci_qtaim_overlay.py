@@ -45,7 +45,7 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import install_dev_reload_shortcut
 from shared.tk_helpers import install_edit_context_menu, keep_entry_end_visible
-from shared.pyvista_window import bring_pyvista_window_to_front
+from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 NCI_MODULE_PATH = TOOLS_ROOT / "NCI_plot" / "nci_plotter.py"
 QTAIM_GRAPHICS_SETTINGS_PATH = Path.home() / ".qtaim_graphics_settings.json"
 QTAIM_MODULE_CANDIDATES = [
@@ -265,8 +265,8 @@ CP_COLORS = {
 HQ_ATOM_RESOLUTION = 96
 HQ_BOND_RESOLUTION = 72
 HQ_BACKGROUND_TOP = {
-    "white": "#eef3f8",
-    "black": "#171b22",
+    "white": "#ffffff",
+    "black": "#000000",
 }
 
 CP_LABELS = {
@@ -389,25 +389,72 @@ def detect_nci_cubes(folder: Path) -> tuple[Optional[Path], Optional[Path]]:
     return rdg, signrho
 
 
-def find_qtaim_cp_file(folder: Path, stem: str) -> Optional[Path]:
-    preferred_names = {
-        "cpprop.txt",
-        "cp.txt",
-        "cps.pdb",
-        "cp.pdb",
-        f"{stem.lower()}.multiwfn_qtaim.log",
-        f"{stem.lower()}_cpprop.txt",
-    }
-    for candidate in iter_output_files(folder, ["*.txt", "*.log", "*.out", "*.pdb"]):
-        if candidate.name.lower() in preferred_names:
-            return candidate
+def qtaim_cp_candidate_priority(path: Path, stem: str) -> tuple[int, str]:
+    """Prefer property-rich CP data over coordinate-only PDB exports."""
+    name = path.name.lower()
+    stem_lower = stem.lower()
+    if name in {"cpprop.txt", f"{stem_lower}_cpprop.txt"} or "cpprop" in name:
+        rank = 0
+    elif name == f"{stem_lower}.multiwfn_qtaim.log" or "qtaim" in name:
+        rank = 1
+    elif path.suffix.lower() in {".txt", ".log", ".out"}:
+        rank = 2
+    else:
+        rank = 3
+    return rank, str(path).lower()
 
-    patterns = ["*qtaim*.log", "*QTAIM*.log", "*CP*.txt", "*cp*.txt", "*CP*.pdb", "*cp*.pdb", "*critical*.txt", "*critical*.log"]
-    for pattern in patterns:
-        for candidate in sorted(iter_output_files(folder, [pattern])):
-            if candidate.is_file():
-                return candidate
-    return None
+
+def list_qtaim_cp_candidates(folder: Path, stem: str) -> list[Path]:
+    patterns = ["*qtaim*.log", "*CP*.txt", "*cp*.txt", "*CP*.pdb", "*cp*.pdb", "*critical*.txt", "*critical*.log"]
+    candidates: dict[str, Path] = {}
+    for candidate in iter_output_files(folder, patterns):
+        if candidate.is_file():
+            candidates[str(candidate.resolve()).lower()] = candidate
+    return sorted(candidates.values(), key=lambda path: qtaim_cp_candidate_priority(path, stem))
+
+
+def find_qtaim_cp_file(folder: Path, stem: str) -> Optional[Path]:
+    candidates = list_qtaim_cp_candidates(folder, stem)
+    return candidates[0] if candidates else None
+
+
+def enrich_cps_with_companion_energies(cps, cp_path: Path, qtaim_module):
+    """Fill coordinate-only CP records from a property-rich companion file."""
+    if any(getattr(cp, "potential_energy_density", None) is not None for cp in cps):
+        return cps, None
+
+    companions = list_qtaim_cp_candidates(cp_path.parent, cp_path.stem)
+    for companion in companions:
+        try:
+            if companion.resolve() == cp_path.resolve():
+                continue
+            energy_cps = qtaim_module.parse_critical_points_file(companion)
+        except Exception:
+            continue
+        energy_bcps = [
+            cp for cp in energy_cps
+            if normalize_cp_type(qtaim_module, cp.cp_type) == "(3,-1)"
+            and getattr(cp, "potential_energy_density", None) is not None
+        ]
+        if not energy_bcps:
+            continue
+
+        by_index = {cp.index: cp for cp in energy_bcps}
+        target_bcps = [cp for cp in cps if normalize_cp_type(qtaim_module, cp.cp_type) == "(3,-1)"]
+        matched = 0
+        for ordinal, cp in enumerate(target_bcps):
+            source = by_index.get(cp.index)
+            if source is None and ordinal < len(energy_bcps):
+                source = energy_bcps[ordinal]
+            if source is None:
+                continue
+            cp.kinetic_energy_density = source.kinetic_energy_density
+            cp.potential_energy_density = source.potential_energy_density
+            cp.energy_density = source.energy_density
+            matched += 1
+        if matched:
+            return cps, companion
+    return cps, None
 
 
 def find_qtaim_path_file(folder: Path, stem: str) -> Optional[Path]:
@@ -707,6 +754,10 @@ def add_qtaim_bcps(
     show_ccp: bool = False,
     show_unknown: bool = False,
     cp_colors: Optional[dict[str, str]] = None,
+    show_bcp_energy: bool = False,
+    cp_energy_unit: str = "kJ/mol",
+    prepare_bcp_energy_toggle: bool = False,
+    display_state: Optional[dict] = None,
 ):
     """
     Add QTAIM critical points to the plotter, filtering by type based on visibility flags.
@@ -745,6 +796,9 @@ def add_qtaim_bcps(
     
     label_points = []
     label_text = []
+    energy_points = []
+    energy_text = []
+    energy_labels_visible = False
     count = 0
     for cp in cps:
         normalized_type = normalize_cp_type(qtaim_module, cp.cp_type)
@@ -767,14 +821,24 @@ def add_qtaim_bcps(
         )
         count += 1
         if show_labels:
-            label_points.append(center)
             cp_label = CP_LABELS.get(normalized_type, "CP")
+            label_points.append(center)
             label_text.append(f"{cp_label}{cp.index}")
+        if (show_bcp_energy or prepare_bcp_energy_toggle) and normalized_type == "(3,-1)":
+            energy_label = qtaim_module.format_cp_energy_label(cp, cp_energy_unit)
+            if energy_label:
+                energy_points.append(center)
+                if show_labels:
+                    energy_text.append(f"{CP_LABELS.get(normalized_type, 'CP')}{cp.index}\n{energy_label}")
+                else:
+                    energy_text.append(energy_label)
+                energy_labels_visible = True
 
+    label_color = contrast_text_color(background)
+    label_shape_color = "black" if label_color == "white" else "white"
+    cp_label_actor = None
     if show_labels and label_points:
-        label_color = contrast_text_color(background)
-        label_shape_color = "black" if label_color == "white" else "white"
-        plotter.add_point_labels(
+        cp_label_actor = plotter.add_point_labels(
             label_points,
             label_text,
             font_size=13,
@@ -782,7 +846,50 @@ def add_qtaim_bcps(
             shape_color=label_shape_color,
             shape_opacity=0.55,
             always_visible=True,
+            name="qtaim_cp_labels",
         )
+    energy_actor = None
+    energy_header_actor = None
+    unavailable_actor = None
+    if energy_labels_visible:
+        energy_actor = plotter.add_point_labels(
+            energy_points,
+            energy_text,
+            font_size=13,
+            text_color=label_color,
+            shape_color=label_shape_color,
+            shape_opacity=0.55,
+            always_visible=True,
+            name="bcp_energy_labels",
+        )
+        energy_header_actor = plotter.add_text(
+                qtaim_module.BCP_ENERGY_HEADER,
+                position="upper_left",
+                font_size=10,
+                color=label_color,
+                name="bcp_energy_header",
+            )
+    elif show_bcp_energy or prepare_bcp_energy_toggle:
+        unavailable_actor = plotter.add_text(
+            "BCP energies unavailable: no V(r) values were found in the QTAIM CP data.",
+            position="lower_left",
+            font_size=10,
+            color=contrast_text_color(background),
+            name="bcp_energy_unavailable",
+        )
+    for actor, visible in (
+        (cp_label_actor, show_labels and not show_bcp_energy),
+        (energy_actor, show_bcp_energy),
+        (energy_header_actor, show_bcp_energy),
+        (unavailable_actor, show_bcp_energy),
+    ):
+        if actor is not None:
+            try:
+                actor.SetVisibility(bool(visible))
+            except Exception:
+                pass
+    if display_state is not None:
+        display_state["bcp_energy_available"] = bool(energy_labels_visible)
     return count
 
 
@@ -932,7 +1039,21 @@ def transform_cps(cps, transform_point):
         x, y, z = transform_point((cp.x, cp.y, cp.z))
         cp_type = type(cp)
         try:
-            transformed.append(cp_type(cp.index, cp.cp_type, x, y, z, cp.rho, cp.laplacian, cp.ellipticity))
+            transformed.append(
+                cp_type(
+                    cp.index,
+                    cp.cp_type,
+                    x,
+                    y,
+                    z,
+                    getattr(cp, "rho", None),
+                    getattr(cp, "laplacian", None),
+                    getattr(cp, "ellipticity", None),
+                    getattr(cp, "kinetic_energy_density", None),
+                    getattr(cp, "potential_energy_density", None),
+                    getattr(cp, "energy_density", None),
+                )
+            )
         except TypeError:
             cp.x, cp.y, cp.z = x, y, z
             transformed.append(cp)
@@ -1036,6 +1157,8 @@ def build_overlay(
     cp_colors: Optional[dict[str, str]] = None,
     bond_path_color: str = "yellow",
     bond_path_width: float = 6.0,
+    show_bcp_energy: bool = False,
+    cp_energy_unit: str = "kJ/mol",
     save_path: Optional[Path] = None,
     show_window: bool = True,
     parent_window: Optional[tk.Misc] = None,
@@ -1111,6 +1234,7 @@ def build_overlay(
 
     cp_count = 0
     path_count = 0
+    qtaim_display_state = {"bcp_energy_available": False}
     cps = []
     qtaim_transform = None
     use_qtaim_transform = False
@@ -1128,9 +1252,13 @@ def build_overlay(
     if inputs.qtaim_cp_file and Path(inputs.qtaim_cp_file).is_file():
         cp_path = Path(inputs.qtaim_cp_file)
         raw_cps = qtaim_module.parse_critical_points_file(cp_path)
+        if show_bcp_energy:
+            raw_cps, energy_companion = enrich_cps_with_companion_energies(raw_cps, cp_path, qtaim_module)
+            if energy_companion is not None:
+                print(f"Loaded BCP energy properties from companion file: {energy_companion}")
         transformed_cps = raw_cps
         if qtaim_transform is not None:
-            transformed_cps = transform_cps(qtaim_module.parse_critical_points_file(cp_path), qtaim_transform)
+            transformed_cps = transform_cps(raw_cps, qtaim_transform)
         cps, use_qtaim_transform = choose_coordinate_set(
             raw_cps,
             transformed_cps,
@@ -1152,6 +1280,10 @@ def build_overlay(
                 show_ccp=show_ccp,
                 show_unknown=show_unknown,
                 cp_colors=cp_colors,
+                show_bcp_energy=show_bcp_energy,
+                cp_energy_unit=cp_energy_unit,
+                prepare_bcp_energy_toggle=show_window and parent_window is not None,
+                display_state=qtaim_display_state,
             )
 
     if show_paths and show_bond_paths and inputs.qtaim_path_file and Path(inputs.qtaim_path_file).is_file():
@@ -1202,7 +1334,13 @@ def build_overlay(
                 return
             target = Path(selected)
         try:
-            plotter.screenshot(str(target), window_size=window_size, scale=1)
+            save_pyvista_screenshot(
+                plotter,
+                str(target),
+                background,
+                window_size=window_size,
+                scale=1,
+            )
             print(f"Saved NCI + QTAIM overlay image: {target}")
         except Exception as exc:
             messagebox.showerror("Save image failed", str(exc))
@@ -1226,13 +1364,28 @@ def build_overlay(
         bring_pyvista_window_to_front(plotter)
         if parent_window is not None:
             plotter.show(title="NCI + QTAIM overlay", interactive_update=True, auto_close=False)
-            open_quick_control_window(parent_window, plotter, save_current_view)
+            open_quick_control_window(
+                parent_window,
+                plotter,
+                save_current_view,
+                show_bcp_energy=show_bcp_energy,
+                show_cp_labels=show_labels,
+                bcp_energy_available=bool(qtaim_display_state.get("bcp_energy_available")),
+            )
             bring_pyvista_window_to_front(plotter, delay_s=0.05)
         else:
             plotter.show(title="NCI + QTAIM overlay")
 
 
-def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
+def open_quick_control_window(
+    parent: tk.Misc,
+    plotter,
+    save_callback,
+    *,
+    show_bcp_energy: bool = False,
+    show_cp_labels: bool = False,
+    bcp_energy_available: bool = False,
+) -> None:
     try:
         existing = getattr(parent, "_nci_qtaim_quick_controls", None)
         if existing is not None and existing.winfo_exists():
@@ -1244,13 +1397,52 @@ def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
     win = tk.Toplevel(parent)
     parent._nci_qtaim_quick_controls = win
     win.title("QTAIM + NCI controls")
-    win.geometry("360x150")
+    win.geometry("390x190")
     win.resizable(False, False)
 
     box = ttk.Frame(win, padding=12)
     box.pack(fill="both", expand=True)
     ttk.Label(box, text="QTAIM + NCI overlay", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
     ttk.Label(box, text="Live PyVista view controls", foreground="#53627a").grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 10))
+
+    energy_visible = tk.BooleanVar(value=bool(show_bcp_energy))
+
+    def named_actor(name: str):
+        try:
+            return plotter.renderer.actors.get(name)
+        except Exception:
+            return None
+
+    def set_visibility(name: str, visible: bool) -> None:
+        actor = named_actor(name)
+        if actor is not None:
+            try:
+                actor.SetVisibility(bool(visible))
+            except Exception:
+                pass
+
+    def toggle_bcp_energies() -> None:
+        visible = bool(energy_visible.get())
+        set_visibility("bcp_energy_labels", visible)
+        set_visibility("bcp_energy_header", visible)
+        set_visibility("bcp_energy_unavailable", visible)
+        set_visibility("qtaim_cp_labels", bool(show_cp_labels) and not visible)
+        try:
+            plotter.render()
+            bring_pyvista_window_to_front(plotter, delay_s=0.05)
+        except Exception:
+            pass
+
+    energy_check = ttk.Checkbutton(
+        box,
+        text="Show BCP energies",
+        variable=energy_visible,
+        command=toggle_bcp_energies,
+    )
+    energy_check.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    if not bcp_energy_available:
+        energy_check.state(["disabled"])
+        ttk.Label(box, text="No V(r) in overlay CP source", foreground="#9a3412").grid(row=2, column=2, columnspan=2, sticky="e", pady=(0, 10))
 
     def reset_view() -> None:
         try:
@@ -1275,8 +1467,8 @@ def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
             except Exception:
                 pass
 
-    ttk.Button(box, text="Save image", command=lambda: save_callback()).grid(row=2, column=0, sticky="ew", padx=(0, 6))
-    ttk.Button(box, text="Reset view", command=reset_view).grid(row=2, column=1, sticky="ew", padx=(0, 6))
+    ttk.Button(box, text="Save image", command=lambda: save_callback()).grid(row=3, column=0, sticky="ew", padx=(0, 6))
+    ttk.Button(box, text="Reset view", command=reset_view).grid(row=3, column=1, sticky="ew", padx=(0, 6))
     def lift_controls() -> None:
         try:
             if not win.winfo_exists():
@@ -1290,11 +1482,11 @@ def open_quick_control_window(parent: tk.Misc, plotter, save_callback) -> None:
         except Exception:
             pass
 
-    ttk.Button(box, text="Bring front", command=lambda: bring_pyvista_window_to_front(plotter, delay_s=0.05)).grid(row=2, column=2, sticky="ew", padx=(0, 6))
-    ttk.Button(box, text="Close", command=close_view).grid(row=2, column=3, sticky="ew")
+    ttk.Button(box, text="Bring front", command=lambda: bring_pyvista_window_to_front(plotter, delay_s=0.05)).grid(row=3, column=2, sticky="ew", padx=(0, 6))
+    ttk.Button(box, text="Close", command=close_view).grid(row=3, column=3, sticky="ew")
     for col in range(4):
         box.columnconfigure(col, weight=1)
-    ttk.Label(box, text="Shortcut: press S in the PyVista window to save current view.", foreground="#53627a").grid(row=3, column=0, columnspan=4, sticky="w", pady=(12, 0))
+    ttk.Label(box, text="Shortcut: press S in the PyVista window to save current view.", foreground="#53627a").grid(row=4, column=0, columnspan=4, sticky="w", pady=(12, 0))
     win.protocol("WM_DELETE_WINDOW", close_view)
     try:
         win.lift()
@@ -1330,6 +1522,8 @@ class OverlayApp(tk.Tk):
         self.show_cps = tk.BooleanVar(value=True)
         self.show_bond_paths = tk.BooleanVar(value=bool_setting(qtaim_graphics, "show_bond_paths", True))
         self.show_labels = tk.BooleanVar(value=bool_setting(qtaim_graphics, "show_labels", True))
+        self.show_bcp_energy = tk.BooleanVar(value=bool_setting(qtaim_graphics, "show_cp_energy", False))
+        self.cp_energy_unit = tk.StringVar(value=str_setting(qtaim_graphics, "cp_energy_unit", "kJ/mol"))
         
         # QTAIM-specific CP type visibility
         self.show_ncp = tk.BooleanVar(value=bool_setting(qtaim_graphics, "show_ncp", False))
@@ -1423,6 +1617,7 @@ class OverlayApp(tk.Tk):
         ttk.Checkbutton(settings, text="CPs", variable=self.show_cps).grid(row=0, column=2, sticky="w")
         ttk.Checkbutton(settings, text="QTAIM paths", variable=self.show_bond_paths).grid(row=0, column=3, sticky="w")
         ttk.Checkbutton(settings, text="Labels", variable=self.show_labels).grid(row=0, column=4, sticky="w")
+        ttk.Checkbutton(settings, text="BCP energies", variable=self.show_bcp_energy).grid(row=0, column=5, sticky="w")
 
         # CP type selection (only enabled if show_cps is enabled)
         ttk.Label(settings, text="CP types:", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=(8, 0))
@@ -1525,6 +1720,7 @@ class OverlayApp(tk.Tk):
         self.atom_scale.set(float_setting(qtaim_graphics, "atom_scale", float(self.atom_scale.get())))
         self.bond_radius.set(float_setting(qtaim_graphics, "bond_radius", float(self.bond_radius.get())))
         self.background.set(str_setting(qtaim_graphics, "background", self.background.get()))
+        self.cp_energy_unit.set(str_setting(qtaim_graphics, "cp_energy_unit", self.cp_energy_unit.get()))
         inputs = OverlayInputs(
             rdg_cube=Path(self.rdg_cube.get().strip()) if self.rdg_cube.get().strip() else None,
             signrho_cube=Path(self.signrho_cube.get().strip()) if self.signrho_cube.get().strip() else None,
@@ -1555,6 +1751,8 @@ class OverlayApp(tk.Tk):
             "atom_scale": float(self.atom_scale.get()),
             "bond_radius": float(self.bond_radius.get()),
             "show_covalent_bonds": bool(self.show_covalent_bonds.get()),
+            "show_bcp_energy": bool(self.show_bcp_energy.get()),
+            "cp_energy_unit": self.cp_energy_unit.get(),
             "cp_colors": self.cp_colors,
             "bond_path_color": self.bond_path_color,
             "bond_path_width": self.bond_path_width,
@@ -1601,6 +1799,8 @@ def parse_args():
     parser.add_argument("--show-cps", "--show-bcps", dest="show_cps", choices=["0", "1"], default="1")
     parser.add_argument("--show-bond-paths", "--show-paths", dest="show_bond_paths", choices=["0", "1"], default="1" if bool_setting(qtaim_graphics, "show_bond_paths", True) else "0")
     parser.add_argument("--show-labels", choices=["0", "1"], default="1" if bool_setting(qtaim_graphics, "show_labels", True) else "0")
+    parser.add_argument("--show-bcp-energy", choices=["0", "1"], default="1" if bool_setting(qtaim_graphics, "show_cp_energy", False) else "0")
+    parser.add_argument("--cp-energy-unit", choices=["kJ/mol", "kcal/mol"], default=str_setting(qtaim_graphics, "cp_energy_unit", "kJ/mol"))
     parser.add_argument("--show-ncp", choices=["0", "1"], default="1" if bool_setting(qtaim_graphics, "show_ncp", False) else "0")
     parser.add_argument("--show-bcp", choices=["0", "1"], default="1" if bool_setting(qtaim_graphics, "show_bcp", True) else "0")
     parser.add_argument("--show-rcp", choices=["0", "1"], default="1" if bool_setting(qtaim_graphics, "show_rcp", False) else "0")
@@ -1694,6 +1894,8 @@ def run_from_wavefunction(wavefunction_file: Path, args) -> bool:
         "bond_radius": float(args.bond_radius),
         "show_covalent_bonds": args.show_covalent_bonds == "1",
         "show_bond_paths": args.show_bond_paths == "1",
+        "show_bcp_energy": args.show_bcp_energy == "1",
+        "cp_energy_unit": args.cp_energy_unit,
         "cp_colors": dict(qtaim_graphics.get("cp_colors") or CP_COLORS),
         "bond_path_color": str_setting(qtaim_graphics, "bond_path_color", "yellow"),
         "bond_path_width": float_setting(qtaim_graphics, "bond_path_width", 6.0),
@@ -1735,6 +1937,7 @@ def main():
         return
 
     if args.no_gui:
+        qtaim_graphics = load_qtaim_graphics_settings()
         inputs = OverlayInputs(
             rdg_cube=Path(args.rdg) if args.rdg else None,
             signrho_cube=Path(args.signrho) if args.signrho else None,
@@ -1774,6 +1977,8 @@ def main():
             bond_radius=float(args.bond_radius),
             show_covalent_bonds=args.show_covalent_bonds == "1",
             show_bond_paths=args.show_bond_paths == "1",
+            show_bcp_energy=args.show_bcp_energy == "1",
+            cp_energy_unit=args.cp_energy_unit,
             cp_colors=dict(qtaim_graphics.get("cp_colors") or CP_COLORS),
             bond_path_color=str_setting(qtaim_graphics, "bond_path_color", "yellow"),
             bond_path_width=float_setting(qtaim_graphics, "bond_path_width", 6.0),

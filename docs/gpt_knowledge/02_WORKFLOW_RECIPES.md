@@ -51,7 +51,7 @@ Set processors and memory conservatively. ORCA memory directives are commonly in
 
 ## Preview the input
 
-Use **Input preview** in the shared right panel to generate or refresh the current ORCA text, then read the complete generated input. Verify:
+Use **Show input** in the shared right panel to generate or refresh the current ORCA text, then read the complete generated input. Verify:
 
 - keyword line;
 - `%` blocks;
@@ -373,7 +373,7 @@ project/
 
 
 
-Click **Input preview** in the shared right panel to generate or refresh the current input text, inspect it, and save it with **Save input file**. Then click **Run Orca**. The Builder launches the selected ORCA executable, directs output to the job output file, and switches the shared right panel to **Job monitor** automatically.
+Click **Show input** in the shared right panel to generate or refresh the current input text, inspect it, and save it with **Save input as...**. Then click **Run Orca**. The Builder launches the selected ORCA executable, directs output to the job output file, and switches the shared right panel to **Job monitor** automatically.
 
 Before leaving a long job unattended, confirm that:
 

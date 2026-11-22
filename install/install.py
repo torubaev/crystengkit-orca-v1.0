@@ -63,6 +63,7 @@ EXPECTED_PROJECT_ITEMS = [
     Path("tools") / "NCI_plot" / "nci_plotter.py",
     Path("tools") / "NCI_QTAIM_overlay" / "nci_qtaim_overlay.py",
     Path("tools") / "qtaim-cp" / "qtaim.py",
+    Path("tools") / "crystal_habit" / "crystal_habit_gui.py",
 ]
 
 OFFICIAL_LINKS = {

@@ -25,7 +25,6 @@ import zipfile
 import subprocess
 import datetime as _dt
 import traceback
-import webbrowser
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -66,7 +65,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
-from shared.tk_helpers import bind_mousewheel_to_canvas, install_edit_context_menu, keep_entry_end_visible, load_header_icon
+from shared.tk_helpers import bind_mousewheel_to_canvas, install_edit_context_menu, keep_entry_end_visible, load_header_icon, open_external_url
 from shared.pyvista_window import bring_pyvista_window_to_front
 from shared.molecule_style import add_mesh_safe, cylinder_between
 
@@ -91,7 +90,7 @@ def wiki_url() -> str:
 
 
 def open_readme_or_wiki():
-    webbrowser.open(wiki_url(), new=2)
+    open_external_url(wiki_url())
 ABOUT_PURPOSE = (
     "Creates frontier-orbital energy diagrams from ORCA/Gaussian output or pasted orbital "
     "energies. For finished ORCA jobs, it can also generate MO cube files with orca_plot, "
@@ -1237,14 +1236,14 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     ttk.Label(box, text="GitHub", font=("Segoe UI", 9, "bold")).grid(row=3, column=1, sticky="w")
     github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
     github_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
-    github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL))
+    github_link.bind("<Button-1>", lambda _event: open_external_url(GITHUB_URL, parent=win))
     ttk.Label(box, text="Documentation", font=("Segoe UI", 9, "bold")).grid(row=5, column=1, sticky="w", pady=(8, 0))
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
-    wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
+    wiki_link.bind("<Button-1>", lambda _event: open_external_url(wiki_url(), parent=win))
     ai_link = ttk.Label(box, text="AI assistant", foreground="#1d4ed8", cursor="hand2", justify="left")
     ai_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
-    ai_link.bind("<Button-1>", lambda _event: webbrowser.open(AI_ASSISTANT_URL, new=2))
+    ai_link.bind("<Button-1>", lambda _event: open_external_url(AI_ASSISTANT_URL, parent=win))
     citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
     citation_label.grid(row=8, column=1, sticky="w", pady=(10, 0))
     citation_label.bind("<Button-1>", copy_citation)
@@ -1255,7 +1254,7 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
     linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
     linkedin_icon.grid(row=0, column=1, padx=(10, 0))
-    linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL))
+    linkedin_icon.bind("<Button-1>", lambda _event: open_external_url(LINKEDIN_URL, parent=win))
 
     ttk.Button(box, text="Close", command=win.destroy).grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
     win.geometry("620x430")

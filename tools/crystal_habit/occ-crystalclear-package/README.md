@@ -1,4 +1,4 @@
-# OCC CrystalClear solvent-comparison workflow
+# OCC CrystalClear solvent-comparison procedure
 
 This folder contains a standalone official OCC v0.9.7 Windows installation and a reusable launcher for equilibrium (Wulff) crystal morphology calculations. It does not modify CrystalExplorer and it is not CrystalGrower kinetic Monte Carlo.
 

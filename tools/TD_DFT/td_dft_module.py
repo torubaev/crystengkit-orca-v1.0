@@ -17,7 +17,6 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -30,7 +29,7 @@ if str(TOOLS_ROOT) not in sys.path:
 import app_identity as _app_identity
 from shared.multiwfn_locator import auto_detect_multiwfn_path, find_multiwfn, load_saved_multiwfn_path as load_builder_multiwfn_path
 from shared.orca_parallel import default_orca_nprocs
-from shared.tk_helpers import executable_filetypes, install_edit_context_menu, load_header_icon
+from shared.tk_helpers import executable_filetypes, install_edit_context_menu, load_header_icon, open_external_url
 try:
     from .td_dft_naming import identified_output_stem
 except ImportError:
@@ -1111,14 +1110,14 @@ class TDDFTPanel(ttk.Frame):
         ttk.Label(box, text="GitHub", justify="left", font=("Segoe UI", 9, "bold")).grid(row=3, column=1, sticky="w")
         github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
         github_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
-        github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL, new=2))
+        github_link.bind("<Button-1>", lambda _event: open_external_url(GITHUB_URL, parent=win))
         ttk.Label(box, text="Documentation", justify="left", font=("Segoe UI", 9, "bold")).grid(row=5, column=1, sticky="w", pady=(8, 0))
         wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
         wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
-        wiki_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL + "#readme", new=2))
+        wiki_link.bind("<Button-1>", lambda _event: open_external_url(GITHUB_URL + "#readme", parent=win))
         ai_link = ttk.Label(box, text="AI assistant", foreground="#1d4ed8", cursor="hand2", justify="left")
         ai_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
-        ai_link.bind("<Button-1>", lambda _event: webbrowser.open(AI_ASSISTANT_URL, new=2))
+        ai_link.bind("<Button-1>", lambda _event: open_external_url(AI_ASSISTANT_URL, parent=win))
         citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
         citation_label.grid(row=8, column=1, sticky="w", pady=(10, 0))
         citation_label.bind("<Button-1>", lambda _event: self._copy_about_citation(win, citation_label))
@@ -1129,7 +1128,7 @@ class TDDFTPanel(ttk.Frame):
         ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
         linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
         linkedin_icon.grid(row=0, column=1, padx=(10, 0))
-        linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL, new=2))
+        linkedin_icon.bind("<Button-1>", lambda _event: open_external_url(LINKEDIN_URL, parent=win))
         ttk.Button(box, text="Close", command=win.destroy).grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
 
         win.update_idletasks()

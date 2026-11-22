@@ -41,7 +41,6 @@ import sys
 import threading
 import time
 import traceback
-import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
@@ -58,7 +57,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
-from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, executable_filetypes, keep_entry_end_visible, load_header_icon
+from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, executable_filetypes, keep_entry_end_visible, load_header_icon, open_external_url
 from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 from shared.molecule_style import add_mesh_safe, cylinder_between, molecule_material_parameters
 from shared.multiwfn_locator import find_multiwfn, find_multiwfn_deep
@@ -85,7 +84,7 @@ def wiki_url() -> str:
 
 
 def open_readme_or_wiki() -> None:
-    webbrowser.open(wiki_url(), new=2)
+    open_external_url(wiki_url())
 ABOUT_PURPOSE = (
     "Shows QTAIM bond, ring, and cage critical points from .wfn or .wfx files and "
     "Multiwfn QTAIM output."
@@ -197,8 +196,8 @@ DEFAULT_BCP_VG_NONCOVALENT_THRESHOLD = 1.0
 HQ_ATOM_RESOLUTION = 96
 HQ_BOND_RESOLUTION = 72
 HQ_BACKGROUND_TOP = {
-    "white": "#eef3f8",
-    "black": "#171b22",
+    "white": "#ffffff",
+    "black": "#000000",
 }
 
 CP_DESCRIPTIONS = {
@@ -771,6 +770,47 @@ def parse_critical_points_from_text(text: str) -> List[CriticalPoint]:
       1 BCP    14.80239428 3.71342894 6.79337107
     """
     cps: List[CriticalPoint] = []
+
+    # Native QTAIM export produced by save_cp_table().  Parse this explicitly
+    # so an NCI+QTAIM handoff preserves V(r), H(r), and the displayed energy.
+    table_lines = [line for line in text.splitlines() if line.strip()]
+    if table_lines and "\t" in table_lines[0]:
+        headers = [column.strip().lower() for column in table_lines[0].split("\t")]
+        required = {"index", "type", "x", "y", "z"}
+        if required.issubset(headers):
+            positions = {name: headers.index(name) for name in headers}
+
+            def table_value(columns: List[str], name: str) -> Optional[float]:
+                position = positions.get(name)
+                if position is None or position >= len(columns) or not columns[position].strip():
+                    return None
+                try:
+                    return _to_float(columns[position].strip())
+                except (TypeError, ValueError):
+                    return None
+
+            for line in table_lines[1:]:
+                columns = line.split("\t")
+                try:
+                    cps.append(
+                        CriticalPoint(
+                            int(columns[positions["index"]]),
+                            normalize_cp_type(columns[positions["type"]]),
+                            float(columns[positions["x"]]),
+                            float(columns[positions["y"]]),
+                            float(columns[positions["z"]]),
+                            table_value(columns, "rho"),
+                            table_value(columns, "laplacian"),
+                            table_value(columns, "ellipticity"),
+                            table_value(columns, "g_r_au"),
+                            table_value(columns, "v_r_au"),
+                            table_value(columns, "h_r_au"),
+                        )
+                    )
+                except (IndexError, TypeError, ValueError):
+                    continue
+            if cps:
+                return cps
 
     def cp_type_from_text(s: str) -> str:
         low = s.lower()
@@ -2250,14 +2290,14 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     ttk.Label(box, text="GitHub", font=("Segoe UI", 9, "bold")).grid(row=3, column=1, sticky="w")
     github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
     github_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
-    github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL))
+    github_link.bind("<Button-1>", lambda _event: open_external_url(GITHUB_URL, parent=win))
     ttk.Label(box, text="Documentation", font=("Segoe UI", 9, "bold")).grid(row=5, column=1, sticky="w", pady=(8, 0))
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
-    wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
+    wiki_link.bind("<Button-1>", lambda _event: open_external_url(wiki_url(), parent=win))
     ai_link = ttk.Label(box, text="AI assistant", foreground="#1d4ed8", cursor="hand2", justify="left")
     ai_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
-    ai_link.bind("<Button-1>", lambda _event: webbrowser.open(AI_ASSISTANT_URL, new=2))
+    ai_link.bind("<Button-1>", lambda _event: open_external_url(AI_ASSISTANT_URL, parent=win))
     citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
     citation_label.grid(row=8, column=1, sticky="w", pady=(10, 0))
     citation_label.bind("<Button-1>", copy_citation)
@@ -2268,7 +2308,7 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
     linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
     linkedin_icon.grid(row=0, column=1, padx=(10, 0))
-    linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL))
+    linkedin_icon.bind("<Button-1>", lambda _event: open_external_url(LINKEDIN_URL, parent=win))
 
     ttk.Button(box, text="Close", command=win.destroy).grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
     win.geometry("620x420")
@@ -2903,6 +2943,12 @@ class QTAIMGui(ttk.Frame):
         ttk.Button(actions, text="Open / rebuild viewer", command=self.visualize, style="Primary.TButton").grid(row=0, column=0, sticky="ew")
         ttk.Button(actions, text="Reset controls", command=self.reset_view).grid(row=1, column=0, sticky="ew", pady=(6, 0))
         ttk.Button(actions, text="Save Image As...", command=self.save_image).grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        ttk.Button(
+            actions,
+            text="NCI + QTAIM overlay",
+            command=self.open_nci_qtaim_overlay,
+            style="Primary.TButton",
+        ).grid(row=3, column=0, sticky="ew", pady=(6, 0))
 
         log_frame = ttk.LabelFrame(root, text="Status", padding=10)
         log_frame.pack(fill="both", expand=True)
@@ -3750,9 +3796,18 @@ class QTAIMGui(ttk.Frame):
             self.log(f"Using matching NCI RDG cube: {rdg_file}")
             self.log(f"Using matching NCI sign(lambda2)rho cube: {signrho_file}")
 
-            cp_file = self.cp_file_path.get().strip()
-            if cp_file and Path(cp_file).is_file():
-                command.extend(["--cp", cp_file])
+            # Pass the exact CP records currently displayed by QTAIM.  The
+            # originally selected source may be a coordinate-only CPs.pdb even
+            # after QTAIM enriched self.cps with V(r)/H(r) properties.
+            if self.cps:
+                overlay_cp_file = wavefunction_path.parent / f"{wavefunction_path.stem}_qtaim_overlay_cps.tsv"
+                save_cp_table(self.cps, overlay_cp_file)
+                command.extend(["--cp", str(overlay_cp_file)])
+                self.log(f"Exported current QTAIM CP properties for overlay: {overlay_cp_file}")
+            else:
+                cp_file = self.cp_file_path.get().strip()
+                if cp_file and Path(cp_file).is_file():
+                    command.extend(["--cp", cp_file])
 
             path_file = self.path_file_path.get().strip()
             if path_file and Path(path_file).is_file():
@@ -3773,6 +3828,8 @@ class QTAIMGui(ttk.Frame):
                 ) else "0",
                 "--show-bond-paths", "1" if bool(self.show_bond_paths.get()) else "0",
                 "--show-labels", "1" if bool(self.show_labels.get()) else "0",
+                "--show-bcp-energy", "1" if bool(self.show_cp_energy.get()) else "0",
+                "--cp-energy-unit", str(self.cp_energy_unit.get()),
                 "--show-ncp", "1" if bool(self.show_ncp.get()) else "0",
                 "--show-bcp", "1" if (bool(self.show_covalent_bcp.get()) or bool(self.show_non_covalent_bcp.get())) else "0",
                 "--show-rcp", "1" if bool(self.show_rcp.get()) else "0",

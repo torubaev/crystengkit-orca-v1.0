@@ -44,7 +44,6 @@ import subprocess
 import sys
 import threading
 import time
-import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -64,7 +63,7 @@ APP_ROOT = TOOLS_ROOT.parent
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
-from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, executable_filetypes, keep_entry_end_visible, load_header_icon
+from shared.tk_helpers import bind_mousewheel_to_canvas, configure_builder_ui_style, executable_filetypes, keep_entry_end_visible, load_header_icon, open_external_url
 from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 from shared.molecule_style import add_mesh_safe, molecule_material_parameters
 from shared.multiwfn_locator import find_multiwfn, find_multiwfn_deep, load_saved_multiwfn_path
@@ -91,7 +90,7 @@ def wiki_url() -> str:
 
 
 def open_readme_or_wiki() -> None:
-    webbrowser.open(wiki_url(), new=2)
+    open_external_url(wiki_url())
 ABOUT_PURPOSE = (
     "Creates noncovalent-interaction surfaces from .wfn or .wfx files. It is useful for "
     "visualizing weak contacts, attractive regions, and repulsive regions in molecular "
@@ -420,8 +419,8 @@ NCI_SCALAR_BAR_TITLE = "sign(lambda2)rho\n\n\n"
 HQ_ATOM_RESOLUTION = 96
 HQ_BOND_RESOLUTION = 72
 HQ_BACKGROUND_TOP = {
-    "white": "#eef3f8",
-    "black": "#171b22",
+    "white": "#ffffff",
+    "black": "#000000",
 }
 
 
@@ -617,14 +616,14 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     ttk.Label(box, text="GitHub", font=("Segoe UI", 9, "bold")).grid(row=3, column=1, sticky="w")
     github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
     github_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
-    github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL))
+    github_link.bind("<Button-1>", lambda _event: open_external_url(GITHUB_URL, parent=win))
     ttk.Label(box, text="Documentation", font=("Segoe UI", 9, "bold")).grid(row=5, column=1, sticky="w", pady=(8, 0))
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
-    wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
+    wiki_link.bind("<Button-1>", lambda _event: open_external_url(wiki_url(), parent=win))
     ai_link = ttk.Label(box, text="AI assistant", foreground="#1d4ed8", cursor="hand2", justify="left")
     ai_link.grid(row=7, column=1, sticky="w", pady=(2, 0))
-    ai_link.bind("<Button-1>", lambda _event: webbrowser.open(AI_ASSISTANT_URL, new=2))
+    ai_link.bind("<Button-1>", lambda _event: open_external_url(AI_ASSISTANT_URL, parent=win))
     citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
     citation_label.grid(row=8, column=1, sticky="w", pady=(10, 0))
     citation_label.bind("<Button-1>", copy_citation)
@@ -635,7 +634,7 @@ def open_about_dialog(parent: tk.Misc, title: str, icon_path: Path, purpose: str
     ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
     linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
     linkedin_icon.grid(row=0, column=1, padx=(10, 0))
-    linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL))
+    linkedin_icon.bind("<Button-1>", lambda _event: open_external_url(LINKEDIN_URL, parent=win))
 
     ttk.Button(box, text="Close", command=win.destroy).grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
     win.geometry("620x430")
@@ -781,24 +780,14 @@ class NCIPlotterApp:
         self.opacity_update_after_id = self.root.after(40, self._apply_surface_opacity)
 
     def apply_live_background(self, *_args) -> None:
-        """Change renderer colors without rebuilding actors, lights, or camera."""
-        if not self.is_plotter_alive():
-            return
-        try:
-            bg_color = self.background.get()
-            text_color = contrast_text_color(bg_color)
-            try:
-                self.plotter.set_background(
-                    bg_color,
-                    top=HQ_BACKGROUND_TOP.get(str(bg_color).strip().lower()),
-                )
-            except Exception:
-                self.plotter.set_background(bg_color)
-            if self.show_scalar_bar.get():
-                set_scalar_bar_text_color(self.plotter, text_color, NCI_SCALAR_BAR_TITLE)
-            self.plotter.render()
-        except (AttributeError, RuntimeError, tk.TclError):
-            return
+        """Rebuild after a background change so VTK rendering state is deterministic.
+
+        Recoloring the live renderer in place can leave gradient/depth-peeling
+        compositing in a visibly different state after a black-white-black
+        round trip.  The normal live update preserves the camera while
+        recreating the actors, materials, lights, and transparency state.
+        """
+        self.schedule_live_plot_update()
 
     def _apply_surface_opacity(self) -> None:
         self.opacity_update_after_id = None
@@ -1085,6 +1074,12 @@ class NCIPlotterApp:
 
         ttk.Button(button_row, text="Reset view", command=self.reset_view).grid(row=0, column=0, sticky="ew")
         ttk.Button(button_row, text="Save image", command=self.save_image).grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        ttk.Button(
+            button_row,
+            text="NCI + QTAIM overlay",
+            command=self.open_nci_qtaim_overlay,
+            style="Primary.TButton",
+        ).grid(row=2, column=0, sticky="ew", pady=(6, 0))
 
         for variable in (
             self.rdg_isovalue,
@@ -1780,18 +1775,12 @@ class NCIPlotterApp:
                 place_visualization_windows(self.viewer_controls_window, self.plotter, tiled_layout)
             bg_color = self.background.get()
             text_color = contrast_text_color(bg_color)
-            try:
-                self.plotter.set_background(bg_color, top=HQ_BACKGROUND_TOP.get(str(bg_color).strip().lower()))
-            except Exception:
-                self.plotter.set_background(bg_color)
-            try:
-                self.plotter.enable_depth_peeling(number_of_peels=8, occlusion_ratio=0.0)
-            except Exception:
-                pass
-            try:
-                self.plotter.renderer.SetTwoSidedLighting(True)
-            except Exception:
-                pass
+            configure_pyvista_defaults(
+                pv,
+                self.plotter,
+                background=bg_color,
+                extent=extent,
+            )
 
             scalar_bar_args = {
                 "title": NCI_SCALAR_BAR_TITLE,

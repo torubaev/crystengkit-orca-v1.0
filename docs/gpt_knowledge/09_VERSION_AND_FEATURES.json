@@ -1,6 +1,6 @@
 {
   "product": "CrystEngKit-ORCA",
-  "version": "1.1.13",
+  "version": "1.1.18",
   "documentation_schema": 1,
   "primary_gui": "ORCA Input Builder",
   "tools": [
@@ -10,7 +10,8 @@
     "ESP/VisMap",
     "NCI Plotter",
     "QTAIM",
-    "NCI + QTAIM Overlay"
+    "NCI + QTAIM Overlay",
+    "Crystal Habit"
   ],
   "platform_intent": [
     "Windows",

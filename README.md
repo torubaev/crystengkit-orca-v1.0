@@ -74,8 +74,8 @@ The main GUI is the **ORCA Input Builder**[^orca]. It can:
 - organize saved ORCA inputs into named, persistent job queues and run them sequentially
 - prepare a privacy-redacted ORCA-progress prompt for a selected browser AI service
 - generate manuscript-ready computation summaries for experimental sections and supporting information
-- configure TD-DFT/TDA absorption and emission workflows, UV-Vis spectra, and natural transition orbitals
-- launch HOMO-LUMO, ESP, NCI, QTAIM, TD-DFT, and interaction-energy computations and visualizations.
+- configure TD-DFT/TDA absorption and emission calculations, UV-Vis spectra, and natural transition orbitals
+- launch HOMO-LUMO, ESP, NCI, QTAIM, TD-DFT, Crystal Habit, and interaction-energy calculations and visualizations.
 
 ![Orca Input builder. Intermolecular computation section](images/wiki/orca-input_2.png)
 
@@ -179,8 +179,14 @@ The Builder's top navigation changes the central workspace between:
 - **HOMO LUMO**;
 - **ESP map**;
 - **NCI plot**;
-- **QTAIM CP**; and
-- **TD-DFT**.
+- **QTAIM CP**;
+- **TD-DFT**; and
+- **Crystal Habit** (Advanced interface).
+
+**Basic interface** presents the everyday calculation and analysis controls:
+Input, HOMO-LUMO, ESP, NCI, and QTAIM. **Advanced interface** keeps all Basic
+controls and adds the specialist TD-DFT and Crystal Habit pages. Changing the
+interface mode does not discard loaded structures, settings, or results.
 
 The active
 tool is highlighted and its name is shown at the left. Tool pages remain mounted
@@ -223,6 +229,36 @@ When an external output file is loaded, the Builder extracts the Cartesian coord
 - the final optimized geometry for optimization jobs; or
 - the printed input geometry for single-point jobs.
 
+#### Edit, synchronize, save, and convert input
+
+`Show input` displays the editable input text. For a loaded ORCA or Gaussian
+input, manual text edits remain authoritative while the Builder controls stay
+unchanged. Changing a Builder-owned control regenerates the input after a short
+delay and can replace manual text edits, so make control changes first and then
+apply any hand-written keywords. For an input generated from a structure file
+such as `.cif` or `.xyz`, use `Save input as...` before making final manual
+edits, reopen the saved engine input, and then edit it without changing Builder
+controls.
+
+`Save input as...` uses the destination extension to choose the output engine:
+
+- `.inp` saves or converts to ORCA;
+- `.gjf`, `.com`, `.gau`, and `.gjc` save or convert to Gaussian; and
+- saving to the same engine preserves the current text unchanged.
+
+Changing the `Program` selector alone does not convert a loaded input.
+Conversion occurs only when saving to an extension belonging to the other
+engine, and conversion notes or warnings are written to the monitor. Always
+review converted keywords because the two programs do not have one-to-one
+syntax for every feature.
+
+The same converter can be used without the GUI:
+
+```console
+python tools/Orca_input/input_format_converter.py source.gjf output.inp
+python tools/Orca_input/input_format_converter.py source.inp output.gjf
+```
+
 The right panel uses one large shared text window with a `Show input` / `Job monitor` switch. During a run, `Show input` displays the exact input being executed without regenerating or replacing it. `Job monitor` shows:
 
 - live output;
@@ -235,6 +271,14 @@ The monitor also provides:
 - summary display;
 - queue controls; and
 - privacy-redacted AI progress-prompt generation.
+
+Calculation summaries are evidence-based: the Builder reads the executed ORCA
+output to verify normal termination, the method and basis reported by ORCA, and
+whether optimization, frequencies, TD-DFT, or single-point work actually ran.
+This prevents stale GUI defaults from being presented as executed settings. The
+summary also records available analysis files and produces publication-oriented
+computational details with references. Normal termination confirms completion,
+not scientific suitability.
 
 Active jobs are recorded in the user configuration folder. If the Builder is closed while ORCA continues, reopening it offers to reconnect to the verified process; **Reconnect** provides the same action manually. A reconnected queue pauses after its current calculation.
 
@@ -405,6 +449,17 @@ The solvent part is omitted for gas-phase calculations. Export dialogs suggest t
 
 </details>
 
+### Crystal Habit Builder
+
+Crystal Habit Builder runs a solvent-dependent crystal-morphology calculation sequence from a CIF structure. It uses CrystalClear for interaction and facet energetics, then CrystalGrower/CrystoGen for kinetic Monte Carlo growth simulations and CGAspects for morphology inspection.
+
+The tool is available in the Input Builder's **Advanced** interface and reuses the CIF currently loaded in the Builder. See the [Crystal Habit Builder README](tools/crystal_habit/README.md) for setup and calculation details.
+
+Method references:
+
+- [CrystalClear: Spackman *et al.*, *Chemical Science* 2023](https://doi.org/10.1039/D2SC06761G)
+- [CrystalGrower/CrystoGen: Hill *et al.*, *Chemical Science* 2021](https://doi.org/10.1039/D0SC05017B)
+
 ### HOMO-LUMO Plotter
 
 ![HOMO-LUMO energy diagram tool](images/wiki/orca_homo-lumo_2.png)
@@ -552,7 +607,7 @@ Use it when the NCI and QTAIM output files have already been generated for the s
    - NMR; or
    - dimer interaction energy.
 
-5. Use `Input preview` in the shared right panel to generate or refresh the current `.inp` text, then use `Save input file`.
+5. Use `Show input` in the shared right panel to generate or refresh the current input text, review it, then use `Save input as...`.
 
 6. Click `Run Orca`. The shared right panel switches automatically to `Job monitor`, where the following are available:
 
@@ -567,24 +622,39 @@ Use it when the NCI and QTAIM output files have already been generated for the s
 
 ### Run ORCA Job Queues
 
-Use `Add to Queue` to save the current input and add it to the active named queue. `Queue Jobs` opens the queue manager, where queues can be:
+`Run Orca` runs only the input currently selected in the Builder; it does not
+start pending queue entries. Use `Add to Queue` to save the current input and
+add it to the active queue, then open `Queue Jobs` and click `Run Queue` to run
+pending entries sequentially. The initial `Default` queue can be used directly;
+creating a named queue is optional.
 
-- created;
-- selected;
-- saved;
-- loaded;
-- reordered; and
-- reset.
+Queues are currently intended for ordinary ORCA input jobs. Run an
+intermolecular interaction-energy workflow individually with `Run Orca` so its
+fragment assignments, monomer and counterpoise calculations, and final report
+remain attached to the active dimer workflow. Finish that workflow before
+loading and running the next dimer.
+
+The queue manager can:
+
+- create and select named queues;
+- save and load queue files;
+- remove selected entries;
+- reset finished entries to `queued`;
+- clear the active queue;
+- run the active queue; and
+- autosave the current queue state.
 
 Jobs run sequentially and retain one of these statuses:
 
-- pending;
+- queued;
 - running;
-- completed;
+- done;
 - failed; or
 - stopped.
 
-Queue state is stored in JSON so an interrupted list can be inspected or resumed after restarting the Builder.
+Queue state is stored in JSON so an interrupted list can be inspected or
+resumed after restarting the Builder. The monitor history is retained while the
+queue advances and ends with a status summary for the active queue.
 
 ### Request an AI Progress Comment
 
@@ -700,7 +770,18 @@ For consistent MO surface figures, orient and zoom one saved contact-sheet tile,
 
 5. Choose whether to include relaxed binding analysis and thermodynamic terms.
 
-6. Run ORCA and review the final summary for the calculated energies (uncorrected, BSSE, and CP-corrected) and the experimental section.
+6. Click `Run Orca` to run this dimer individually. Do not add an intermolecular workflow to the ordinary job queue. The automatic workflow evaluates the dimer, isolated monomers A and B, and both monomers in the full dimer basis before calculating the interaction terms. Let the complete workflow finish before loading the next dimer.
+
+7. Review the final summary. It reports the five raw electronic energies, uncorrected interaction energy, BSSE magnitude, and counterpoise-corrected interaction energy in Eh, kcal/mol, and kJ/mol. When relaxed-fragment or thermochemical analysis is enabled, the available deformation, binding, enthalpy, and Gibbs-energy terms are added. Successful terms remain in the report if a later subjob fails, together with a crash note identifying the failed subjob.
+
+For distinct contacts extracted from a crystal, use single-point calculations
+on the experimental geometries when the goal is to compare those observed
+contacts. An unconstrained gas-phase dimer optimization can translate or rotate
+the fragments into the same nearby minimum and erase the distinction between
+stacking, hydrogen-bonded, or other starting motifs. If an optimized geometry
+is required, inspect the final structure and use constraints where necessary
+before evaluating its interaction energy.
+
    ![ORCA dimer interaction energy output summary](images/wiki/orca-output_3.png)
 As a practical check, BSSE counterpoise-corrected intermolecular energies produced by the Builder for S22 examples at B3LYP/def2-SVP showed good agreement with the S22 reference values. The good agreement with the S22 reference values supports the consistency of the computational script logic of CrystEngKit ORCA Input Builder, rather than serving as a direct comparison to the higher-level S22 benchmark methodology. The BEGDB S22 reference values are based on MP2/CBS extrapolation from cc-pVTZ to cc-pVQZ plus a CCSD(T) correction in a modified cc-pVTZ basis set: http://www.begdb.org/index.php?action=oneDataset&id=4&state=show&order=ASC&by=name_m&method=
 
@@ -976,6 +1057,7 @@ tools/
   NCI_plot/
   NCI_QTAIM_overlay/
   qtaim-cp/
+  crystal_habit/
   shared/
 ```
 

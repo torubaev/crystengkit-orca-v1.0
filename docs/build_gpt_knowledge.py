@@ -18,6 +18,24 @@ def clean_markdown(path: Path) -> str:
     text = re.sub(r"^:::(note|tip|warning|caution|danger)\s*$", lambda m: f"**{m.group(1).upper()}:**", text, flags=re.MULTILINE)
     text = re.sub(r"^:::\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"^> \*\*IMAGE PLACEHOLDER.*$", "", text, flags=re.MULTILINE)
+    # Normalize legacy Builder labels retained in the older editorial source.
+    text = text.replace("**Input preview**", "**Show input**")
+    text = text.replace("`Input preview`", "`Show input`")
+    text = text.replace("**Save input file**", "**Save input as...**")
+    text = text.replace("`Save input file`", "`Save input as...`")
+    text = text.replace(
+        "The companion tools cover HOMO-LUMO diagrams and molecular-orbital surfaces, "
+        "electrostatic-potential surfaces, NCI plots, QTAIM critical points and paths, "
+        "and combined NCI + QTAIM views.",
+        "The companion tools cover HOMO-LUMO diagrams and molecular-orbital surfaces, "
+        "electrostatic-potential surfaces, NCI plots, QTAIM critical points and paths, "
+        "combined NCI + QTAIM views, and Crystal Habit calculations.",
+    )
+    text = text.replace(
+        "Launches the HOMO-LUMO, ESP, NCI, and QTAIM tools.",
+        "Launches the HOMO-LUMO, ESP, NCI, QTAIM, and Crystal Habit tools. "
+        "Crystal Habit is available in the Advanced interface.",
+    )
     return text.strip()
 
 
@@ -95,7 +113,7 @@ def build() -> None:
     write_json("07_SETTINGS_AND_DEFAULTS.json", SETTINGS_AND_DEFAULTS)
 
     csv_buffer = io.StringIO(newline="")
-    writer = csv.DictWriter(csv_buffer, fieldnames=list(FEATURE_MATRIX[0]))
+    writer = csv.DictWriter(csv_buffer, fieldnames=list(FEATURE_MATRIX[0]), lineterminator="\n")
     writer.writeheader()
     writer.writerows(FEATURE_MATRIX)
     write_text("08_FEATURE_CAPABILITY_MATRIX.csv", csv_buffer.getvalue())
@@ -108,14 +126,16 @@ GUI_CONTROL_REFERENCE = """# GUI control reference
 
 ## ORCA Input Builder
 
+- **Basic interface**: everyday Input, HOMO-LUMO, ESP/VisMap, NCI, and QTAIM controls.
+- **Advanced interface**: all Basic controls plus the specialist TD-DFT and Crystal Habit pages.
 - **Browse**: load a supported structure, ORCA input, or ORCA/Gaussian output.
 - **Structure preview**: inspect imported geometry and, for dimers, fragment assignment.
 - **Calculation setup**: program, solvent, functional, basis, dispersion, charge, multiplicity, grid, and SCF options.
 - **Calculation targets**: single point, optimization, frequencies, ESP/MEP, NMR, TD-DFT, constraints, and intermolecular interaction workflow.
 - **Show input**: display the generated input or the exact input currently being executed.
 - **Job monitor**: live ORCA text, estimated stage progress, and elapsed time.
-- **Save input file**: save editable generated input with a descriptive suggested name.
-- **Add to Queue / Queue Jobs**: maintain and run named persistent queues sequentially.
+- **Save input as...**: save the current engine input or convert it according to the destination extension; review conversion warnings.
+- **Add to Queue / Queue Jobs / Run Queue**: maintain and explicitly run ordinary ORCA inputs sequentially; intermolecular workflows are run individually with `Run Orca`.
 - **Generate WFN/WFX**: use `orca_2aim` with matching completed `.out` and `.gbw` files.
 - **Stop job / Open .out / Open folder / Show summary / Ask AI about progress / Clear monitor**: monitor actions.
 - **Settings**: executable paths, helper scripts, Python commands, and browser AI selection.
@@ -137,6 +157,7 @@ GUI_CONTROL_REFERENCE = """# GUI control reference
 - **NCI Plotter**: Multiwfn RDG/sign(lambda2)rho grids, NCI surface settings, and NCI + QTAIM overlay launch.
 - **QTAIM**: Multiwfn critical points and paths, CP filters, energy labels when available, and visualization settings.
 - **NCI + QTAIM Overlay**: combined molecule, NCI surface, critical points, and bond paths.
+- **Crystal Habit**: solvent-dependent crystal-morphology calculations from the CIF loaded in the Builder; available in the Advanced interface.
 
 ## Hidden developer shortcut
 
@@ -156,7 +177,7 @@ FILES_AND_FOLDERS = """# Files and folders reference
 | `.fchk` | Formatted checkpoint | Accepted by ESP/VisMap where supported. |
 | `.cube`, `.cub` | Volumetric grid | Density, ESP, MO, NCI, transition-density, or NTO content depends on its generating workflow. |
 | `.hess`, `.engrad`, trajectory `.xyz` | ORCA optimization/frequency companions | Preserve with the calculation when restarts or detailed analysis may be needed. |
-| queue JSON | Named Builder queue state | Contains input paths and execution status; inputs themselves remain separate files. |
+| queue JSON | Named Builder queue state | Contains ordinary ORCA input paths and execution status; inputs themselves remain separate files. |
 | `TDDFT_analysis/` | TD-DFT post-processing root | Shared spectra at root; selected-state artifacts under `Sn/`. |
 | project summary | Generated computational draft | Verify every setting, value, unit, sign, and claim against source input/output. |
 
@@ -211,6 +232,7 @@ FEATURE_MATRIX = [
     {"feature": "ESP/MEP", "inputs": "WFN; WFX; FCHK", "requires": "Multiwfn; PyVista", "outputs": "Mapped ESP surface; extrema; images", "limitations": "Compare figures using consistent surface and range"},
     {"feature": "NCI", "inputs": "WFN; WFX", "requires": "Multiwfn; PyVista", "outputs": "RDG/signrho cubes; NCI surface", "limitations": "Surface is qualitative, not interaction energy"},
     {"feature": "QTAIM", "inputs": "WFN/WFX and Multiwfn CP/path output", "requires": "Multiwfn; PyVista", "outputs": "Critical points; paths; tables; figures", "limitations": "A BCP does not automatically prove a conventional bond"},
+    {"feature": "Crystal Habit", "inputs": "CIF", "requires": "CrystalClear; CrystalGrower/CrystoGen; CGAspects", "outputs": "Facet energetics; growth simulation files; morphology views", "limitations": "Available in the Advanced interface; external programs must be installed separately"},
     {"feature": "Interaction energies", "inputs": "Dimer structure and fragment assignment", "requires": "ORCA", "outputs": "Raw; BSSE; CP-corrected and optional thermochemical terms", "limitations": "Dimer interaction energy is not lattice energy"},
 ]
 
@@ -224,7 +246,7 @@ VERSION_AND_FEATURES = {
     "version": APP_VERSION,
     "documentation_schema": 1,
     "primary_gui": "ORCA Input Builder",
-    "tools": ["ORCA Input Builder", "TD-DFT", "HOMO-LUMO", "ESP/VisMap", "NCI Plotter", "QTAIM", "NCI + QTAIM Overlay"],
+    "tools": ["ORCA Input Builder", "TD-DFT", "HOMO-LUMO", "ESP/VisMap", "NCI Plotter", "QTAIM", "NCI + QTAIM Overlay", "Crystal Habit"],
     "platform_intent": ["Windows", "Linux", "macOS"],
     "python": "3.9 or newer",
     "known_boundaries": [

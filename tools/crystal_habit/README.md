@@ -1,6 +1,14 @@
 # Crystal Habit Builder
 
-Windows GUI for sequential CrystalClear and CrystoGen crystal-habit calculations.
+Crystal Habit Builder predicts solvent-dependent crystal morphology from a CIF structure. It runs CrystalClear for interaction and facet energetics, passes the results to CrystalGrower/CrystoGen for kinetic Monte Carlo growth simulation, and opens the resulting morphology in CGAspects.
+
+It is available inside the CrystEngKit-ORCA Input Builder under **Advanced**, where it automatically reuses the currently loaded CIF. It can also run as a standalone Windows application.
+
+Method references:
+
+- [CrystalClear: Spackman *et al.*, *Chemical Science* 2023, 14, 7192–7207](https://doi.org/10.1039/D2SC06761G)
+- [CrystalGrower/CrystoGen: Hill *et al.*, *Chemical Science* 2021, 12, 1126–1146](https://doi.org/10.1039/D0SC05017B)
+- [CrystEngKit-ORCA main README](../../README.md)
 
 ## Start
 

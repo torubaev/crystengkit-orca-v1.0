@@ -26,7 +26,6 @@ import platform
 import threading
 import time
 import json
-import webbrowser
 import numpy as np
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -57,7 +56,7 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 from app_identity import configure_tk_window_identity, install_dev_reload_shortcut, set_windows_app_id
 from shared.window_layout import compute_visualization_layout, place_visualization_windows
-from shared.tk_helpers import bind_mousewheel_to_canvas, executable_filetypes, install_edit_context_menu, keep_entry_end_visible, load_header_icon
+from shared.tk_helpers import bind_mousewheel_to_canvas, executable_filetypes, install_edit_context_menu, keep_entry_end_visible, load_header_icon, open_external_url
 from shared.pyvista_window import bring_pyvista_window_to_front, save_pyvista_screenshot
 from shared.molecule_style import cylinder_between
 from shared.multiwfn_locator import find_multiwfn as find_shared_multiwfn
@@ -84,7 +83,7 @@ def wiki_url():
 
 
 def open_readme_or_wiki():
-    webbrowser.open(wiki_url(), new=2)
+    open_external_url(wiki_url())
 ABOUT_PURPOSE = (
     "Creates electrostatic-potential maps on electron-density surfaces. This version is based "
     "on the original VisMap code by aaan1s and adapts it for this suite with a GUI for ESP "
@@ -105,8 +104,8 @@ BOHR_PER_ANGSTROM = 1.0 / 0.529177210903
 HQ_ATOM_RESOLUTION = 96
 HQ_BOND_RESOLUTION = 72
 HQ_BACKGROUND_TOP = {
-    "white": "#eef3f8",
-    "black": "#171b22",
+    "white": "#ffffff",
+    "black": "#000000",
 }
 
 
@@ -145,18 +144,18 @@ def open_about_dialog(parent, title, icon_path, purpose):
     ttk.Label(box, text="Original VisMap by aaan1s", font=("Segoe UI", 9, "bold")).grid(row=3, column=1, sticky="w")
     original_link = ttk.Label(box, text=ORIGINAL_VISMAP_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
     original_link.grid(row=4, column=1, sticky="w", pady=(2, 0))
-    original_link.bind("<Button-1>", lambda _event: webbrowser.open(ORIGINAL_VISMAP_URL))
+    original_link.bind("<Button-1>", lambda _event: open_external_url(ORIGINAL_VISMAP_URL, parent=win))
     ttk.Label(box, text="GitHub", font=("Segoe UI", 9, "bold")).grid(row=5, column=1, sticky="w", pady=(8, 0))
     github_link = ttk.Label(box, text=GITHUB_URL, foreground="#1d4ed8", cursor="hand2", justify="left")
     github_link.grid(row=6, column=1, sticky="w", pady=(2, 0))
-    github_link.bind("<Button-1>", lambda _event: webbrowser.open(GITHUB_URL))
+    github_link.bind("<Button-1>", lambda _event: open_external_url(GITHUB_URL, parent=win))
     ttk.Label(box, text="Documentation", font=("Segoe UI", 9, "bold")).grid(row=7, column=1, sticky="w", pady=(8, 0))
     wiki_link = ttk.Label(box, text=README_LINK_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left")
     wiki_link.grid(row=8, column=1, sticky="w", pady=(2, 0))
-    wiki_link.bind("<Button-1>", lambda _event: open_readme_or_wiki())
+    wiki_link.bind("<Button-1>", lambda _event: open_external_url(wiki_url(), parent=win))
     ai_link = ttk.Label(box, text="AI assistant", foreground="#1d4ed8", cursor="hand2", justify="left")
     ai_link.grid(row=9, column=1, sticky="w", pady=(2, 0))
-    ai_link.bind("<Button-1>", lambda _event: webbrowser.open(AI_ASSISTANT_URL, new=2))
+    ai_link.bind("<Button-1>", lambda _event: open_external_url(AI_ASSISTANT_URL, parent=win))
     citation_label = ttk.Label(box, text=CITATION_TEXT, foreground="#1d4ed8", cursor="hand2", justify="left", wraplength=430)
     citation_label.grid(row=10, column=1, sticky="w", pady=(10, 0))
     citation_label.bind("<Button-1>", copy_citation)
@@ -167,7 +166,7 @@ def open_about_dialog(parent, title, icon_path, purpose):
     ttk.Label(contact, text=f"Email: {CONTACT_EMAIL}").grid(row=0, column=0, sticky="w")
     linkedin_icon = tk.Label(contact, text="in", bg="#0a66c2", fg="white", cursor="hand2", font=("Arial", 9, "bold"), padx=4, pady=1)
     linkedin_icon.grid(row=0, column=1, padx=(10, 0))
-    linkedin_icon.bind("<Button-1>", lambda _event: webbrowser.open(LINKEDIN_URL))
+    linkedin_icon.bind("<Button-1>", lambda _event: open_external_url(LINKEDIN_URL, parent=win))
 
     ttk.Button(box, text="Close", command=win.destroy).grid(row=14, column=0, columnspan=2, sticky="e", pady=(14, 0))
     win.geometry("640x470")
@@ -1340,6 +1339,7 @@ def _remove_extrema_actors():
             except Exception:
                 pass
             VIEWER_STATE[key] = None
+    VIEWER_STATE["extrema_visibility_filter"] = None
 
 
 def _render_extrema(points):
@@ -1358,9 +1358,19 @@ def _render_extrema(points):
     poly = VIEWER_STATE["pv"].PolyData(coords)
     labels = [f"{p[0]:+.2f}" for p in sorted_points]
     _bg_color, label_color = _get_viewer_colors()
-    VIEWER_STATE["extrema_points_actor"] = plotter.add_points(
-        poly,
+    # Use the renderer's depth buffer for marker visibility as well as label
+    # visibility.  Previously only labels were filtered while every extrema
+    # marker was added directly, which exposed rear-surface points whenever
+    # transparency/depth state changed.
+    visible_points = VIEWER_STATE["pv"]._vtk.vtkSelectVisiblePoints()
+    visible_points.SetInputData(poly)
+    visible_points.SetRenderer(plotter.renderer)
+    visible_points.SetTolerance(0.001)
+    VIEWER_STATE["extrema_visibility_filter"] = visible_points
+    VIEWER_STATE["extrema_points_actor"] = plotter.add_mesh(
+        visible_points,
         color=label_color,
+        style="points",
         point_size=6,
         render_points_as_spheres=False,
         name="extrema_points",
@@ -1376,7 +1386,7 @@ def _render_extrema(points):
         fill_shape=False,
         shape=None,
         margin=0,
-        tolerance=0.025,
+        tolerance=0.001,
         always_visible=False,
         name="extrema_labels",
         render=False,
@@ -1843,6 +1853,7 @@ def VisualizeData(CENTERS, CUBdat, CUBdatESP, xx, yy, zz):
         "extrema_points": [],
         "extrema_points_actor": None,
         "extrema_labels_actor": None,
+        "extrema_visibility_filter": None,
         "closing": False,
     }
 

@@ -5,8 +5,29 @@ from __future__ import annotations
 import base64
 import os
 import tkinter as tk
-from tkinter import ttk
+import webbrowser
+from tkinter import messagebox, ttk
 from typing import Any, Optional
+
+
+def open_external_url(url: str, *, parent: Optional[tk.Misc] = None) -> bool:
+    """Open an HTTP(S) link with a Windows-safe fallback and visible errors."""
+    target = str(url or "").strip()
+    if not target.lower().startswith(("https://", "http://")):
+        if parent is not None:
+            messagebox.showerror("Open link", f"Invalid web address:\n{target}", parent=parent)
+        return False
+    try:
+        if os.name == "nt":
+            os.startfile(target)
+            return True
+        if webbrowser.open(target, new=2):
+            return True
+        raise RuntimeError("No web browser accepted the link.")
+    except Exception as exc:
+        if parent is not None:
+            messagebox.showerror("Open link", f"Could not open:\n{target}\n\n{exc}", parent=parent)
+        return False
 
 
 def executable_filetypes(label: str = "Executable") -> list[tuple[str, str]]:

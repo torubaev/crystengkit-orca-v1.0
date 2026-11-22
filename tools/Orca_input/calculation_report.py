@@ -41,6 +41,33 @@ REFERENCES = {
     "MULTIWFN": "Lu, T.; Chen, F. Multiwfn: A multifunctional wavefunction analyzer. J. Comput. Chem. 2012, 33, 580-592. https://doi.org/10.1002/jcc.22885",
 }
 
+TOOL_USE_PREFIX = "# CRYSTENGKIT_TOOL_USE "
+
+
+def append_tool_use_record(output_path: str, tool: str, status: str = "completed", **details) -> Dict[str, object]:
+    """Append one ordered, machine-readable record of an actually invoked tool."""
+    record: Dict[str, object] = {"tool": str(tool), "status": str(status)}
+    record.update({key: value for key, value in details.items() if value not in (None, "")})
+    with Path(output_path).open("a", encoding="utf-8", errors="replace") as handle:
+        handle.write("\n" + TOOL_USE_PREFIX + json.dumps(record, ensure_ascii=True, sort_keys=True) + "\n")
+    return record
+
+
+def parse_tool_use_records(output_path: str) -> List[Dict[str, object]]:
+    """Read tool records in execution order, ignoring malformed marker lines."""
+    records: List[Dict[str, object]] = []
+    text = Path(output_path).read_text(encoding="utf-8", errors="replace")
+    for line in text.splitlines():
+        if not line.startswith(TOOL_USE_PREFIX):
+            continue
+        try:
+            value = json.loads(line[len(TOOL_USE_PREFIX):])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and value.get("tool"):
+            records.append(value)
+    return records
+
 
 def parse_input_metadata(input_path: str) -> Dict:
     """Parse report-relevant metadata from an ORCA input without GUI state."""
@@ -203,6 +230,15 @@ def render_report(summary: Mapping, github_url: str) -> List[str]:
         paragraphs.append("MEP parameters used in CrystEngKit: electron-density isovalue 0.001 e/A3 isosurface unless changed in the ESP/MEP viewer.")
     elif post.get("wfn_wfx_generated") or files.get("wavefunction_files"):
         paragraphs.append("A wavefunction file was generated for subsequent analysis; no downstream analysis is asserted in this report.")
+    tool_records = summary.get("tool_use_records", [])
+    if tool_records:
+        paragraphs.extend(["", "Tools actually used (execution order)"])
+        for index, record in enumerate(tool_records, 1):
+            status = str(record.get("status", "completed"))
+            purpose = str(record.get("purpose", "")).strip()
+            detail = f" — {purpose}" if purpose else ""
+            paragraphs.append(f"{index}. {record.get('tool')} ({status}){detail}")
+
     lines = ["Computational details", "", *paragraphs, "", "References"]
     lines.extend(f"[{i}] {REFERENCES[key]}" for i, key in enumerate(used, 1) if key in REFERENCES)
     return lines
@@ -280,7 +316,15 @@ def main() -> int:
     args = parser.parse_args()
     fallback = parse_input_metadata(args.input) if args.input else {}
     data, evidence = verify_from_output(args.output, fallback, (), ())
-    payload = {"input_file": args.input, "output_file": args.output, "settings": data, "execution_evidence": evidence, "post_processing": {}, "analysis_files": {}}
+    payload = {
+        "input_file": args.input,
+        "output_file": args.output,
+        "settings": data,
+        "execution_evidence": evidence,
+        "post_processing": {},
+        "analysis_files": {},
+        "tool_use_records": parse_tool_use_records(args.output),
+    }
     if args.json:
         print(json.dumps(payload, indent=2))
     else:

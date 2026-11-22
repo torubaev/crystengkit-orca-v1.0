@@ -555,6 +555,41 @@ class ImportHelperTests(unittest.TestCase):
             self.assertIn("#P PBE1PBE/Def2SVP SP", saved)
             self.assertNotIn("! PBE0", saved)
 
+    def test_save_as_inp_preserves_manual_preview_edits_from_structure_source(self):
+        class Preview:
+            def __init__(self, content): self.content = content
+            def delete(self, *_args): self.content = ""
+            def insert(self, _index, text): self.content = text
+
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            source = Path(tmpdir) / "water.xyz"
+            target = Path(tmpdir) / "water_manual.inp"
+            source.write_text("2\nwater\nO 0 0 0\nH 0 0 1\n", encoding="utf-8")
+            manual = (
+                "! PBE0 def2-SVP Opt\n\n"
+                "%geom\n  Scan\n    D 0 1 2 3 = 110, 180, 8\n  end\nend\n\n"
+                "* xyz 0 1\nO 0 0 0\nH 0 0 1\n*\n"
+            )
+            app = object.__new__(orca_input.App)
+            app.path_var = self._Var(str(source))
+            app.program_var = self._Var("ORCA")
+            app.preview_text = Preview(manual)
+            app.get_preview_text = lambda: app.preview_text.content
+            app.synchronize_input_preview = mock.Mock(
+                side_effect=AssertionError("manual preview must not be regenerated while saving")
+            )
+            app.suggest_input_save_path = lambda: str(Path(tmpdir) / "water.inp")
+            app._confirm_tddft_memory_risk = lambda: None
+            app._show_output_mode = lambda _mode: None
+            app.append_monitor = lambda _line: None
+            app.status = SimpleNamespace(configure=lambda **_kwargs: None)
+            with mock.patch.object(orca_input.filedialog, "asksaveasfilename", return_value=str(target)):
+                app.save_input()
+            self.assertEqual(target.read_text(encoding="utf-8"), manual)
+            app.synchronize_input_preview.assert_not_called()
+
     def test_orca_to_gaussian_maps_builder_controls_without_orca_keywords(self):
         converted = OrcaGaussianConverter().convert_text(
             "! B3LYP def2-SVP def2/J RIJCOSX TightSCF DefGrid2 SP\n"
@@ -1094,6 +1129,70 @@ $$$$
         text = orca_input.generate_orca(data, structure, None)
         self.assertIn("%pal\n  nprocs 8\nend", text)
         self.assertEqual(text.lower().count("%pal"), 1)
+
+    def test_orca_cartesian_constraints_use_zero_based_indices_not_element_symbols(self):
+        structure = orca_input.Structure([
+            ("I", 0.0, 0.0, 0.0),
+            ("C", 2.1, 0.0, 0.0),
+            ("H", 2.5, 0.9, 0.0),
+        ])
+        data = {
+            "functional": "B3LYP", "basis": "def2-SVP", "dispersion": "", "ri_jcosx": False,
+            "tight_scf": True, "grid": "DefGrid2", "job_opt": True, "job_freq": False,
+            "job_density": False, "job_esp": False, "job_sp": False, "job_tddft": False,
+            "job_nmr": False, "print_mos": False, "extra": "", "charge": 0, "multiplicity": 1,
+            "freeze_all": False, "freeze_heavy": True, "nprocs": 1,
+        }
+
+        text = orca_input.generate_orca(data, structure, None)
+
+        self.assertIn("    { C 0 C }", text)
+        self.assertIn("    { C 1 C }", text)
+        self.assertNotIn("    { C 2 C }", text)
+        self.assertNotIn("{ I 1 C }", text)
+
+        data["freeze_heavy"] = False
+        data["freeze_all"] = True
+        all_frozen = orca_input.generate_orca(data, structure, None)
+        self.assertIn("    { C 2 C }", all_frozen)
+
+    def test_interaction_thermochemistry_is_opt_in(self):
+        source = Path(orca_input.__file__).read_text(encoding="utf-8")
+        self.assertIn("self.interaction_thermo_var = tk.BooleanVar(value=False)", source)
+        self.assertNotIn('context.get("interaction_thermo", True)', source)
+        self.assertIn("include_thermo: bool = False", source)
+        self.assertEqual(
+            inspect.signature(orca_input.App._build_orca_relaxed_fragment_input)
+            .parameters["do_freq"].default,
+            False,
+        )
+        self.assertEqual(
+            inspect.signature(orca_input.App._build_orca_relaxed_dimer_input)
+            .parameters["do_freq"].default,
+            False,
+        )
+
+    def test_interaction_thermochemistry_is_advanced_and_requires_confirmation(self):
+        level_source = inspect.getsource(orca_input.App._set_builder_ui_level)
+        self.assertIn("interaction_thermo_row", level_source)
+        self.assertIn("grid_remove", level_source)
+
+        class MutableVar:
+            def __init__(self, value): self.value = value
+            def get(self): return self.value
+            def set(self, value): self.value = value
+
+        app = object.__new__(orca_input.App)
+        app.interaction_thermo_var = MutableVar(True)
+        with mock.patch.object(orca_input.messagebox, "askyesno", return_value=False) as confirmation:
+            app._confirm_interaction_thermochemistry()
+        confirmation.assert_called_once()
+        self.assertFalse(app.interaction_thermo_var.get())
+
+        app.interaction_thermo_var.set(True)
+        with mock.patch.object(orca_input.messagebox, "askyesno", return_value=True):
+            app._confirm_interaction_thermochemistry()
+        self.assertTrue(app.interaction_thermo_var.get())
 
     def test_input_and_monitor_search_is_case_insensitive(self):
         text = "SCF iteration 1\nEnergy\nscf iteration 2\n"

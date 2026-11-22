@@ -2,7 +2,13 @@
 
 The Builder is the application shell. Its top navigation remains visible while
 the central workspace changes between Input, HOMO-LUMO, ESP / VisMap, NCI,
-QTAIM, TD-DFT, and Torsion Scan pages.
+QTAIM, TD-DFT, Torsion Scan, and Crystal Habit pages. Crystal Habit is shown in
+the Advanced interface.
+
+Basic mode presents Input, HOMO-LUMO, ESP / VisMap, NCI, and QTAIM. Advanced
+mode retains those pages and adds the specialist TD-DFT, Torsion Scan, and
+Crystal Habit controls. Switching mode changes visibility only; mounted pages
+and their current state are preserved.
 
 - The active tool name is shown at the left and its navigation button is
   highlighted.

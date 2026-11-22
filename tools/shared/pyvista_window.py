@@ -9,14 +9,13 @@ from typing import Any
 
 
 def save_pyvista_screenshot(plotter: Any, path: str, background: str, **kwargs: Any) -> Any:
-    """Save white-background PNGs with alpha, with support for older PyVista."""
-    transparent = str(path).lower().endswith(".png") and str(background or "").strip().lower() == "white"
-    if transparent:
-        try:
-            return plotter.screenshot(path, transparent_background=True, **kwargs)
-        except TypeError:
-            pass
-    return plotter.screenshot(path, **kwargs)
+    """Save an opaque screenshot that preserves the selected scene background."""
+    try:
+        return plotter.screenshot(path, transparent_background=False, **kwargs)
+    except TypeError:
+        # Compatibility with older PyVista versions that do not expose the
+        # transparent_background keyword.
+        return plotter.screenshot(path, **kwargs)
 
 
 def bring_pyvista_window_to_front(plotter: Any, delay_s: float = 0.25) -> None:
