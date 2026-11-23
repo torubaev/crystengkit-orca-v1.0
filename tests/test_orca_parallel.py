@@ -19,7 +19,7 @@ class OrcaParallelTests(unittest.TestCase):
         self.assertEqual(find_mpi_launcher(), r"C:\MPI\mpiexec.exe")
         self.assertEqual(default_orca_nprocs(), 4)
 
-    @patch("shared.orca_parallel.Path.is_file", return_value=False)
+    @patch("shared.orca_parallel.os.path.isfile", return_value=False)
     @patch("shared.orca_parallel.shutil.which", return_value=None)
     def test_serial_default_without_launcher(self, _which, _is_file):
         with patch("shared.orca_parallel.os.name", "nt"):
@@ -28,8 +28,9 @@ class OrcaParallelTests(unittest.TestCase):
 
     @patch("shared.orca_parallel.find_mpi_launcher", return_value=r"C:\MPI\Bin\mpiexec.exe")
     def test_detected_launcher_directory_is_added_to_subprocess_path(self, _find):
-        environment = add_mpi_to_path({"PATH": r"C:\ORCA"})
-        self.assertEqual(environment["PATH"].split(os.pathsep)[-1], r"C:\MPI\Bin")
+        with patch("shared.orca_parallel.os.pathsep", ";"):
+            environment = add_mpi_to_path({"PATH": r"C:\ORCA"})
+        self.assertEqual(environment["PATH"].split(";")[-1], r"C:\MPI\Bin")
 
 
 if __name__ == "__main__":

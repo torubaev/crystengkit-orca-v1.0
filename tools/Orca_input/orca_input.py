@@ -30,7 +30,7 @@ except Exception:
 
 pv = None
 _pyvista_import_error = None
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Dict, List, Optional, Tuple
 
@@ -400,7 +400,9 @@ def compact_orca_output_for_progress(
 
 def orca_completion_summary(out_path: str, succeeded: bool) -> Tuple[str, str]:
     """Return the minimal user-facing job name and completion state."""
-    name = Path(str(out_path or "")).stem.strip() or "ORCA job"
+    raw_path = str(out_path or "")
+    parsed_path = PureWindowsPath(raw_path) if "\\" in raw_path else Path(raw_path)
+    name = parsed_path.stem.strip() or "ORCA job"
     return name, "Finished successfully" if succeeded else "Failed"
 
 

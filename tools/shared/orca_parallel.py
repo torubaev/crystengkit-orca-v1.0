@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import ntpath
 import shutil
 from pathlib import Path
 
@@ -15,12 +16,12 @@ def find_mpi_launcher() -> str:
     if os.name == "nt":
         candidates = [
             os.environ.get("MSMPI_BIN", ""),
-            str(Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Microsoft MPI" / "Bin"),
+            os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Microsoft MPI", "Bin"),
         ]
         for directory in candidates:
-            executable = Path(directory) / "mpiexec.exe" if directory else None
-            if executable and executable.is_file():
-                return str(executable)
+            executable = os.path.join(directory, "mpiexec.exe") if directory else ""
+            if executable and os.path.isfile(executable):
+                return executable
     return ""
 
 
@@ -35,7 +36,7 @@ def add_mpi_to_path(environment: dict[str, str]) -> dict[str, str]:
     launcher = find_mpi_launcher()
     if not launcher:
         return env
-    mpi_dir = str(Path(launcher).resolve().parent)
+    mpi_dir = ntpath.dirname(launcher) if "\\" in launcher else str(Path(launcher).resolve().parent)
     current = env.get("PATH", "")
     parts = current.split(os.pathsep) if current else []
     if not any(os.path.normcase(part) == os.path.normcase(mpi_dir) for part in parts):

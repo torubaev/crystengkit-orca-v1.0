@@ -181,7 +181,10 @@ class StrictTDDFTWorkflowTests(unittest.TestCase):
             write_example_config(str(root / "config.yaml"))
             cfg = load_config(str(root / "config.yaml"))
             self.assertEqual(cfg.system.name, "molecule")
-            self.assertEqual(Path(cfg.system.initial_xyz), root / "input" / "initial_geometry.xyz")
+            self.assertEqual(
+                Path(cfg.system.initial_xyz).resolve(),
+                (root / "input" / "initial_geometry.xyz").resolve(),
+            )
 
     def test_saved_gui_configuration_round_trips_without_pyyaml(self):
         with tempfile.TemporaryDirectory() as directory:

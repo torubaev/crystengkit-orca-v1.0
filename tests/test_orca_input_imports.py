@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import importlib.util
 import inspect
 import os
@@ -1525,13 +1525,13 @@ $$$$
         app.current_tddft_block = "%tddft\n  NRoots 10\nend"
         app.collect = lambda: {"functional": "B3LYP", "basis": "def2-SVP", "solvent_text": ""}
 
-        suggested = Path(app.suggest_input_save_path()).name
+        suggested = PureWindowsPath(app.suggest_input_save_path()).name
 
         self.assertEqual(suggested, "water_B3LYP_def2-SVP_td-dft_absorption.inp")
 
         app.current_tddft_settings = {"td_method": "TDA", "excited_state_optimization": True}
         app.current_tddft_block = "%tddft\n  TDA true\nend"
-        self.assertEqual(Path(app.suggest_input_save_path()).name, "water_B3LYP_def2-SVP_tda_excited-state-optimization.inp")
+        self.assertEqual(PureWindowsPath(app.suggest_input_save_path()).name, "water_B3LYP_def2-SVP_tda_excited-state-optimization.inp")
 
     def test_tddft_input_save_suggestion_skips_td_dft_tag_without_block(self):
         app = object.__new__(orca_input.App)
@@ -1544,7 +1544,7 @@ $$$$
         app.current_tddft_block = ""
         app.collect = lambda: {"functional": "B3LYP", "basis": "def2-SVP", "solvent_text": ""}
 
-        suggested = Path(app.suggest_input_save_path()).name
+        suggested = PureWindowsPath(app.suggest_input_save_path()).name
 
         self.assertEqual(suggested, "water_B3LYP_def2-SVP_sp.inp")
 
