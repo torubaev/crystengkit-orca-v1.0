@@ -19,8 +19,8 @@ class CrystalHabitOutputPathTests(unittest.TestCase):
             selected_cif = Path(directory) / "example.cif"
             selected_cif.write_text("data_example\n", encoding="utf-8")
             self.assertEqual(
-                MODULE.default_results_folder(selected_cif),
-                selected_cif.parent / "CrystalHabit_results",
+                MODULE.default_results_folder(selected_cif).resolve(),
+                (selected_cif.parent / "CrystalHabit_results").resolve(),
             )
 
     def test_repository_results_are_not_suggested_or_accepted(self):
