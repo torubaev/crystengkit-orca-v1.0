@@ -43,3 +43,8 @@ benchmark_sets/**
 !benchmark_sets/**/*.xyz
 
 # Images are usually generated outputs; keep documented examples explicitly if needed.
+
+# Crystal Habit / CrystalClear runtime calculations. These belong in external
+# computational folders, never in the source or installation tree.
+**/CrystalClear_inputs/
+**/*_habit_*/

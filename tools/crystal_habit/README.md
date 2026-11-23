@@ -27,7 +27,9 @@ The default settings reproduce the established RJK2286 calculations:
 - 25 °C
 - 1,000,000 CrystoGen iterations
 
-Select a CIF, one or more solvents, and a results folder. The editable solvent dropdown contains common laboratory solvents from the installed OCC SMD database and also accepts manual solvent names. The monitor displays the active stage, elapsed time, CPU time, memory, dimer or iteration progress, and program output.
+Select a CIF, one or more solvents, and a results folder. The Builder suggests a dedicated `CrystalHabit_results` subfolder beside the loaded CIF; the user may accept it or choose another computational folder. If the CIF is inside the CrystEngKit source or installation tree, no result location is suggested and an external folder must be selected. Calculations are never allowed inside the application tree.
+
+The editable solvent dropdown contains common laboratory solvents from the installed OCC SMD database and also accepts manual solvent names. The monitor displays the active stage, elapsed time, CPU time, memory, dimer or iteration progress, and program output.
 
 Use **Preview** beside the CIF field to open the same PyVista molecular viewer used by ORCA Input Builder, including its parser, atom and bond styles, background, lighting and rendering settings.
 

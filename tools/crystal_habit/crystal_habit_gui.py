@@ -53,7 +53,6 @@ CITATION_TEXT = f"Cite as: {CITATION_REFERENCE}"
 DEFAULT_CRYSTALCLEAR = Path.home() / "Documents" / "OCC-CrystalClear" / "Run-CrystalClear.ps1"
 DEFAULT_CRYSTOGEN = APP_DIR / "tools" / "crystogen" / "crystogen.exe"
 DEFAULT_CGASPECTS = Path(r"C:\Program Files\CrystoGen\CGAspects\CGAspects.exe")
-DEFAULT_OUTPUT = Path.home() / "Documents" / "CrystalHabitBuilder" / "runs"
 ORCA_TOOLS = TOOLS_ROOT
 
 SOLVENTS = (
@@ -176,10 +175,32 @@ def normalize_initial_cif(value: str | os.PathLike[str] | None) -> str:
     return ""
 
 
-def default_results_folder(cif_path: str | os.PathLike[str] | None) -> Path:
-    """Use the selected CIF directory, falling back only when no CIF is available."""
+def default_results_folder(cif_path: str | os.PathLike[str] | None) -> Path | None:
+    """Suggest a dedicated results subfolder beside an external source CIF."""
     normalized = normalize_initial_cif(cif_path)
-    return Path(normalized).parent if normalized else DEFAULT_OUTPUT
+    if not normalized:
+        return None
+    output = Path(normalized).parent / "CrystalHabit_results"
+    try:
+        output.resolve().relative_to(TOOLS_ROOT.parent.resolve())
+    except ValueError:
+        return output
+    return None
+
+
+def validate_results_folder(value: str | os.PathLike[str]) -> Path:
+    """Return a results folder only when it is outside the application tree."""
+    if not str(value).strip():
+        raise ValueError("Select a results folder outside the CrystEngKit application directory.")
+    output = Path(value).expanduser().resolve()
+    try:
+        output.relative_to(TOOLS_ROOT.parent.resolve())
+    except ValueError:
+        return output
+    raise ValueError(
+        "Crystal Habit calculations cannot be written inside the CrystEngKit application or "
+        "development directory. Select a separate computational folder."
+    )
 
 
 class CrystalHabitApp(ttk.Frame):
@@ -219,7 +240,8 @@ class CrystalHabitApp(ttk.Frame):
 
         initial_cif_path = normalize_initial_cif(initial_cif)
         self.cif_var = tk.StringVar(value=initial_cif_path)
-        self.output_var = tk.StringVar(value=str(default_results_folder(initial_cif_path)))
+        suggested_output = default_results_folder(initial_cif_path)
+        self.output_var = tk.StringVar(value=str(suggested_output) if suggested_output else "")
         self.crystalclear_var = tk.StringVar(value=str(DEFAULT_CRYSTALCLEAR))
         self.crystogen_var = tk.StringVar(value=str(DEFAULT_CRYSTOGEN))
         self.cgaspects_var = tk.StringVar(value=str(DEFAULT_CGASPECTS))
@@ -405,7 +427,8 @@ class CrystalHabitApp(ttk.Frame):
         value = filedialog.askopenfilename(title="Select crystal structure", filetypes=[("CIF files", "*.cif"), ("All files", "*.*")])
         if value:
             self.cif_var.set(value)
-            self.output_var.set(str(Path(value).resolve().parent))
+            suggested_output = default_results_folder(value)
+            self.output_var.set(str(suggested_output) if suggested_output else "")
 
     def _browse_output(self) -> None:
         value = filedialog.askdirectory(title="Select results folder")
@@ -418,7 +441,8 @@ class CrystalHabitApp(ttk.Frame):
             return
         normalized = normalize_initial_cif(value)
         self.cif_var.set(normalized)
-        self.output_var.set(str(default_results_folder(normalized)))
+        suggested_output = default_results_folder(normalized)
+        self.output_var.set(str(suggested_output) if suggested_output else "")
 
     def launch_structure_viewer(self) -> None:
         """Open the same PyVista molecular preview used by ORCA Input Builder."""
@@ -659,7 +683,7 @@ class CrystalHabitApp(ttk.Frame):
             raise ValueError("Numerical settings must be positive.")
         return {
             "cif": cif, "solvents": solvents, "paths": paths,
-            "output": Path(self.output_var.get()), "model": self.model_var.get(),
+            "output": validate_results_folder(self.output_var.get()), "model": self.model_var.get(),
             "solvation": self.solvation_var.get(), "radius": radius, "dmin": dmin,
             "threads": threads, "temperature": temperature, "iterations": iterations,
             "memory": memory,
