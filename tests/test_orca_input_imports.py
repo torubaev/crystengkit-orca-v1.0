@@ -127,7 +127,8 @@ class ImportHelperTests(unittest.TestCase):
     def test_tddft_controls_and_workspace_action_are_advanced_only(self):
         source = inspect.getsource(orca_input.App._set_builder_ui_level)
         self.assertIn("tddft_setup_row", source)
-        self.assertIn('workspace_action_widgets.get("TD-DFT")', source)
+        self.assertIn('("TD-DFT", "Crystal Habit")', source)
+        self.assertIn("workspace_action_widgets.get(action_name)", source)
         self.assertIn("grid_remove", source)
 
     def test_manual_composite_method_input_is_authoritative_for_run_report(self):

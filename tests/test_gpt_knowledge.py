@@ -35,9 +35,25 @@ class GPTKnowledgeTests(unittest.TestCase):
         self.assertIn("AI progress assistance", features)
 
     def test_builder_is_deterministic_and_uses_editorial_tmp_manual(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output = Path(tmpdir)
-            with mock.patch.object(MODULE, "OUTPUT", output):
+        work_root = ROOT / "tmp" / "codex_work"
+        work_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=work_root) as tmpdir:
+            workdir = Path(tmpdir)
+            manual_root = workdir / "editorial" / "docs"
+            output = workdir / "output"
+            (manual_root / "manual").mkdir(parents=True)
+            (manual_root / "intro.md").write_text(
+                "# Test manual\n\nJob queues and AI progress assistance\n",
+                encoding="utf-8",
+            )
+            (manual_root / "manual" / "td-dft.md").write_text(
+                "# TD-DFT\n\nEmission and NTO analysis\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(MODULE, "MANUAL_ROOT", manual_root),
+                mock.patch.object(MODULE, "OUTPUT", output),
+            ):
                 MODULE.build()
             manual = (output / "01_USER_MANUAL.md").read_text(encoding="utf-8")
             self.assertIn("Job queues and AI progress assistance", manual)
