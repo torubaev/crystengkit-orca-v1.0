@@ -487,6 +487,78 @@ def infer_bonds(atoms: List[Atom], scale: float = 1.28) -> List[Tuple[int, int]]
     return []
 
 
+def molecular_fragment_ids(atoms: List[Atom], bonds: Optional[List[Tuple[int, int]]] = None) -> List[int]:
+    """Return a covalent-connectivity component id for every atom."""
+    parents = list(range(len(atoms)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(first: int, second: int) -> None:
+        root_first, root_second = find(first), find(second)
+        if root_first != root_second:
+            parents[root_second] = root_first
+
+    for first, second in bonds if bonds is not None else infer_bonds(atoms):
+        if 0 <= first < len(atoms) and 0 <= second < len(atoms):
+            union(first, second)
+    roots: Dict[int, int] = {}
+    return [roots.setdefault(find(index), len(roots)) for index in range(len(atoms))]
+
+
+def nearest_atom_index(point: Tuple[float, float, float], atoms: List[Atom]) -> Optional[int]:
+    if not atoms:
+        return None
+    return min(
+        range(len(atoms)),
+        key=lambda index: _point_distance(point, (atoms[index].x, atoms[index].y, atoms[index].z)),
+    )
+
+
+def qtaim_connection_scope(
+    first_atom: Optional[int], second_atom: Optional[int], fragment_ids: List[int]
+) -> str:
+    if first_atom is None or second_atom is None or first_atom == second_atom:
+        return "unknown"
+    if not (0 <= first_atom < len(fragment_ids) and 0 <= second_atom < len(fragment_ids)):
+        return "unknown"
+    return "intramolecular" if fragment_ids[first_atom] == fragment_ids[second_atom] else "intermolecular"
+
+
+def bond_path_scope(path: BondPath, atoms: List[Atom], fragment_ids: List[int]) -> str:
+    if not path.points:
+        return "unknown"
+    first = path.atom1_index
+    second = path.atom2_index
+    if first is None or second is None:
+        first = nearest_atom_index(path.points[0], atoms)
+        second = nearest_atom_index(path.points[-1], atoms)
+    return qtaim_connection_scope(first, second, fragment_ids)
+
+
+def bcp_scope(cp: CriticalPoint, atoms: List[Atom], fragment_ids: List[int]) -> str:
+    """Classify a BCP using its two nearest nuclear attractors."""
+    if len(atoms) < 2:
+        return "unknown"
+    point = (cp.x, cp.y, cp.z)
+    nearest = sorted(
+        range(len(atoms)),
+        key=lambda index: _point_distance(point, (atoms[index].x, atoms[index].y, atoms[index].z)),
+    )[:2]
+    return qtaim_connection_scope(nearest[0], nearest[1], fragment_ids)
+
+
+def qtaim_scope_visible(scope: str, show_intermolecular: bool, show_intramolecular: bool) -> bool:
+    if scope == "intermolecular":
+        return show_intermolecular
+    if scope == "intramolecular":
+        return show_intramolecular
+    return True
+
+
 def coordinate_extent_from_points(points: List[Tuple[float, float, float]]) -> float:
     if not points:
         return 0.0
@@ -2087,6 +2159,8 @@ def draw_qtaim_scene(
     show_molecule: bool = True,
     show_covalent_bonds: bool = True,
     show_bond_paths: bool = True,
+    show_intermolecular_bcp_paths: bool = True,
+    show_intramolecular_bcp_paths: bool = True,
     bond_paths: Optional[List[BondPath]] = None,
     atom_scale: float = 0.38,
     cp_scale: float = 0.32,
@@ -2114,6 +2188,7 @@ def draw_qtaim_scene(
     configure_pyvista_defaults(pv, plotter, background=background, extent=molecule_extent(atoms))
 
     bonds = infer_bonds(atoms)
+    fragment_ids = molecular_fragment_ids(atoms, bonds)
 
     # Draw the molecule layer with the same ball-and-stick style used by the
     # builder, NCI, and ESP PyVista viewers.
@@ -2155,6 +2230,14 @@ def draw_qtaim_scene(
             show_non_covalent_bcp=show_non_covalent_bcp,
             bcp_rho_threshold=bcp_rho_threshold,
         )
+        visible_bond_paths = [
+            path for path in visible_bond_paths
+            if qtaim_scope_visible(
+                bond_path_scope(path, atoms, fragment_ids),
+                show_intermolecular_bcp_paths,
+                show_intramolecular_bcp_paths,
+            )
+        ]
         exact_path_count = add_exact_bond_paths(
             plotter,
             visible_bond_paths,
@@ -2174,6 +2257,12 @@ def draw_qtaim_scene(
             continue
         if cpt == "(3,-1)" and not bcp_visible_by_strength(cp, show_covalent_bcp, show_non_covalent_bcp, bcp_rho_threshold):
             continue
+        if cpt == "(3,-1)":
+            scope = bcp_scope(cp, atoms, fragment_ids)
+            if scope == "intermolecular" and not show_intermolecular_bcp_paths:
+                continue
+            if scope == "intramolecular" and not show_intramolecular_bcp_paths:
+                continue
         visible_cp_count += 1
         color = (cp_colors or CP_COLORS).get(cpt, CP_COLORS.get(cpt, "white"))
         sphere = pv.Sphere(
@@ -2412,6 +2501,8 @@ class QTAIMGui(ttk.Frame):
         self.show_molecule = tk.BooleanVar(value=True)
         self.show_covalent_bonds = tk.BooleanVar(value=True)
         self.show_bond_paths = tk.BooleanVar(value=True)
+        self.show_intermolecular_bcp_paths = tk.BooleanVar(value=True)
+        self.show_intramolecular_bcp_paths = tk.BooleanVar(value=True)
 
         self.atom_scale = tk.DoubleVar(value=0.38)
         self.cp_scale = tk.DoubleVar(value=0.14)
@@ -2439,6 +2530,13 @@ class QTAIMGui(ttk.Frame):
         self.plot_update_in_progress = False
         self._workspace_visible = True
         self.viewer_controls_window: Optional[tk.Toplevel] = None
+        self.bcp_manager_window: Optional[tk.Toplevel] = None
+        self.bcp_manager_text: Optional[tk.Text] = None
+        self.bcp_manager_range_start = tk.StringVar(value="")
+        self.bcp_manager_range_end = tk.StringVar(value="")
+        self._bcp_manager_original_cps: Optional[List[CriticalPoint]] = None
+        self._bcp_manager_original_paths: Optional[List[BondPath]] = None
+        self._bcp_manager_source_key = None
         self.apply_graphics_settings(load_graphics_settings())
         self.bind_graphics_setting_traces()
         self.settings_window: Optional[tk.Toplevel] = None
@@ -2470,7 +2568,8 @@ class QTAIMGui(ttk.Frame):
             "input_path", "multiwfn_path", "cp_file_path", "path_file_path",
             "show_ncp", "show_covalent_bcp", "show_non_covalent_bcp", "show_rcp",
             "show_ccp", "show_unknown", "show_labels", "show_cp_energy",
-            "show_molecule", "show_covalent_bonds", "show_bond_paths", "atom_scale",
+            "show_molecule", "show_covalent_bonds", "show_bond_paths",
+            "show_intermolecular_bcp_paths", "show_intramolecular_bcp_paths", "atom_scale",
             "cp_scale", "bond_radius", "timeout_s", "background", "cp_energy_unit",
             "open_native_after_run", "use_existing_outputs", "path_display_range",
             "image_resolution", "bond_path_color", "bond_path_width",
@@ -2507,6 +2606,8 @@ class QTAIMGui(ttk.Frame):
             "show_molecule": self.show_molecule,
             "show_covalent_bonds": self.show_covalent_bonds,
             "show_bond_paths": self.show_bond_paths,
+            "show_intermolecular_bcp_paths": self.show_intermolecular_bcp_paths,
+            "show_intramolecular_bcp_paths": self.show_intramolecular_bcp_paths,
         }
         for key, var in bool_vars.items():
             if key in settings:
@@ -2558,6 +2659,8 @@ class QTAIMGui(ttk.Frame):
             "show_molecule": bool(self.show_molecule.get()),
             "show_covalent_bonds": bool(self.show_covalent_bonds.get()),
             "show_bond_paths": bool(self.show_bond_paths.get()),
+            "show_intermolecular_bcp_paths": bool(self.show_intermolecular_bcp_paths.get()),
+            "show_intramolecular_bcp_paths": bool(self.show_intramolecular_bcp_paths.get()),
             "atom_scale": float(self.atom_scale.get()),
             "cp_scale": float(self.cp_scale.get()),
             "bond_radius": float(self.bond_radius.get()),
@@ -2653,6 +2756,8 @@ class QTAIMGui(ttk.Frame):
             self.show_molecule,
             self.show_covalent_bonds,
             self.show_bond_paths,
+            self.show_intermolecular_bcp_paths,
+            self.show_intramolecular_bcp_paths,
             self.atom_scale,
             self.cp_scale,
             self.bond_radius,
@@ -2910,6 +3015,23 @@ class QTAIMGui(ttk.Frame):
         self.make_color_swatch(path_wrap, self.bond_path_color, "Select QTAIM path color").pack(side="left", padx=(4, 2))
         ttk.Label(path_wrap, text="Width").pack(side="left", padx=(8, 2))
         ttk.Entry(path_wrap, textvariable=self.bond_path_width, width=5).pack(side="left")
+        scope_wrap = ttk.Frame(display_frame)
+        scope_wrap.pack(anchor="w", pady=(4, 0))
+        ttk.Checkbutton(
+            scope_wrap,
+            text="Intermolecular BCPs / paths",
+            variable=self.show_intermolecular_bcp_paths,
+        ).pack(side="left")
+        ttk.Checkbutton(
+            scope_wrap,
+            text="Intramolecular BCPs / paths",
+            variable=self.show_intramolecular_bcp_paths,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            display_frame,
+            text="Manual BCP management...",
+            command=self.open_bcp_manager,
+        ).pack(anchor="w", pady=(6, 0))
 
         size_frame = ttk.LabelFrame(settings, text="Sizes", padding=8)
         size_frame.pack(fill="x", pady=(0, 8))
@@ -3558,6 +3680,213 @@ class QTAIMGui(ttk.Frame):
                 pass
         self.plotter = None
 
+    def _bcp_manager_source_signature(self):
+        return (self.input_path.get(), self.log_path.get(), self.cp_file_path.get())
+
+    @staticmethod
+    def _optional_table_float(value: str) -> Optional[float]:
+        value = str(value).strip()
+        return None if value in {"", "-", "None", "none"} else float(value)
+
+    def _bcp_manager_lines(self) -> List[str]:
+        fragment_ids = molecular_fragment_ids(self.atoms) if self.atoms else []
+        lines = []
+        for cp in sorted(
+            (item for item in self.cps if normalize_cp_type(item.cp_type) == "(3,-1)"),
+            key=lambda item: item.index,
+        ):
+            scope = bcp_scope(cp, self.atoms, fragment_ids) if fragment_ids else "unknown"
+            rho = "-" if cp.rho is None else f"{cp.rho:.10g}"
+            lap = "-" if cp.laplacian is None else f"{cp.laplacian:.10g}"
+            lines.append(
+                f"{cp.index}\t{normalize_cp_type(cp.cp_type)}\t{scope}\t"
+                f"{cp.x:.10g}\t{cp.y:.10g}\t{cp.z:.10g}\t{rho}\t{lap}"
+            )
+        return lines
+
+    def _refresh_bcp_manager_table(self) -> None:
+        if self.bcp_manager_text is None:
+            return
+        self.bcp_manager_text.delete("1.0", tk.END)
+        lines = self._bcp_manager_lines()
+        self.bcp_manager_text.insert(tk.END, "\n".join(lines) if lines else "")
+
+    def _parse_bcp_manager_table(self) -> List[CriticalPoint]:
+        if self.bcp_manager_text is None:
+            return []
+        originals = {
+            cp.index: cp for cp in (self._bcp_manager_original_cps or self.cps)
+            if normalize_cp_type(cp.cp_type) == "(3,-1)"
+        }
+        parsed: List[CriticalPoint] = []
+        seen = set()
+        for line_number, raw in enumerate(self.bcp_manager_text.get("1.0", tk.END).splitlines(), start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            fields = line.split()
+            if len(fields) < 8:
+                raise ValueError(f"BCP table line {line_number} needs 8 columns.")
+            index = int(fields[0])
+            if index in seen:
+                raise ValueError(f"BCP index {index} is duplicated in the edited table.")
+            seen.add(index)
+            source = originals.get(index)
+            if source is None:
+                raise ValueError(f"BCP index {index} was not present in the parsed source table.")
+            parsed.append(CriticalPoint(
+                index=index,
+                cp_type=fields[1],
+                x=float(fields[3]),
+                y=float(fields[4]),
+                z=float(fields[5]),
+                rho=self._optional_table_float(fields[6]),
+                laplacian=self._optional_table_float(fields[7]),
+                ellipticity=source.ellipticity,
+                kinetic_energy_density=source.kinetic_energy_density,
+                potential_energy_density=source.potential_energy_density,
+                energy_density=source.energy_density,
+            ))
+        return parsed
+
+    def _paths_for_managed_bcps(self, kept_indices: set[int]) -> List[BondPath]:
+        paths = list(self._bcp_manager_original_paths or self.bond_paths)
+        original_bcps = [
+            cp for cp in (self._bcp_manager_original_cps or self.cps)
+            if normalize_cp_type(cp.cp_type) == "(3,-1)"
+        ]
+        typical_step = _typical_path_step(paths)
+        tolerance = max(0.12, min(0.60, typical_step * 3.0 if typical_step else 0.30))
+        kept = []
+        for path in paths:
+            cp = _bond_path_associated_cp(path, original_bcps, tolerance)
+            if cp is None or cp.index in kept_indices:
+                kept.append(path)
+        return kept
+
+    def apply_edited_bcp_table(self) -> None:
+        try:
+            edited_bcps = self._parse_bcp_manager_table()
+            non_bcps = [
+                cp for cp in (self._bcp_manager_original_cps or self.cps)
+                if normalize_cp_type(cp.cp_type) != "(3,-1)"
+            ]
+            kept_indices = {cp.index for cp in edited_bcps}
+            self.cps = non_bcps + edited_bcps
+            self.bond_paths = self._paths_for_managed_bcps(kept_indices)
+            self._refresh_bcp_manager_table()
+            self.log(f"Applied manual BCP table: {len(edited_bcps)} BCP(s) and {len(self.bond_paths)} associated path(s) retained.")
+            self.schedule_live_plot_update()
+        except Exception as exc:
+            messagebox.showerror("Manual BCP management", str(exc), parent=self.bcp_manager_window or self)
+
+    def delete_selected_bcp_lines(self) -> None:
+        text = self.bcp_manager_text
+        if text is None:
+            return
+        ranges = list(text.tag_ranges(tk.SEL))
+        if not ranges:
+            messagebox.showinfo("Manual BCP management", "Select one or more complete BCP lines first.", parent=self.bcp_manager_window or self)
+            return
+        first = int(str(ranges[0]).split(".")[0])
+        last = int(str(ranges[-1]).split(".")[0])
+        text.delete(f"{first}.0", f"{last + 1}.0")
+
+    def remove_bcp_index_range(self) -> None:
+        try:
+            first = int(self.bcp_manager_range_start.get().strip())
+            last = int(self.bcp_manager_range_end.get().strip())
+        except ValueError:
+            messagebox.showerror("Manual BCP management", "Range start and end must be integer BCP indices.", parent=self.bcp_manager_window or self)
+            return
+        low, high = sorted((first, last))
+        if self.bcp_manager_text is None:
+            return
+        kept = []
+        for raw in self.bcp_manager_text.get("1.0", tk.END).splitlines():
+            fields = raw.split()
+            if not fields:
+                continue
+            try:
+                index = int(fields[0])
+            except ValueError:
+                kept.append(raw)
+                continue
+            if not low <= index <= high:
+                kept.append(raw)
+        self.bcp_manager_text.delete("1.0", tk.END)
+        self.bcp_manager_text.insert(tk.END, "\n".join(kept))
+
+    def restore_all_managed_bcps(self) -> None:
+        if self._bcp_manager_original_cps is None:
+            return
+        self.cps = list(self._bcp_manager_original_cps)
+        self.bond_paths = list(self._bcp_manager_original_paths or [])
+        self._refresh_bcp_manager_table()
+        self.log("Restored all parsed BCPs and QTAIM paths.")
+        self.schedule_live_plot_update()
+
+    def open_bcp_manager(self) -> None:
+        try:
+            self.ensure_plot_data_loaded()
+        except Exception as exc:
+            messagebox.showerror("Manual BCP management", str(exc), parent=self)
+            return
+        if not any(normalize_cp_type(cp.cp_type) == "(3,-1)" for cp in self.cps):
+            messagebox.showinfo("Manual BCP management", "No parsed BCPs are available.", parent=self)
+            return
+        source_key = self._bcp_manager_source_signature()
+        if source_key != self._bcp_manager_source_key or self._bcp_manager_original_cps is None:
+            self._bcp_manager_source_key = source_key
+            self._bcp_manager_original_cps = list(self.cps)
+            self._bcp_manager_original_paths = list(self.bond_paths)
+        if self.bcp_manager_window is not None and self.bcp_manager_window.winfo_exists():
+            self._refresh_bcp_manager_table()
+            self.bcp_manager_window.deiconify()
+            self.bcp_manager_window.lift()
+            return
+
+        win = tk.Toplevel(self)
+        self.bcp_manager_window = win
+        win.title("Manual BCP management")
+        win.geometry("980x600")
+        win.transient(self.winfo_toplevel())
+        outer = ttk.Frame(win, padding=12)
+        outer.pack(fill="both", expand=True)
+        ttk.Label(
+            outer,
+            text="Editable columns: index, type, scope, x, y, z, rho, Laplacian. Delete lines or edit values, then apply.",
+            wraplength=900,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+        actions = ttk.Frame(outer)
+        actions.pack(fill="x", pady=(0, 8))
+        ttk.Button(actions, text="Delete selected lines", command=self.delete_selected_bcp_lines).pack(side="left")
+        ttk.Button(actions, text="Apply edited list", command=self.apply_edited_bcp_table).pack(side="left", padx=(6, 0))
+        ttk.Button(actions, text="Restore all", command=self.restore_all_managed_bcps).pack(side="left", padx=(6, 0))
+        ttk.Label(actions, text="Remove BCP indices").pack(side="left", padx=(20, 4))
+        ttk.Entry(actions, textvariable=self.bcp_manager_range_start, width=7).pack(side="left")
+        ttk.Label(actions, text="to").pack(side="left", padx=4)
+        ttk.Entry(actions, textvariable=self.bcp_manager_range_end, width=7).pack(side="left")
+        ttk.Button(actions, text="Remove range", command=self.remove_bcp_index_range).pack(side="left", padx=(6, 0))
+        table_frame = ttk.Frame(outer)
+        table_frame.pack(fill="both", expand=True)
+        text = tk.Text(table_frame, wrap="none", font=("Consolas", 10), undo=True)
+        self.bcp_manager_text = text
+        text.grid(row=0, column=0, sticky="nsew")
+        ybar = ttk.Scrollbar(table_frame, orient="vertical", command=text.yview)
+        xbar = ttk.Scrollbar(table_frame, orient="horizontal", command=text.xview)
+        ybar.grid(row=0, column=1, sticky="ns")
+        xbar.grid(row=1, column=0, sticky="ew")
+        text.configure(yscrollcommand=ybar.set, xscrollcommand=xbar.set)
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
+        bottom = ttk.Frame(outer)
+        bottom.pack(fill="x", pady=(8, 0))
+        ttk.Button(bottom, text="Close", command=win.withdraw).pack(side="right")
+        win.protocol("WM_DELETE_WINDOW", win.withdraw)
+        self._refresh_bcp_manager_table()
+
     def ensure_plot_data_loaded(self) -> None:
         if not self.atoms:
             self.load_atoms()
@@ -3671,6 +4000,8 @@ class QTAIMGui(ttk.Frame):
                 show_molecule=bool(self.show_molecule.get()),
                 show_covalent_bonds=bool(self.show_covalent_bonds.get()),
                 show_bond_paths=bool(self.show_bond_paths.get()),
+                show_intermolecular_bcp_paths=bool(self.show_intermolecular_bcp_paths.get()),
+                show_intramolecular_bcp_paths=bool(self.show_intramolecular_bcp_paths.get()),
                 bond_paths=display_paths,
                 atom_scale=float(self.atom_scale.get()),
                 cp_scale=float(self.cp_scale.get()),
@@ -3736,6 +4067,8 @@ class QTAIMGui(ttk.Frame):
         self.show_molecule.set(True)
         self.show_covalent_bonds.set(True)
         self.show_bond_paths.set(True)
+        self.show_intermolecular_bcp_paths.set(True)
+        self.show_intramolecular_bcp_paths.set(True)
         self.atom_scale.set(0.38)
         self.cp_scale.set(0.14)
         self.bond_radius.set(0.075)
